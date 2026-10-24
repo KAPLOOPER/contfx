@@ -99,19 +99,22 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
     val noteRaw by IslandRepository.note.collectAsState()
     val bounds by rememberUpdatedState(onBounds)
 
-    val now by produceState(System.currentTimeMillis()) {
-        while (true) {
-            delay(1000L - System.currentTimeMillis() % 1000L)
-            value = System.currentTimeMillis()
-        }
-    }
-
     // ---- What to show ----
 
     val media = mediaRaw?.takeIf { prefs.media }
     val call = callRaw?.takeIf { prefs.calls }
     val timer = timerRaw?.takeIf { prefs.timers }
     val note = noteRaw?.takeIf { prefs.notifications }
+
+    // A one-second clock, running only while something on the island counts.
+    val ticking = timer != null || call?.ringing == false || media?.playing == false
+    val now by produceState(System.currentTimeMillis(), ticking) {
+        value = System.currentTimeMillis()
+        while (ticking) {
+            delay(1000L - System.currentTimeMillis() % 1000L)
+            value = System.currentTimeMillis()
+        }
+    }
 
     var expanded by remember { mutableStateOf<Kind?>(null) }
     var touchTick by remember { mutableIntStateOf(0) }

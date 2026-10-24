@@ -188,7 +188,7 @@ class IslandNotificationListener : NotificationListenerService() {
             timers.remove(sbn.key)
         }
 
-        if (initial || !isPeekWorthy(sbn)) return
+        if (initial || template.contains("MediaStyle") || !isPeekWorthy(sbn)) return
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
             ?.toString().orEmpty()

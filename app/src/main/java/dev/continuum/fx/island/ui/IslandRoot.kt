@@ -240,7 +240,7 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
     val budOut = secondary != null
     LaunchedEffect(budOut) {
         if (budOut) {
-            budP.animateTo(1.32f, tween(170, easing = LinearOutSlowInEasing))
+            budP.animateTo(1.4f, tween(180, easing = LinearOutSlowInEasing))
             budP.animateTo(1f, Motion.flow())
         } else {
             budP.animateTo(0f, Motion.flow())
@@ -273,7 +273,7 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
     val dripP = remember { Animatable(0f) }
     LaunchedEffect(dripVisible) {
         if (dripVisible) {
-            dripP.animateTo(1.36f, tween(190, easing = LinearOutSlowInEasing))
+            dripP.animateTo(1.5f, tween(200, easing = LinearOutSlowInEasing))
             dripP.animateTo(1f, Motion.flow())
         } else {
             dripP.animateTo(0f, Motion.flow())
@@ -317,15 +317,15 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
                 val b = budRect(m)
                 drawRoundRect(InkColors.ink, b.topLeft, b.size, CornerRadius(min(b.width, b.height) / 2f))
                 if (budRight) {
-                    neckAcross(m, b, budLatch, px(30f), px(2f), InkColors.ink)
+                    neckAcross(m, b, budLatch, px(24f), px(2f), InkColors.ink)
                 } else {
-                    neckAcross(b, m, budLatch, px(30f), px(2f), InkColors.ink)
+                    neckAcross(b, m, budLatch, px(24f), px(2f), InkColors.ink)
                 }
             }
             if (dripP.value > 0.002f) {
                 val d = dripRect(m)
                 drawRoundRect(InkColors.ink, d.topLeft, d.size, CornerRadius(dripRadius(d)))
-                neckDown(m, d, m.center.x, dripLatch, px(42f), px(2f), px(26f), InkColors.ink)
+                neckDown(m, d, m.center.x, dripLatch, px(26f), px(2f), px(26f), InkColors.ink)
             }
         }
 

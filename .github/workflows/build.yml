@@ -23,9 +23,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Test and build
+        shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease 2>&1 | tee build.log
+
+      # Surfaces compiler errors as annotations, so they can be read from the
+      # checks API without downloading the full log.
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          { grep -E '^e: |^ERROR|error:' build.log || true; grep -A6 'What went wrong' build.log || true; } \
+            | sed "s#file://$GITHUB_WORKSPACE/##" | head -80 > errors.txt
+          split -l 8 errors.txt chunk_
+          for f in chunk_*; do
+            msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$f")
+            echo "::error title=Build error::$msg"
+          done
 
       - name: Name the APK
         run: |

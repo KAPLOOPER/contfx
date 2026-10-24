@@ -273,7 +273,7 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
     val dripP = remember { Animatable(0f) }
     LaunchedEffect(dripVisible) {
         if (dripVisible) {
-            dripP.animateTo(1.5f, tween(200, easing = LinearOutSlowInEasing))
+            dripP.animateTo(1.5f, tween(260, easing = LinearOutSlowInEasing))
             dripP.animateTo(1f, Motion.flow())
         } else {
             dripP.animateTo(0f, Motion.flow())
@@ -282,14 +282,16 @@ fun IslandRoot(spotState: State<CameraSpot?>, outsideTaps: IntState, onBounds: (
     fun dripRect(m: Rect): Rect {
         val q = dripP.value.coerceAtLeast(0f)
         val qc = q.coerceAtMost(1f)
+        // Falls as a drop first, then spreads into a card as it lands.
+        val spread = qc * qc * qc
         val s = min(min(m.height, m.width), band)
-        val w = lerpF(s, dripW, qc)
-        val h = lerpF(s, dripH, qc)
+        val w = lerpF(s, dripW, spread)
+        val h = lerpF(s, dripH, spread)
         val t = lerpF(m.bottom - s, m.bottom + gap, q)
         val cx = lerpF(m.center.x, centerFor(dripW), qc)
         return Rect(cx - w / 2f, t, cx + w / 2f, t + h)
     }
-    fun dripRadius(r: Rect) = lerpF(min(r.width, r.height) / 2f, px(28f), dripP.value.coerceIn(0f, 1f))
+    fun dripRadius(r: Rect) = lerpF(min(r.width, r.height) / 2f, px(28f), dripP.value.coerceIn(0f, 1f).let { it * it * it })
         .coerceAtMost(min(r.width, r.height) / 2f)
     val dripTarget = Rect(centerFor(dripW) - dripW / 2f, mainTarget.bottom + gap, centerFor(dripW) + dripW / 2f, mainTarget.bottom + gap + dripH)
 

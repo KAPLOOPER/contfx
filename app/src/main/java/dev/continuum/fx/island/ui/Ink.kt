@@ -70,9 +70,10 @@ internal fun DrawScope.neckAcross(a: Rect, b: Rect, latch: NeckLatch, reach: Flo
     if (!latch.joined) return
     val k = (1f - d / reach).coerceIn(0f, 1f).pow(1.5f)
     val cy = (a.center.y + b.center.y) / 2f
-    val h1 = a.height / 2f * 0.72f
-    val h2 = b.height / 2f * 0.72f
-    val t = min(h1, h2) * k
+    val t = min(a.height, b.height) / 2f * 0.72f * k
+    // The ends pull back in as the neck thins, so nothing is left behind when it snaps.
+    val h1 = lerpF(t, a.height / 2f * 0.72f, k.pow(0.5f))
+    val h2 = lerpF(t, b.height / 2f * 0.72f, k.pow(0.5f))
     val o1 = a.height / 2f * 0.5f
     val o2 = b.height / 2f * 0.5f
     val x1 = a.right
@@ -109,9 +110,9 @@ internal fun DrawScope.neckDown(
     if (d >= reach) latch.joined = false
     if (!latch.joined) return
     val k = (1f - d / reach).coerceIn(0f, 1f).pow(1.5f)
-    val w1 = min(a.width / 2f * 0.72f, maxHalf)
-    val w2 = min(b.width / 2f * 0.72f, maxHalf)
-    val t = min(w1, w2) * 0.8f * k
+    val t = min(min(a.width / 2f * 0.72f, maxHalf), min(b.width / 2f * 0.72f, maxHalf)) * 0.8f * k
+    val w1 = lerpF(t, min(a.width / 2f * 0.72f, maxHalf), k.pow(0.5f))
+    val w2 = lerpF(t, min(b.width / 2f * 0.72f, maxHalf), k.pow(0.5f))
     val o1 = min(a.height * 0.3f, maxHalf)
     val o2 = min(b.height * 0.3f, maxHalf)
     val y1 = a.bottom

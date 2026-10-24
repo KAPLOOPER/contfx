@@ -128,11 +128,11 @@ class IslandNotificationListener : NotificationListenerService() {
             if (IslandRepository.media.value?.demo != true) IslandRepository.media.value = null
             return
         }
-        val meta = c.metadata
         val state = c.playbackState
+        val meta = c.metadata
         val title = meta?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
             ?: meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
-        if (title.isNullOrBlank()) {
+        if (meta == null || title.isNullOrBlank()) {
             if (IslandRepository.media.value?.demo != true) IslandRepository.media.value = null
             return
         }

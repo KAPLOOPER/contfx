@@ -4,6 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Every CI build is numbered by its workflow run, so each one is a newer version than
+// the last and installs as an update. Local builds count as build 1.
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
+// Release builds are signed with the app's own key (keystore/continuum.p12, locked with
+// the SIGNING_PASSWORD secret), so updates install over the top without a reinstall.
+val signingPassword: String? = System.getenv("SIGNING_PASSWORD")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "dev.continuum.fx"
     compileSdk = 35
@@ -12,16 +20,28 @@ android {
         applicationId = "dev.continuum.fx"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = buildNumber
+        versionName = "0.3.$buildNumber"
+        buildConfigField("int", "BUILD_NUMBER", "$buildNumber")
+        buildConfigField("String", "UPDATE_REPO", "\"KAPLOOPER/contfx\"")
+    }
+
+    signingConfigs {
+        create("continuum") {
+            storeFile = rootProject.file("keystore/continuum.p12")
+            storeType = "PKCS12"
+            storePassword = signingPassword
+            keyAlias = "continuum"
+            keyPassword = signingPassword
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so builds from CI install directly.
-            // Swap in your own signing config before publishing anywhere.
-            signingConfig = signingConfigs.getByName("debug")
+            // Without the password (local builds, pull requests) fall back to the debug key;
+            // those builds can't update a CI-installed copy, which is expected.
+            signingConfig = signingConfigs.getByName(if (signingPassword != null) "continuum" else "debug")
         }
     }
 

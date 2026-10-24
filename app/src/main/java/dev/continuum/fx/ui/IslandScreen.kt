@@ -152,7 +152,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
 }
 
 @Composable
-private fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () -> Unit) {
+internal fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () -> Unit) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     Row(

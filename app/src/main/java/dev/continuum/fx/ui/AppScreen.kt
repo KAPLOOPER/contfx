@@ -57,6 +57,8 @@ import dev.continuum.fx.dsp.EqLimits
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.FilterType
 import dev.continuum.fx.island.IslandPrefs
+import dev.continuum.fx.keyboard.KeyboardPrefs
+import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
@@ -74,7 +76,7 @@ import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
 
-enum class Section { Sound, Island }
+enum class Section { Sound, Island, Keyboard }
 
 data class UiState(
     val library: Library,
@@ -91,6 +93,9 @@ data class UiState(
     val islandLive: Boolean = false,
     /** The island's notification listener is connected right now. */
     val islandFed: Boolean = false,
+    val keyboard: KeyboardPrefs = KeyboardPrefs(),
+    val update: UpdateState = UpdateState.Idle,
+    val build: Int = 1,
 )
 
 interface AppActions {
@@ -112,6 +117,11 @@ interface AppActions {
     fun openListenerSettings()
     fun openAppInfo()
     fun copyIslandCommands()
+    fun updateKeyboard(transform: (KeyboardPrefs) -> KeyboardPrefs)
+    fun checkForUpdates()
+    fun installUpdate()
+    fun allowInstalls()
+    fun dismissUpdate()
 }
 
 @Composable
@@ -131,11 +141,17 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 .navigationBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
         ) {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 SectionTitle("Sound", state.section == Section.Sound) { actions.setSection(Section.Sound) }
                 SectionTitle("Island", state.section == Section.Island) { actions.setSection(Section.Island) }
+                SectionTitle("Keyboard", state.section == Section.Keyboard) { actions.setSection(Section.Keyboard) }
             }
             Gap(2.dp)
+            UpdateCard(state.update, actions)
             Crossfade(targetState = state.section, label = "section") { section ->
                 when (section) {
                     Section.Sound -> Column {
@@ -144,8 +160,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         SoundContent(state, store, actions)
                     }
                     Section.Island -> IslandContent(state, actions)
+                    Section.Keyboard -> KeyboardContent(state, actions)
                 }
             }
+            Gap(30.dp)
+            UpdateFooter(state, actions)
         }
 
         MessagePill(state.message, actions::dismissMessage, Modifier.align(Alignment.BottomCenter))
@@ -164,7 +183,7 @@ private fun SectionTitle(text: String, selected: Boolean, onClick: () -> Unit) {
             .squash(source)
             .clickable(interactionSource = source, indication = null, role = Role.Tab, onClick = onClick),
     ) {
-        Txt(text, 34.sp, color, bold = true, maxLines = 1)
+        Txt(text, 31.sp, color, bold = true, maxLines = 1)
     }
 }
 
@@ -456,8 +475,9 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
         Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
             when {
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
-                open -> SetupSheet(state, actions)
+                open && section == Section.Sound -> SetupSheet(state, actions)
                 section == Section.Island -> IslandDockBar(state, actions)
+                section == Section.Keyboard -> KeyboardDockBar()
                 else -> DockBar(state, actions)
             }
         }

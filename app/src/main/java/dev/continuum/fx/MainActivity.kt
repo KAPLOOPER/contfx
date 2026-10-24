@@ -19,7 +19,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import dev.continuum.fx.audio.CaptureService
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.data.ProfileStore
@@ -28,6 +30,10 @@ import dev.continuum.fx.island.IslandNotificationListener
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
+import dev.continuum.fx.keyboard.KeyboardPrefs
+import dev.continuum.fx.keyboard.KeyboardSettings
+import dev.continuum.fx.update.UpdateState
+import dev.continuum.fx.update.Updater
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
@@ -96,6 +102,18 @@ class MainActivity : ComponentActivity(), AppActions {
         }
         if (savedInstanceState == null) handleIntent(intent)
 
+        // Android's installer asks for confirmation through a screen; show it from here.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                Updater.confirm.collect { confirm ->
+                    if (confirm != null) {
+                        Updater.confirm.value = null
+                        startSafely(confirm)
+                    }
+                }
+            }
+        }
+
         setContent {
             val library by store.state.collectAsState()
             val running by EngineStatus.running.collectAsState()
@@ -109,6 +127,8 @@ class MainActivity : ComponentActivity(), AppActions {
             val island by IslandSettings.state.collectAsState()
             val islandLive by IslandRepository.hostActive.collectAsState()
             val islandFed by IslandRepository.listenerActive.collectAsState()
+            val keyboard by KeyboardSettings.state.collectAsState()
+            val update by Updater.state.collectAsState()
             ContinuumTheme {
                 AppScreen(
                     state = UiState(
@@ -117,6 +137,9 @@ class MainActivity : ComponentActivity(), AppActions {
                         island = island,
                         islandLive = islandLive && island.enabled,
                         islandFed = islandFed,
+                        keyboard = keyboard,
+                        update = update,
+                        build = BuildConfig.BUILD_NUMBER,
                     ),
                     store = store,
                     actions = this,
@@ -130,9 +153,26 @@ class MainActivity : ComponentActivity(), AppActions {
         handleIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        Updater.screenVisible = true
+    }
+
+    override fun onStop() {
+        Updater.screenVisible = false
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         refresh()
+        val update = Updater.state.value
+        if (update is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) {
+            // Back from allowing installs: carry straight on with the update.
+            Updater.start(this, update.release)
+        } else if (Updater.shouldAutoCheck(this)) {
+            lifecycleScope.launch { Updater.check(this@MainActivity, quiet = true) }
+        }
     }
 
     override fun onDestroy() {
@@ -250,6 +290,46 @@ class MainActivity : ComponentActivity(), AppActions {
 
     override fun openAppInfo() {
         startSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+    }
+
+    override fun updateKeyboard(transform: (KeyboardPrefs) -> KeyboardPrefs) {
+        KeyboardSettings.update(transform)
+    }
+
+    override fun checkForUpdates() {
+        lifecycleScope.launch {
+            Updater.check(this@MainActivity, quiet = false)
+            when (val result = Updater.state.value) {
+                is UpdateState.UpToDate -> {
+                    message.value = "You're on the latest build."
+                    delay(4_000)
+                    if (Updater.state.value is UpdateState.UpToDate) Updater.dismiss()
+                }
+                is UpdateState.Failed -> if (result.release == null) {
+                    message.value = result.message
+                    Updater.dismiss()
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    override fun installUpdate() {
+        val release = when (val u = Updater.state.value) {
+            is UpdateState.Available -> u.release
+            is UpdateState.Failed -> u.release
+            is UpdateState.NeedsPermission -> u.release
+            else -> null
+        } ?: return
+        Updater.start(this, release)
+    }
+
+    override fun allowInstalls() {
+        startSafely(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+    }
+
+    override fun dismissUpdate() {
+        Updater.dismiss()
     }
 
     override fun copyIslandCommands() {

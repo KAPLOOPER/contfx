@@ -117,6 +117,13 @@ object Privileges {
     }
 
     private fun shizukuExec(command: String): Boolean = try {
+        shizukuProcess(command)?.waitFor() == 0
+    } catch (_: Throwable) {
+        false
+    }
+
+    /** Starts `sh -c command` as the shell user through Shizuku, or null if that isn't possible. */
+    fun shizukuProcess(command: String): java.lang.Process? = try {
         val method = Shizuku::class.java.getDeclaredMethod(
             "newProcess",
             Array<String>::class.java,
@@ -124,10 +131,9 @@ object Privileges {
             String::class.java,
         )
         method.isAccessible = true
-        val process = method.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
-        process.waitFor() == 0
+        method.invoke(null, arrayOf("sh", "-c", command), null, null) as java.lang.Process
     } catch (_: Throwable) {
-        false
+        null
     }
 
     private fun granted(context: Context, permission: String): Boolean =

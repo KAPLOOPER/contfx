@@ -73,6 +73,15 @@ Android doesn't let ordinary apps add effects to other apps' sound, so Continuum
 
 Any file in the Equalizer APO parametric format works, including AutoEQ's `ParametricEQ.txt`. Supported filter types: peak (`PK`), low and high shelves (`LS`/`LSC`/`LSQ`, `HS`/`HSC`/`HSQ`), low and high pass, notch, band pass and all pass, with `Q` or `BW Oct`. **Share** exports the current profile in the same format.
 
+## Updates
+
+Continuum FX updates itself. It checks this repository's releases when you open it (at most every six hours), and **Check for updates** at the bottom of any tab checks straight away. When a newer build is out, a card at the top offers **Update now**: it downloads the APK and installs it over the top, keeping your settings, profiles and permissions.
+
+- With **Shizuku** running, the update installs without a prompt.
+- Otherwise Android asks you to confirm; the first time, it also asks you to allow Continuum FX to install apps. Once the app has installed an update itself, Android 12 and later can let later ones through without asking.
+
+Every build is signed with the same key and numbered by its build, so each one installs as an update rather than needing a reinstall. Android refuses any update signed with a different key, so a tampered APK can't replace this one.
+
 ## Building
 
 The project builds with Gradle (JDK 17, Android SDK 35):
@@ -81,7 +90,9 @@ The project builds with Gradle (JDK 17, Android SDK 35):
 ./gradlew testDebugUnitTest assembleRelease
 ```
 
-Every push to `main` is built by GitHub Actions, which publishes the APK as a pre-release. The release build is signed with the debug key so it installs straight away; use your own signing key before distributing it.
+Every push to `main` is built by GitHub Actions, which publishes the APK as a pre-release named `build-N`, with N as the app's version code.
+
+Releases are signed with `keystore/continuum.p12`. The keystore is locked with a long random password kept only in the `SIGNING_PASSWORD` repository secret (Settings → Secrets and variables → Actions), so the file is safe in the repository without it. Builds without the secret (local builds, pull requests) use the debug key and can't update a release install. If you fork this, make your own key with `keytool -genkeypair -keystore keystore/continuum.p12 -storetype PKCS12 -alias continuum -keyalg RSA -keysize 4096 -validity 12000` and set your own secret.
 
 ## Roadmap
 
@@ -92,6 +103,8 @@ Every push to `main` is built by GitHub Actions, which publishes the APK as a pr
 - [ ] Per-app exclusions and per-device profiles
 - [x] Liquid ink island: music, calls, timers and notifications
 - [ ] Island: navigation, charging and more sources; per-device camera fine-tuning
+- [x] In-app updates that install over the top
+- [ ] The Continuum keyboard (its options are already in the Keyboard tab)
 - [ ] Liquid-ink transitions for the remaining sheets
 
 ## Credits and licences

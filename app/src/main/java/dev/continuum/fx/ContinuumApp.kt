@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.island.IslandSettings
+import dev.continuum.fx.keyboard.KeyboardSettings
 
 class ContinuumApp : Application() {
 
@@ -15,6 +16,7 @@ class ContinuumApp : Application() {
         super.onCreate()
         store = ProfileStore(this)
         IslandSettings.init(this)
+        KeyboardSettings.init(this)
         val channel = NotificationChannel(
             CHANNEL_PROCESSING,
             "Audio processing",
@@ -23,10 +25,19 @@ class ContinuumApp : Application() {
             description = "Shown while Continuum FX is processing other apps' audio"
             setShowBadge(false)
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val updates = NotificationChannel(
+            CHANNEL_UPDATES,
+            "Updates",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Says when Continuum FX has updated itself"
+            setShowBadge(false)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(channel, updates))
     }
 
     companion object {
         const val CHANNEL_PROCESSING = "processing"
+        const val CHANNEL_UPDATES = "updates"
     }
 }

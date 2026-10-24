@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - uses: actions/setup-java@v4
         with:
@@ -24,6 +26,8 @@ jobs:
 
       - name: Test and build
         shell: bash
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease 2>&1 | tee build.log
@@ -41,6 +45,24 @@ jobs:
             msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$f")
             echo "::error title=Build error::$msg"
           done
+
+      # Releases must be signed with the app's own key, or phones can't update in place.
+      - name: Check the signing key
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_PASSWORD" ]; then
+            echo "::error title=Signing password missing::Add the SIGNING_PASSWORD repository secret (Settings, Secrets and variables, Actions) so builds update in place."
+            exit 1
+          fi
+
+      - name: Release notes
+        shell: bash
+        run: |
+          git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          cat notes.md
 
       - name: Name the APK
         run: |
@@ -61,7 +83,5 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Continuum FX · build ${{ github.run_number }}
           prerelease: true
-          body: |
-            Automatic build of `${{ github.sha }}`.
-            Install the APK below, then open the app and follow the setup steps.
+          body_path: notes.md
           files: dist/*.apk

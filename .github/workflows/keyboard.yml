@@ -1,0 +1,97 @@
+name: Build keyboard
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'keyboard/**'
+      - '.github/workflows/keyboard.yml'
+      - '.gitmodules'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      # Models in the submodules are stored with Git LFS.
+      - name: Fetch large files
+        shell: bash
+        run: |
+          git lfs install
+          git submodule foreach --recursive 'git lfs pull || true'
+          du -sh keyboard/libs keyboard/voiceinput-shared/src/main/ml keyboard/java/assets/futo-swipe || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Same key as Continuum FX, so the two apps trust each other and updates install in place.
+      - name: Signing
+        shell: bash
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_PASSWORD" ]; then echo "::error title=Signing password missing::Add the SIGNING_PASSWORD secret."; exit 1; fi
+          {
+            echo "storePassword=$SIGNING_PASSWORD"
+            echo "keyPassword=$SIGNING_PASSWORD"
+            echo "keyAlias=continuum"
+            echo "storeFile=../keystore/continuum.p12"
+          } > keyboard/keystore.properties
+
+      - name: Build
+        shell: bash
+        working-directory: keyboard
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: continuum-${{ github.run_number }}
+          BRANCH_NAME: main
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleStableRelease 2>&1 | tee ../build.log
+
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          { grep -E '^e: |^ERROR|error:|FAILED' build.log || true; grep -A8 'What went wrong' build.log || true; } \
+            | sed "s#file://$GITHUB_WORKSPACE/##" | head -80 > errors.txt
+          split -l 8 errors.txt chunk_
+          for f in chunk_*; do
+            msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$f")
+            echo "::error title=Build error::$msg"
+          done
+
+      - name: Collect the APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          apk=$(ls keyboard/build/outputs/apk/stable/release/*.apk | head -1)
+          cp "$apk" "dist/ContinuumKeyboard-${{ github.run_number }}.apk"
+          git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContinuumKeyboard-${{ github.run_number }}
+          path: dist/*.apk
+
+      - name: Publish pre-release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: keyboard-${{ github.run_number }}
+          name: Continuum Keyboard · build ${{ github.run_number }}
+          prerelease: true
+          body_path: notes.md
+          files: dist/*.apk

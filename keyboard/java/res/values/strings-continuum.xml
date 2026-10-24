@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Continuum Keyboard: strings added in this modified version of FUTO Keyboard. -->
+<resources>
+    <string name="theme_continuum_ink" translatable="false">Continuum Ink</string>
+    <string name="theme_continuum_light" translatable="false">Continuum Light</string>
+    <string name="theme_continuum_system" translatable="false">Continuum (match system)</string>
+    <string name="continuum_modified_notice" translatable="false">Continuum Keyboard is a modified version of FUTO Keyboard by FUTO Holdings, Inc., redesigned in the Continuum design language. It is distributed free of charge under the FUTO Source First License 1.1.</string>
+</resources>

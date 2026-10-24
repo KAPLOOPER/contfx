@@ -3,6 +3,11 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+    # The keyboard has its own workflow.
+    paths-ignore:
+      - 'keyboard/**'
+      - '.github/workflows/keyboard.yml'
+      - '.gitmodules'
   pull_request:
   workflow_dispatch:
 

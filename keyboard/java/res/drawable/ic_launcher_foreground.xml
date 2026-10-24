@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Continuum Keyboard icon: flat ink keys, no outlines. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#F4F4F1" android:pathData="M31.20,37.50h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM45.90,37.50h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM60.60,37.50h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM75.30,37.50h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM38.55,50.70h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM53.25,50.70h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM67.95,50.70h1.50a5.00,5.00 0,0 1,0 10.00h-1.50a5.00,5.00 0,0 1,0 -10.00zM41.00,63.90h26.00a5.00,5.00 0,0 1,0 10.00h-26.00a5.00,5.00 0,0 1,0 -10.00z" />
+</vector>

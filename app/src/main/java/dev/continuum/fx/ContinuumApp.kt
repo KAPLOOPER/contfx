@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import dev.continuum.fx.data.ProfileStore
+import dev.continuum.fx.island.IslandSettings
 
 class ContinuumApp : Application() {
 
@@ -13,6 +14,7 @@ class ContinuumApp : Application() {
     override fun onCreate() {
         super.onCreate()
         store = ProfileStore(this)
+        IslandSettings.init(this)
         val channel = NotificationChannel(
             CHANNEL_PROCESSING,
             "Audio processing",

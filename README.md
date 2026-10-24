@@ -1,10 +1,38 @@
 # Continuum FX
 
-A rootless, system-wide audio processor for Android, built in the **Continuum** design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface.
+The **Continuum** toolkit for Android, built in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
 
-The first release focuses on a **global parametric EQ** that can import EQ files exported from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next (see the roadmap).
+- **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
+- **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers and notifications.
 
-## How it works without root
+## The island
+
+The island is one piece of ink that starts as your camera. It follows the Continuum liquid rule: ink never appears or vanishes, it only separates from, or merges with, ink already on screen.
+
+- **Music and video** stretch the camera into a pill: artwork on one side, playing bars in the track's colour on the other. Tap to open the player with a scrubber and controls.
+- **Calls** drip down from the camera when they ring, with Decline and Answer. During a call the pill keeps a green timer; tap it to end the call.
+- **Timers** from your clock app count down in the pill, or in a second bubble that pinches off the side when music is playing too.
+- **Notifications** drip down for a few seconds. Tap to open, swipe up to dismiss.
+
+On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur.
+
+### Setting up the island
+
+Open the app, tap **Island**, then the dock. The island needs two switches:
+
+1. **Accessibility:** draws the island over apps and the lock screen. It reads nothing on screen.
+2. **Notification access:** lets it see what's playing, ringing or counting down.
+
+*Switch on with Shizuku* flips both at once (keeping your other accessibility services on). Without Shizuku, use the settings buttons. On Android 13 and later, sideloaded apps need **Allow restricted settings** first: open App info, tap the menu in the corner and choose it. From a computer:
+
+```
+adb shell appops set dev.continuum.fx ACCESS_RESTRICTED_SETTINGS allow
+adb shell cmd notification allow_listener dev.continuum.fx/dev.continuum.fx.island.IslandNotificationListener
+```
+
+then switch on *Continuum island* in accessibility settings. The **Try it** buttons send sample music, a call, a timer and a notification so you can see the motion straight away.
+
+## Sound: how it works without root
 
 Android doesn't let ordinary apps add effects to other apps' sound, so Continuum FX takes the same route as [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP):
 
@@ -19,7 +47,7 @@ Android doesn't let ordinary apps add effects to other apps' sound, so Continuum
 - Capture adds a little latency, so it suits music and video better than rhythm games.
 - It may clash with other apps that add global effects (Wavelet, other DynamicsProcessing apps). Turn those off first.
 
-## Setup
+## Sound setup
 
 1. Install the APK from the latest [release](../../releases).
 2. Open the app and tap the dock to start setup.
@@ -59,6 +87,8 @@ Every push to `main` is built by GitHub Actions, which publishes the APK as a pr
 - [x] squig.link / AutoEQ / Equalizer APO import and export
 - [ ] ViPER effects from the open-source reverse-engineered engine (bass, clarity, surround, convolver, compressor and more)
 - [ ] Per-app exclusions and per-device profiles
+- [x] Liquid ink island: music, calls, timers and notifications
+- [ ] Island: navigation, charging and more sources; per-device camera fine-tuning
 - [ ] Liquid-ink transitions for the remaining sheets
 
 ## Credits and licences
@@ -68,3 +98,5 @@ Every push to `main` is built by GitHub Actions, which publishes the APK as a pr
 - Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*.
 - [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open Font License 1.1 (see `fonts/LIBRON-OFL.txt`).
 - [Shizuku](https://github.com/RikkaApps/Shizuku) by RikkaApps.
+- The island's overlay approach is adapted from [Essentials](https://github.com/sameerasw/essentials) by Sameera Sandakelum (MIT). See `THIRD_PARTY_NOTICES.md`.
+- Phone and music glyphs from Google's Material Icons (Apache 2.0).

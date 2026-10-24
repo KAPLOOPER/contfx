@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -11,6 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -22,14 +24,20 @@ import dev.continuum.fx.audio.CaptureService
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.dsp.EqImport
+import dev.continuum.fx.island.IslandNotificationListener
+import dev.continuum.fx.island.IslandPrefs
+import dev.continuum.fx.island.IslandRepository
+import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.AppActions
 import dev.continuum.fx.ui.AppScreen
+import dev.continuum.fx.ui.Section
 import dev.continuum.fx.ui.UiState
 import dev.continuum.fx.ui.theme.ContinuumTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,6 +49,8 @@ class MainActivity : ComponentActivity(), AppActions {
     private val privileges = MutableStateFlow(PrivilegeState())
     private val message = MutableStateFlow<String?>(null)
     private val setupOpen = MutableStateFlow(false)
+    private val section = MutableStateFlow(Section.Sound)
+    private var afterShizukuPermission: (() -> Unit)? = null
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
@@ -64,7 +74,7 @@ class MainActivity : ComponentActivity(), AppActions {
     private val shizukuPermission = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
         runOnUiThread {
             if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                runShizukuGrant()
+                afterShizukuPermission?.invoke()
             } else {
                 message.value = "Shizuku permission was declined."
             }
@@ -79,6 +89,11 @@ class MainActivity : ComponentActivity(), AppActions {
         Shizuku.addBinderDeadListener(binderDead)
         Shizuku.addRequestPermissionResultListener(shizukuPermission)
         refresh()
+        section.value = try {
+            Section.valueOf(getSharedPreferences("ui", MODE_PRIVATE).getString("section", null) ?: Section.Sound.name)
+        } catch (_: Exception) {
+            Section.Sound
+        }
         if (savedInstanceState == null) handleIntent(intent)
 
         setContent {
@@ -90,9 +105,19 @@ class MainActivity : ComponentActivity(), AppActions {
             val priv by privileges.collectAsState()
             val open by setupOpen.collectAsState()
             val msg by message.collectAsState()
+            val sec by section.collectAsState()
+            val island by IslandSettings.state.collectAsState()
+            val islandLive by IslandRepository.hostActive.collectAsState()
+            val islandFed by IslandRepository.listenerActive.collectAsState()
             ContinuumTheme {
                 AppScreen(
-                    state = UiState(library, running, error, processing, blocked, priv, open, msg),
+                    state = UiState(
+                        library, running, error, processing, blocked, priv, open, msg,
+                        section = sec,
+                        island = island,
+                        islandLive = islandLive && island.enabled,
+                        islandFed = islandFed,
+                    ),
                     store = store,
                     actions = this,
                 )
@@ -151,12 +176,94 @@ class MainActivity : ComponentActivity(), AppActions {
             ShizukuState.NOT_RUNNING ->
                 message.value = "Shizuku isn't running. Start it in the Shizuku app, or use the ADB commands."
             ShizukuState.NEEDS_PERMISSION -> try {
+                afterShizukuPermission = ::runShizukuGrant
                 Shizuku.requestPermission(REQUEST_SHIZUKU)
             } catch (_: Throwable) {
                 message.value = "Couldn't reach Shizuku. Try the ADB commands instead."
             }
             ShizukuState.READY -> runShizukuGrant()
         }
+    }
+
+    override fun grantIslandWithShizuku() {
+        when (Privileges.shizukuState()) {
+            ShizukuState.NOT_RUNNING ->
+                message.value = "Shizuku isn't running. Start it in the Shizuku app, or use the settings buttons."
+            ShizukuState.NEEDS_PERMISSION -> try {
+                afterShizukuPermission = ::runIslandShizukuGrant
+                Shizuku.requestPermission(REQUEST_SHIZUKU)
+            } catch (_: Throwable) {
+                message.value = "Couldn't reach Shizuku. Use the settings buttons instead."
+            }
+            ShizukuState.READY -> runIslandShizukuGrant()
+        }
+    }
+
+    private fun runIslandShizukuGrant() {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) { Privileges.grantIslandWithShizuku(packageName) }
+            delay(700)
+            refresh()
+            val ready = privileges.value.islandReady
+            if (ready) IslandSettings.update { it.copy(enabled = true) }
+            message.value = when {
+                ready -> "The island is on."
+                ok -> "Nearly there. Check the steps that are left."
+                else -> "Shizuku couldn't switch it on. Use the settings buttons instead."
+            }
+        }
+    }
+
+    override fun setSection(section: Section) {
+        this.section.value = section
+        setupOpen.value = false
+        getSharedPreferences("ui", MODE_PRIVATE).edit().putString("section", section.name).apply()
+    }
+
+    override fun toggleIsland() {
+        refresh()
+        if (!privileges.value.islandReady) {
+            setupOpen.value = true
+            return
+        }
+        IslandSettings.update { it.copy(enabled = !it.enabled) }
+    }
+
+    override fun updateIsland(transform: (IslandPrefs) -> IslandPrefs) {
+        IslandSettings.update(transform)
+    }
+
+    override fun openAccessibilitySettings() {
+        startSafely(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    override fun openListenerSettings() {
+        val component = ComponentName(this, IslandNotificationListener::class.java)
+        val detail = if (Build.VERSION.SDK_INT >= 30) {
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString())
+        } else {
+            null
+        }
+        if (detail == null || !startSafely(detail, quiet = true)) startSafely(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    override fun openAppInfo() {
+        startSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+    }
+
+    override fun copyIslandCommands() {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("ADB commands", Privileges.islandAdbCommands(packageName)))
+        message.value = "Commands copied."
+    }
+
+    private fun startSafely(intent: Intent, quiet: Boolean = false): Boolean = try {
+        startActivity(intent)
+        true
+    } catch (_: Exception) {
+        if (!quiet) message.value = "Couldn't open that settings page."
+        false
     }
 
     private fun runShizukuGrant() {

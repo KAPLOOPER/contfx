@@ -2,10 +2,15 @@ package dev.continuum.fx.setup
 
 import android.Manifest
 import android.app.AppOpsManager
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
+import android.provider.Settings
+import dev.continuum.fx.island.IslandAccessibilityService
+import dev.continuum.fx.island.IslandNotificationListener
 import rikka.shizuku.Shizuku
 
 /** What the app has been granted, shown as the steps of the setup sheet. */
@@ -15,9 +20,16 @@ data class PrivilegeState(
     val dump: Boolean = false,
     val projectMedia: Boolean = false,
     val shizuku: ShizukuState = ShizukuState.NOT_RUNNING,
+    /** The island's accessibility service is switched on. */
+    val islandOverlay: Boolean = false,
+    /** The island's notification listener has access. */
+    val islandListener: Boolean = false,
 ) {
     /** Everything required before processing can start. */
     val ready: Boolean get() = recordAudio && dump
+
+    /** Everything the island needs. */
+    val islandReady: Boolean get() = islandOverlay && islandListener
 }
 
 enum class ShizukuState { NOT_RUNNING, NEEDS_PERMISSION, READY }
@@ -33,7 +45,50 @@ object Privileges {
         dump = granted(context, DUMP),
         projectMedia = projectMediaAllowed(context),
         shizuku = shizukuState(),
+        islandOverlay = accessibilityOn(context),
+        islandListener = listenerOn(context),
     )
+
+    private fun accessibilityOn(context: Context): Boolean = try {
+        val target = ComponentName(context, IslandAccessibilityService::class.java)
+        Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            ?.split(':')
+            ?.any { ComponentName.unflattenFromString(it) == target } == true
+    } catch (_: Throwable) {
+        false
+    }
+
+    private fun listenerOn(context: Context): Boolean = try {
+        context.getSystemService(NotificationManager::class.java)
+            .isNotificationListenerAccessGranted(ComponentName(context, IslandNotificationListener::class.java))
+    } catch (_: Throwable) {
+        false
+    }
+
+    private fun islandService(packageName: String) = "$packageName/$packageName.island.IslandAccessibilityService"
+    private fun islandListener(packageName: String) = "$packageName/$packageName.island.IslandNotificationListener"
+
+    /** For computers: unlock the restricted settings and give notification access. */
+    fun islandAdbCommands(packageName: String): String =
+        "adb shell appops set $packageName ACCESS_RESTRICTED_SETTINGS allow\n" +
+            "adb shell cmd notification allow_listener ${islandListener(packageName)}"
+
+    /**
+     * Switches the island on through Shizuku: unlocks restricted settings, grants
+     * notification access and adds the accessibility service to the enabled list,
+     * keeping any services that are already on. Blocks; call it off the main thread.
+     */
+    fun grantIslandWithShizuku(packageName: String): Boolean {
+        val service = islandService(packageName)
+        shizukuExec("appops set $packageName ACCESS_RESTRICTED_SETTINGS allow")
+        val listener = shizukuExec("cmd notification allow_listener ${islandListener(packageName)}")
+        val script = "s=\$(settings get secure enabled_accessibility_services); " +
+            "case \"\$s\" in *$service*) ;; null|'') settings put secure enabled_accessibility_services $service ;; " +
+            "*) settings put secure enabled_accessibility_services \"\$s:$service\" ;; esac; " +
+            "settings put secure accessibility_enabled 1"
+        val overlay = shizukuExec(script)
+        return listener && overlay
+    }
 
     fun adbCommands(packageName: String): String =
         "adb shell pm grant $packageName $DUMP\n" +

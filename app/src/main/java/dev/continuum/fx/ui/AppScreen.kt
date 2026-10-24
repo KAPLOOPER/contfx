@@ -3,6 +3,7 @@ package dev.continuum.fx.ui
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +56,7 @@ import dev.continuum.fx.dsp.EqBand
 import dev.continuum.fx.dsp.EqLimits
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.FilterType
+import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
@@ -65,10 +68,13 @@ import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
+import dev.continuum.fx.ui.components.squash
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
+
+enum class Section { Sound, Island }
 
 data class UiState(
     val library: Library,
@@ -79,6 +85,12 @@ data class UiState(
     val privileges: PrivilegeState,
     val setupOpen: Boolean,
     val message: String?,
+    val section: Section = Section.Sound,
+    val island: IslandPrefs = IslandPrefs(),
+    /** The island is attached and drawing right now. */
+    val islandLive: Boolean = false,
+    /** The island's notification listener is connected right now. */
+    val islandFed: Boolean = false,
 )
 
 interface AppActions {
@@ -92,18 +104,22 @@ interface AppActions {
     fun shareActive()
     fun setSetupOpen(open: Boolean)
     fun dismissMessage()
+    fun setSection(section: Section)
+    fun toggleIsland()
+    fun updateIsland(transform: (IslandPrefs) -> IslandPrefs)
+    fun grantIslandWithShizuku()
+    fun openAccessibilitySettings()
+    fun openListenerSettings()
+    fun openAppInfo()
+    fun copyIslandCommands()
 }
 
 @Composable
-private fun Gap(height: Dp) = Spacer(Modifier.height(height))
+internal fun Gap(height: Dp) = Spacer(Modifier.height(height))
 
 @Composable
 fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     val p = LocalPalette.current
-    val library = state.library
-    val profile = library.active
-    var selected by remember(profile.id) { mutableIntStateOf(-1) }
-
     BackHandler(enabled = state.setupOpen) { actions.setSetupOpen(false) }
 
     Box(Modifier.fillMaxSize().background(p.ground)) {
@@ -115,97 +131,132 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 .navigationBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
         ) {
-            Txt("Continuum FX", 34.sp, p.text, bold = true)
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                SectionTitle("Sound", state.section == Section.Sound) { actions.setSection(Section.Sound) }
+                SectionTitle("Island", state.section == Section.Island) { actions.setSection(Section.Island) }
+            }
             Gap(2.dp)
-            StatusLine(state)
-            Gap(20.dp)
-
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                library.profiles.forEach { pr ->
-                    Chip(pr.name, pr.id == library.activeId, onClick = { store.select(pr.id) })
-                }
-                PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
-                PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
-            }
-            Gap(16.dp)
-
-            EqGraph(
-                profile = profile,
-                selected = selected,
-                onSelect = { selected = it },
-                onMove = { i, f, g ->
-                    store.updateActive { pr ->
-                        pr.copy(bands = pr.bands.mapIndexed { j, b ->
-                            if (j != i) b else b.copy(
-                                frequency = Fmt.roundFreq(f),
-                                gainDb = if (b.type.usesGain) Fmt.round1(g.coerceIn(EqLimits.MIN_GAIN, EqLimits.MAX_GAIN)) else b.gainDb,
-                            )
-                        })
+            Crossfade(targetState = state.section, label = "section") { section ->
+                when (section) {
+                    Section.Sound -> Column {
+                        StatusLine(state)
+                        Gap(20.dp)
+                        SoundContent(state, store, actions)
                     }
-                },
-            )
-            Gap(18.dp)
-
-            PreampSection(
-                preampDb = profile.preampDb,
-                eqEnabled = library.eqEnabled,
-                onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
-                onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
-                onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
-            )
-            Gap(26.dp)
-
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Txt("Filters", 21.sp, p.text, bold = true)
-                Spacer(Modifier.width(8.dp))
-                Txt("${profile.bands.size}", 17.sp, p.sub, modifier = Modifier.weight(1f))
-                IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
-                    val newIndex = profile.bands.size
-                    store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
-                    selected = newIndex
-                })
-            }
-            Gap(8.dp)
-            if (profile.bands.isEmpty()) {
-                Txt("No filters yet. Add one, or import an EQ exported from squig.link.", 16.sp, p.sub)
-            }
-            profile.bands.forEachIndexed { i, band ->
-                BandCard(
-                    band = band,
-                    expanded = selected == i,
-                    onToggle = { selected = if (selected == i) -1 else i },
-                    onChange = { nb ->
-                        store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
-                    },
-                    onRemove = {
-                        store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
-                        selected = -1
-                    },
-                )
-                Gap(8.dp)
-            }
-            Gap(14.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
-                PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
-            }
-            if (state.blocked.isNotEmpty()) {
-                Gap(18.dp)
-                val names = state.blocked.joinToString()
-                val one = state.blocked.size == 1
-                Txt(
-                    "$names ${if (one) "blocks" else "block"} audio capture, so ${if (one) "it plays" else "they play"} without effects.",
-                    15.sp, p.sub,
-                )
+                    Section.Island -> IslandContent(state, actions)
+                }
             }
         }
 
         MessagePill(state.message, actions::dismissMessage, Modifier.align(Alignment.BottomCenter))
         Dock(state, actions, Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/** The page titles double as tabs: the current one in full ink, the other a tone down. */
+@Composable
+private fun SectionTitle(text: String, selected: Boolean, onClick: () -> Unit) {
+    val p = LocalPalette.current
+    val source = remember { MutableInteractionSource() }
+    val color by animateColorAsState(if (selected) p.text else p.sub, Motion.flow(), label = "sectionColor")
+    Box(
+        Modifier
+            .squash(source)
+            .clickable(interactionSource = source, indication = null, role = Role.Tab, onClick = onClick),
+    ) {
+        Txt(text, 34.sp, color, bold = true, maxLines = 1)
+    }
+}
+
+@Composable
+private fun SoundContent(state: UiState, store: ProfileStore, actions: AppActions) {
+    val p = LocalPalette.current
+    val library = state.library
+    val profile = library.active
+    var selected by remember(profile.id) { mutableIntStateOf(-1) }
+    Column {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            library.profiles.forEach { pr ->
+                Chip(pr.name, pr.id == library.activeId, onClick = { store.select(pr.id) })
+            }
+            PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
+            PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
+        }
+        Gap(16.dp)
+
+        EqGraph(
+            profile = profile,
+            selected = selected,
+            onSelect = { selected = it },
+            onMove = { i, f, g ->
+                store.updateActive { pr ->
+                    pr.copy(bands = pr.bands.mapIndexed { j, b ->
+                        if (j != i) b else b.copy(
+                            frequency = Fmt.roundFreq(f),
+                            gainDb = if (b.type.usesGain) Fmt.round1(g.coerceIn(EqLimits.MIN_GAIN, EqLimits.MAX_GAIN)) else b.gainDb,
+                        )
+                    })
+                }
+            },
+        )
+        Gap(18.dp)
+
+        PreampSection(
+            preampDb = profile.preampDb,
+            eqEnabled = library.eqEnabled,
+            onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
+            onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
+            onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
+        )
+        Gap(26.dp)
+
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Filters", 21.sp, p.text, bold = true)
+            Spacer(Modifier.width(8.dp))
+            Txt("${profile.bands.size}", 17.sp, p.sub, modifier = Modifier.weight(1f))
+            IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
+                val newIndex = profile.bands.size
+                store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
+                selected = newIndex
+            })
+        }
+        Gap(8.dp)
+        if (profile.bands.isEmpty()) {
+            Txt("No filters yet. Add one, or import an EQ exported from squig.link.", 16.sp, p.sub)
+        }
+        profile.bands.forEachIndexed { i, band ->
+            BandCard(
+                band = band,
+                expanded = selected == i,
+                onToggle = { selected = if (selected == i) -1 else i },
+                onChange = { nb ->
+                    store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
+                },
+                onRemove = {
+                    store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
+                    selected = -1
+                },
+            )
+            Gap(8.dp)
+        }
+        Gap(14.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
+            PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
+        }
+        if (state.blocked.isNotEmpty()) {
+            Gap(18.dp)
+            val names = state.blocked.joinToString()
+            val one = state.blocked.size == 1
+            Txt(
+                "$names ${if (one) "blocks" else "block"} audio capture, so ${if (one) "it plays" else "they play"} without effects.",
+                15.sp, p.sub,
+            )
+        }
     }
 }
 
@@ -402,8 +453,13 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
             .clip(shape)
             .background(p.ink),
     ) {
-        Crossfade(targetState = state.setupOpen, label = "dockContent") { open ->
-            if (open) SetupSheet(state, actions) else DockBar(state, actions)
+        Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
+            when {
+                open && section == Section.Island -> IslandSetupSheet(state, actions)
+                open -> SetupSheet(state, actions)
+                section == Section.Island -> IslandDockBar(state, actions)
+                else -> DockBar(state, actions)
+            }
         }
     }
 }
@@ -511,7 +567,7 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
 }
 
 @Composable
-private fun StepRow(
+internal fun StepRow(
     number: Int,
     done: Boolean,
     title: String,

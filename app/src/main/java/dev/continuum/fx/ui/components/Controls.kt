@@ -190,7 +190,7 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit, on: Surface = Su
 
 /** The power control in the dock: tonal when off, a solid near-white fill when on. */
 @Composable
-fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit) {
+fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: String = "processing") {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val bg by animateColorAsState(if (on) p.onInk else p.inkTonal, Motion.flow(), label = "powerBg")
@@ -206,7 +206,7 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit) {
     ) {
         Image(
             painterResource(icon),
-            contentDescription = if (on) "Turn processing off" else "Turn processing on",
+            contentDescription = if (on) "Turn $what off" else "Turn $what on",
             modifier = Modifier.size(26.dp),
             colorFilter = ColorFilter.tint(fg),
         )

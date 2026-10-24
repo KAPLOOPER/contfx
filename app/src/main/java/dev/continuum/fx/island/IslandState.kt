@@ -263,6 +263,10 @@ data class IslandPrefs(
     val battery: Boolean = true,
     /** Drag the island down to pull a drop of recent notifications out of it. */
     val pull: Boolean = true,
+    /** Keep the time in the island at all times, beside whatever else is live. */
+    val alwaysTime: Boolean = false,
+    /** Keep the battery in the island at all times, beside whatever else is live. */
+    val alwaysBattery: Boolean = false,
 )
 
 object IslandSettings {
@@ -282,6 +286,8 @@ object IslandSettings {
             notifications = p.getBoolean("notifications", true),
             battery = p.getBoolean("battery", true),
             pull = p.getBoolean("pull", true),
+            alwaysTime = p.getBoolean("alwaysTime", false),
+            alwaysBattery = p.getBoolean("alwaysBattery", false),
         )
     }
 
@@ -296,6 +302,8 @@ object IslandSettings {
             ?.putBoolean("notifications", next.notifications)
             ?.putBoolean("battery", next.battery)
             ?.putBoolean("pull", next.pull)
+            ?.putBoolean("alwaysTime", next.alwaysTime)
+            ?.putBoolean("alwaysBattery", next.alwaysBattery)
             ?.apply()
     }
 }

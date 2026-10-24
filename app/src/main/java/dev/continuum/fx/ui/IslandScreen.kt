@@ -105,6 +105,20 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
+        Txt("Always on", 21.sp, p.text, bold = true)
+        Gap(2.dp)
+        Txt("Kept in the island all the time, beside music, calls and timers.", 15.sp, p.sub)
+        Gap(10.dp)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+            ToggleRow("Time", "On the left of the island. With nothing else on, the date sits opposite.", prefs.alwaysTime) {
+                actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
+            }
+            ToggleRow("Battery", "On the right, in a liquid battery that ripples while charging. Tap the island for details.", prefs.alwaysBattery) {
+                actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
+            }
+        }
+        Gap(28.dp)
+
         Txt("How it moves", 21.sp, p.text, bold = true)
         Gap(4.dp)
         Txt(

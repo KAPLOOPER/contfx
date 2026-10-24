@@ -1,6 +1,8 @@
 package dev.continuum.fx.island.ui
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.text.format.DateFormat
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.LinearEasing
@@ -75,6 +77,9 @@ import dev.continuum.fx.ui.components.squash
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
@@ -253,27 +258,79 @@ internal fun InkPill(
 
 // ---- Compact island: content either side of the camera ----
 
+/** The always-on extras for the pill. Null means not shown. */
+internal class Ambient(val time: String?, val date: String?, val battery: BatteryInfo?)
+
+internal fun clockText(context: Context, at: Long): String {
+    val pattern = if (DateFormat.is24HourFormat(context)) "H:mm" else "h:mm"
+    return Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern(pattern))
+}
+
+internal fun dateText(at: Long): String =
+    Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("EEE d", Locale.getDefault()))
+
 @Composable
-internal fun CompactContent(kind: Kind, side: Dp, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, battery: BatteryInfo?, now: Long, height: Dp) {
+internal fun BatteryChip(b: BatteryInfo) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        InkBattery(b, width = 20.dp, height = 11.dp)
+        Txt("${b.level}%", 13.sp, batteryColor(b), bold = true, maxLines = 1)
+    }
+}
+
+/**
+ * The pill: the live activity either side of the camera, with the always-on time on
+ * the far left and battery on the far right. With nothing live, the extras alone.
+ */
+@Composable
+internal fun PillContent(
+    kind: Kind?,
+    side: Dp,
+    ambient: Ambient,
+    media: MediaInfo?,
+    call: CallInfo?,
+    timer: TimerInfo?,
+    battery: BatteryInfo?,
+    now: Long,
+    height: Dp,
+) {
+    val extraBattery = ambient.battery
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(side).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+        Row(
+            Modifier
+                .width(side)
+                .fillMaxHeight()
+                .padding(start = if (kind == Kind.Media && ambient.time == null) 6.dp else 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (ambient.time != null) Txt(ambient.time, 14.sp, InkColors.on, bold = true, maxLines = 1)
             when (kind) {
-                Kind.Media -> if (media != null) {
-                    Art(media.art, Color(media.accent), height - 12.dp, CircleShape, Modifier.padding(start = 6.dp))
-                }
-                Kind.Call -> Glyph(R.drawable.ic_call, InkColors.live, 18.dp, Modifier.padding(start = 14.dp))
-                Kind.Timer -> Glyph(R.drawable.ic_timer, InkColors.on, 18.dp, Modifier.padding(start = 14.dp))
-                Kind.Battery -> if (battery != null) InkBattery(battery, Modifier.padding(start = 14.dp))
+                Kind.Media -> if (media != null) Art(media.art, Color(media.accent), height - 12.dp, CircleShape)
+                Kind.Call -> Glyph(R.drawable.ic_call, InkColors.live, 18.dp)
+                Kind.Timer -> Glyph(R.drawable.ic_timer, InkColors.on, 18.dp)
+                Kind.Battery -> if (battery != null) InkBattery(battery)
+                null -> if (ambient.time == null && extraBattery != null) InkBattery(extraBattery)
             }
         }
         Spacer(Modifier.weight(1f))
-        Box(Modifier.width(side).fillMaxHeight().padding(end = 14.dp), contentAlignment = Alignment.CenterEnd) {
+        Row(
+            Modifier.width(side).fillMaxHeight().padding(end = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             when (kind) {
                 Kind.Media -> if (media != null) InkPulse(Color(media.accent), media.playing)
                 Kind.Call -> if (call != null) Txt(callText(call, now), 14.sp, InkColors.live, bold = true, maxLines = 1)
                 Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 14.sp, InkColors.on, bold = true, maxLines = 1)
                 Kind.Battery -> if (battery != null) Txt("${battery.level}%", 14.sp, batteryColor(battery), bold = true, maxLines = 1)
+                null -> when {
+                    extraBattery != null && ambient.time == null ->
+                        Txt("${extraBattery.level}%", 14.sp, batteryColor(extraBattery), bold = true, maxLines = 1)
+                    extraBattery == null && ambient.date != null ->
+                        Txt(ambient.date, 13.sp, InkColors.sub, maxLines = 1)
+                }
             }
+            if (extraBattery != null && (kind != null || ambient.time != null)) BatteryChip(extraBattery)
         }
     }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -61,7 +62,7 @@ import kotlin.math.roundToInt
 
 enum class Kind { Call, Media, Timer, Battery }
 
-private data class Mode(val kind: Kind?, val expanded: Boolean)
+private data class Mode(val kind: Kind?, val expanded: Boolean, val time: Boolean, val battery: Boolean)
 
 private sealed interface Drip {
     val key: String
@@ -127,7 +128,23 @@ fun IslandRoot(
     val call = callRaw?.takeIf { prefs.calls }
     val timer = timerRaw?.takeIf { prefs.timers }
     val note = noteRaw?.takeIf { prefs.notifications }
-    val battery = (batteryDemo ?: batteryReal)?.takeIf { prefs.battery }
+    val batteryData = batteryDemo ?: batteryReal
+    val battery = batteryData?.takeIf { prefs.battery }
+
+    // The always-on clock: checked every second, but only changes once a minute, so it
+    // is right again the moment the screen wakes.
+    val context = LocalContext.current
+    val alwaysTime = prefs.alwaysTime
+    val clock by produceState(System.currentTimeMillis(), alwaysTime) {
+        value = System.currentTimeMillis()
+        while (alwaysTime) {
+            delay(1_000)
+            val t = System.currentTimeMillis()
+            if (t / 60_000 != value / 60_000) value = t
+        }
+    }
+    val timeLabel = if (alwaysTime) clockText(context, clock) else null
+    val dateLabel = if (alwaysTime) dateText(clock) else null
 
     // A one-second clock, running only while something on the island counts.
     val ticking = timer != null || call?.ringing == false || media?.playing == false
@@ -163,7 +180,7 @@ fun IslandRoot(
     val ongoing = call?.takeIf { !it.ringing }
     val ringing = call?.takeIf { it.ringing }
     val kinds = buildList {
-        if (battery != null && (batteryShowing || expanded == Kind.Battery)) add(Kind.Battery)
+        if (batteryData != null && ((battery != null && batteryShowing) || expanded == Kind.Battery)) add(Kind.Battery)
         if (ongoing != null) add(Kind.Call)
         if (mediaShown) add(Kind.Media)
         if (timer != null) add(Kind.Timer)
@@ -175,7 +192,12 @@ fun IslandRoot(
     val lastMedia = rememberLast(media)
     val lastCall = rememberLast(ongoing)
     val lastTimer = rememberLast(timer)
-    val lastBattery = rememberLast(battery)
+    val lastBattery = rememberLast(batteryData)
+
+    // Always-on extras share the pill with whatever is live.
+    val ambientBattery = if (prefs.alwaysBattery && primary != Kind.Battery) batteryData else null
+    val ambient = alwaysTime || ambientBattery != null
+    val pillShown = primary != null || ambient
     val lastSecondary = rememberLast(secondary)
 
     // ---- The pulled drop ----
@@ -248,6 +270,24 @@ fun IslandRoot(
         Kind.Timer -> px(if (timerLabel.length > 5) 80f else 66f)
         Kind.Battery -> px(66f)
     }
+    val timeW = px(if ((timeLabel?.length ?: 0) > 4) 46f else 40f)
+    val chipW = px(54f)
+    /** One side of the pill, either side of the camera, with room for the always-on extras. */
+    fun pillSide(k: Kind?, time: Boolean, batt: Boolean): Float {
+        val tw = if (time) timeW else 0f
+        val bw = if (batt) chipW else 0f
+        return if (k == null) {
+            val left = if (time) tw else px(26f)
+            val right = when {
+                batt && time -> bw
+                time -> px(54f)
+                else -> px(40f)
+            }
+            px(14f) + max(left, right)
+        } else {
+            sideOf(k) + max(tw, bw)
+        }
+    }
     fun budWidthOf(k: Kind): Float = when (k) {
         Kind.Media -> band
         Kind.Call -> px(if (callLabel.length > 5) 96f else 82f)
@@ -267,20 +307,20 @@ fun IslandRoot(
         return if (w >= sw - margin * 2f) sw / 2f else spot.cx.coerceIn(margin + w / 2f, sw - margin - w / 2f)
     }
 
-    val mode = Mode(primary, open != null)
+    val mode = Mode(primary, open != null, alwaysTime && open == null, ambientBattery != null && open == null)
     val tW: Float
     val tH: Float
     val tTop: Float
     val tR: Float
     when {
-        primary == null -> {
+        primary == null && !ambient -> {
             tW = idleR * 2f; tH = idleR * 2f; tTop = spot.cy - idleR; tR = idleR
         }
         open != null -> {
             tW = cardW; tH = expandedHeight(open); tTop = top; tR = px(30f)
         }
         else -> {
-            tW = camSlot + sideOf(primary) * 2f; tH = band; tTop = top; tR = band / 2f
+            tW = camSlot + pillSide(primary, mode.time, mode.battery) * 2f; tH = band; tTop = top; tR = band / 2f
         }
     }
     val mW by animateFloatAsState(tW, Motion.flow(), label = "mainW")
@@ -377,6 +417,7 @@ fun IslandRoot(
 
     val canPull = prefs.pull && drip == null && open == null
     val canPullNow by rememberUpdatedState(canPull)
+    val tapTarget by rememberUpdatedState(primary ?: if (ambientBattery != null) Kind.Battery else null)
 
     fun haptic(strong: Boolean) {
         val kind = when {
@@ -441,12 +482,12 @@ fun IslandRoot(
     val idleGrab = Rect(spot.cx - px(30f), 0f, spot.cx + px(30f), spot.cy + idleR + px(14f))
     val grabRect: Rect? = when {
         open != null -> null
-        primary != null -> mainTarget
+        pillShown -> mainTarget
         prefs.pull -> idleGrab
         else -> null
     }
     val touchRect: android.graphics.Rect? = run {
-        var u: Rect? = if (primary != null) mainTarget else grabRect
+        var u: Rect? = if (pillShown) mainTarget else grabRect
         if (budOut) u = u?.let { unionOf(it, budTarget) } ?: budTarget
         if (dripVisible) u = u?.let { unionOf(it, dripTarget) } ?: unionOf(mainTarget, dripTarget)
         u?.let { android.graphics.Rect(it.left.toInt(), it.top.toInt(), it.right.roundToInt(), it.bottom.roundToInt()) }
@@ -482,9 +523,10 @@ fun IslandRoot(
         // ---- Content on the ink, clipped to the ink as it moves ----
 
         Crossfade(targetState = mode, modifier = Modifier.fillMaxSize(), animationSpec = tween(220), label = "islandContent") { md ->
-            val k = md.kind ?: return@Crossfade
-            val w = if (md.expanded) cardW else camSlot + sideOf(k) * 2f
-            val h = if (md.expanded) expandedHeight(k) else band
+            val k = md.kind
+            if (k == null && !md.time && !md.battery) return@Crossfade
+            val w = if (md.expanded && k != null) cardW else camSlot + pillSide(k, md.time, md.battery) * 2f
+            val h = if (md.expanded && k != null) expandedHeight(k) else band
             val left = centerFor(w) - w / 2f
             Box(Modifier.fillMaxSize()) {
                 Box(
@@ -522,7 +564,7 @@ fun IslandRoot(
                             },
                         ),
                 ) {
-                    if (md.expanded) {
+                    if (md.expanded && k != null) {
                         when (k) {
                             Kind.Media -> lastMedia?.let { ExpandedMedia(it, toDp(band)) }
                             Kind.Call -> lastCall?.let { ExpandedCall(it, now, toDp(band)) }
@@ -530,7 +572,21 @@ fun IslandRoot(
                             Kind.Battery -> lastBattery?.let { ExpandedBattery(it, toDp(band)) }
                         }
                     } else {
-                        CompactContent(k, toDp(sideOf(k)), lastMedia, lastCall, lastTimer, lastBattery, now, toDp(band))
+                        PillContent(
+                            kind = k,
+                            side = toDp(pillSide(k, md.time, md.battery)),
+                            ambient = Ambient(
+                                time = if (md.time) timeLabel else null,
+                                date = if (md.time) dateLabel else null,
+                                battery = if (md.battery) ambientBattery ?: lastBattery else null,
+                            ),
+                            media = lastMedia,
+                            call = lastCall,
+                            timer = lastTimer,
+                            battery = lastBattery,
+                            now = now,
+                            height = toDp(band),
+                        )
                     }
                 }
             }
@@ -543,9 +599,9 @@ fun IslandRoot(
                     Modifier
                         .offset { IntOffset(grabRect.left.roundToInt(), grabRect.top.roundToInt()) }
                         .size(toDp(grabRect.width), toDp(grabRect.height))
-                        .pointerInput(primary) {
+                        .pointerInput(Unit) {
                             detectTapGestures(
-                                onTap = { primary?.let { expanded = it } },
+                                onTap = { tapTarget?.let { expanded = it } },
                                 onLongPress = { if (canPullNow) haptic(strong = false) },
                             )
                         }

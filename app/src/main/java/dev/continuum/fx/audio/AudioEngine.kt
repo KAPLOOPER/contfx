@@ -1,0 +1,132 @@
+package dev.continuum.fx.audio
+
+import android.annotation.SuppressLint
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.projection.MediaProjection
+import android.os.Process
+import dev.continuum.fx.data.Library
+import dev.continuum.fx.dsp.EqResponse
+import dev.continuum.fx.dsp.Limiter
+import dev.continuum.fx.dsp.ParametricEq
+import kotlin.math.max
+
+/**
+ * Captures what other apps play, runs it through the DSP chain and plays it back.
+ * The original copies are silenced separately by [SessionWatcher].
+ */
+class AudioEngine(
+    private val projection: MediaProjection,
+    private val onFailure: (String) -> Unit,
+) {
+    private val sampleRate = EqResponse.SAMPLE_RATE.toInt()
+    private val framesPerChunk = 480 // 10 ms at 48 kHz
+
+    private val eq = ParametricEq(channels = 2, sampleRate = sampleRate.toDouble())
+    private val limiter = Limiter(sampleRate.toDouble())
+
+    @Volatile
+    private var running = false
+    private var thread: Thread? = null
+    private var record: AudioRecord? = null
+    private var track: AudioTrack? = null
+
+    fun applyLibrary(library: Library) {
+        eq.setProfile(if (library.eqEnabled) library.active else null)
+    }
+
+    // RECORD_AUDIO is checked before the service is started.
+    @SuppressLint("MissingPermission")
+    fun start() {
+        val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+
+        val inFormat = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+            .build()
+        val minIn = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+        val rec = AudioRecord.Builder()
+            .setAudioFormat(inFormat)
+            .setBufferSizeInBytes(max(minIn, framesPerChunk * 2 * 4 * 4))
+            .setAudioPlaybackCaptureConfig(captureConfig)
+            .build()
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            rec.release()
+            throw IllegalStateException("Couldn't open audio capture")
+        }
+
+        val outFormat = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+            .build()
+        val outAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            // Never let our own output be captured again, or it would loop.
+            .setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
+            .build()
+        val minOut = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
+        val out = AudioTrack.Builder()
+            .setAudioAttributes(outAttributes)
+            .setAudioFormat(outFormat)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setBufferSizeInBytes(max(minOut, framesPerChunk * 2 * 4 * 4))
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+            .build()
+
+        record = rec
+        track = out
+        rec.startRecording()
+        out.play()
+        running = true
+        thread = Thread({ loop(rec, out) }, "ContinuumAudio").apply {
+            priority = Thread.MAX_PRIORITY
+            start()
+        }
+    }
+
+    private fun loop(rec: AudioRecord, out: AudioTrack) {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+        val buffer = FloatArray(framesPerChunk * 2)
+        while (running) {
+            val read = rec.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+            if (read < 0) {
+                if (running) onFailure("Audio capture stopped unexpectedly (error $read)")
+                break
+            }
+            if (read == 0) continue
+            val frames = read / 2
+            eq.process(buffer, frames)
+            limiter.process(buffer, frames)
+            out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
+        }
+    }
+
+    fun stop() {
+        running = false
+        try {
+            record?.stop()
+        } catch (_: Exception) {
+        }
+        thread?.join(500)
+        thread = null
+        try {
+            track?.pause()
+            track?.flush()
+        } catch (_: Exception) {
+        }
+        record?.release()
+        track?.release()
+        record = null
+        track = null
+    }
+}

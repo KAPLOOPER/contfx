@@ -1,6 +1,7 @@
 package dev.continuum.fx.island.ui
 
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -41,14 +42,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import dev.continuum.fx.R
+import dev.continuum.fx.island.BatteryInfo
 import dev.continuum.fx.island.CallInfo
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.MediaInfo
@@ -103,29 +110,39 @@ internal fun Glyph(@DrawableRes icon: Int, tint: Color, size: Dp = 18.dp, modifi
     Image(painterResource(icon), contentDescription = null, modifier = modifier.size(size), colorFilter = ColorFilter.tint(tint))
 }
 
-/** Playing bars in the track's own colour: content brings the colour, the ink stays black. */
+/**
+ * The playing indicator: three drops of the track's colour that bob and fuse like
+ * liquid. At rest they settle into one calm pill. Content brings the colour; the
+ * island stays black.
+ */
 @Composable
-internal fun Bars(color: Color, playing: Boolean, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "bars")
+internal fun InkPulse(color: Color, playing: Boolean, modifier: Modifier = Modifier, width: Dp = 24.dp, height: Dp = 20.dp) {
+    val transition = rememberInfiniteTransition(label = "pulse")
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
-        label = "barsPhase",
+        animationSpec = infiniteRepeatable(tween(1700, easing = LinearEasing)),
+        label = "pulsePhase",
     )
-    val level by animateFloatAsState(if (playing) 1f else 0f, Motion.flow(), label = "barsLevel")
-    Canvas(modifier.size(18.dp, 14.dp)) {
-        val n = 4
-        val bw = size.width / (n * 2 - 1)
+    val level by animateFloatAsState(if (playing) 1f else 0f, Motion.flow(), label = "pulseLevel")
+    val density = LocalDensity.current
+    val goo = remember(density) {
+        if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 2.4.dp.toPx() }) else null
+    }
+    Canvas(modifier.size(width, height).graphicsLayer { renderEffect = goo }) {
+        val tau = 2f * PI.toFloat()
+        val n = 3
+        val step = size.width / (n + 0.8f)
+        val r0 = size.height * 0.19f
         for (i in 0 until n) {
-            val wave = ((sin((phase + i * 0.29f) * 2f * PI.toFloat()) + 1f) / 2f)
-            val shaped = 0.35f + 0.65f * ((wave + (i % 2) * 0.35f) % 1f)
-            val h = size.height * (0.22f + 0.78f * shaped * level)
-            drawRoundRect(
+            // Whole-number multiples of the phase only, so the loop has no seam.
+            val bob = sin(tau * phase + i * 2.1f) * size.height * 0.2f * level
+            val swell = 1f + 0.25f * level * sin(tau * 2f * phase + i * 1.7f)
+            val drift = sin(tau * phase + i * 0.9f) * step * 0.12f * level
+            drawCircle(
                 color = color,
-                topLeft = Offset(i * 2 * bw, (size.height - h) / 2f),
-                size = Size(bw, h),
-                cornerRadius = CornerRadius(bw / 2f),
+                radius = r0 * swell,
+                center = Offset(step * (i + 0.9f) + drift, size.height / 2f + bob),
             )
         }
     }
@@ -237,7 +254,7 @@ internal fun InkPill(
 // ---- Compact island: content either side of the camera ----
 
 @Composable
-internal fun CompactContent(kind: Kind, side: Dp, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, now: Long, height: Dp) {
+internal fun CompactContent(kind: Kind, side: Dp, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, battery: BatteryInfo?, now: Long, height: Dp) {
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(side).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
             when (kind) {
@@ -246,14 +263,16 @@ internal fun CompactContent(kind: Kind, side: Dp, media: MediaInfo?, call: CallI
                 }
                 Kind.Call -> Glyph(R.drawable.ic_call, InkColors.live, 18.dp, Modifier.padding(start = 14.dp))
                 Kind.Timer -> Glyph(R.drawable.ic_timer, InkColors.on, 18.dp, Modifier.padding(start = 14.dp))
+                Kind.Battery -> if (battery != null) InkBattery(battery, Modifier.padding(start = 14.dp))
             }
         }
         Spacer(Modifier.weight(1f))
         Box(Modifier.width(side).fillMaxHeight().padding(end = 14.dp), contentAlignment = Alignment.CenterEnd) {
             when (kind) {
-                Kind.Media -> if (media != null) Bars(Color(media.accent), media.playing)
+                Kind.Media -> if (media != null) InkPulse(Color(media.accent), media.playing)
                 Kind.Call -> if (call != null) Txt(callText(call, now), 14.sp, InkColors.live, bold = true, maxLines = 1)
                 Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 14.sp, InkColors.on, bold = true, maxLines = 1)
+                Kind.Battery -> if (battery != null) Txt("${battery.level}%", 14.sp, batteryColor(battery), bold = true, maxLines = 1)
             }
         }
     }
@@ -261,19 +280,23 @@ internal fun CompactContent(kind: Kind, side: Dp, media: MediaInfo?, call: CallI
 
 /** The bud: a second live activity, pinched off to the side of the island. */
 @Composable
-internal fun BudContent(kind: Kind, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, now: Long) {
+internal fun BudContent(kind: Kind, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, battery: BatteryInfo?, now: Long) {
     Row(
         Modifier.fillMaxSize().padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         when (kind) {
-            Kind.Media -> if (media != null) Bars(Color(media.accent), media.playing)
+            Kind.Media -> if (media != null) InkPulse(Color(media.accent), media.playing)
             Kind.Call -> if (call != null) {
                 Glyph(R.drawable.ic_call, InkColors.live, 14.dp)
                 Txt(callText(call, now), 13.sp, InkColors.live, bold = true, maxLines = 1)
             }
             Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 13.sp, InkColors.on, bold = true, maxLines = 1)
+            Kind.Battery -> if (battery != null) {
+                InkBattery(battery, width = 20.dp, height = 11.dp)
+                Txt("${battery.level}%", 13.sp, batteryColor(battery), bold = true, maxLines = 1)
+            }
         }
     }
 }
@@ -287,7 +310,7 @@ internal fun ExpandedMedia(m: MediaInfo, band: Dp) {
         Row(Modifier.fillMaxWidth().height(band), verticalAlignment = Alignment.CenterVertically) {
             Txt(if (m.playing) "Now playing" else "Paused", 12.sp, InkColors.sub, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            Bars(accent, m.playing)
+            InkPulse(accent, m.playing)
         }
         Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
             Art(
@@ -452,6 +475,154 @@ internal fun NoteDrip(n: NoteInfo) {
             Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
             if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
             if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+        }
+    }
+}
+
+// ---- Battery ----
+
+internal fun batteryColor(b: BatteryInfo): Color = when {
+    b.charging || b.full -> InkColors.live
+    b.level <= 10 -> InkColors.end
+    b.low -> InkColors.end
+    else -> InkColors.on
+}
+
+private fun duration(ms: Long): String {
+    val minutes = ((ms + 59_999) / 60_000).coerceAtLeast(1)
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h == 0L -> "$m min"
+        m == 0L -> "$h h"
+        else -> "$h h $m min"
+    }
+}
+
+/**
+ * A flat battery whose charge is liquid: while charging, its edge ripples like ink
+ * being drawn in. Green when charging, red when low, white otherwise.
+ */
+@Composable
+internal fun InkBattery(b: BatteryInfo, modifier: Modifier = Modifier, width: Dp = 26.dp, height: Dp = 14.dp) {
+    val fill = batteryColor(b)
+    val level by animateFloatAsState(b.level / 100f, Motion.flow(), label = "batteryLevel")
+    val transition = rememberInfiniteTransition(label = "batteryWave")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
+        label = "batteryPhase",
+    )
+    val wave by animateFloatAsState(if (b.charging && !b.full) 1f else 0f, Motion.flow(), label = "batteryRipple")
+    Canvas(modifier.size(width, height)) {
+        val tau = 2f * PI.toFloat()
+        val gapX = size.width * 0.05f
+        val nub = size.width * 0.07f
+        val bodyW = size.width - nub - gapX
+        val corner = CornerRadius(size.height * 0.34f)
+        drawRoundRect(InkColors.tonal, size = Size(bodyW, size.height), cornerRadius = corner)
+        drawRoundRect(
+            InkColors.tonal,
+            topLeft = Offset(bodyW + gapX, size.height * 0.3f),
+            size = Size(nub, size.height * 0.4f),
+            cornerRadius = CornerRadius(nub / 2f),
+        )
+        val body = Path().apply { addRoundRect(RoundRect(0f, 0f, bodyW, size.height, corner)) }
+        clipPath(body) {
+            val edge = bodyW * level.coerceIn(0f, 1f)
+            val amp = size.height * 0.1f * wave
+            val liquid = Path().apply {
+                moveTo(0f, 0f)
+                val steps = 14
+                for (k in 0..steps) {
+                    val f = k / steps.toFloat()
+                    lineTo(edge + sin(tau * (phase + f)) * amp, size.height * f)
+                }
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(liquid, fill)
+        }
+    }
+}
+
+@Composable
+internal fun ExpandedBattery(b: BatteryInfo, band: Dp) {
+    val source = when {
+        b.wireless && b.plugged != 0 -> "Wireless"
+        b.plugged != 0 -> "Cable"
+        else -> "On battery"
+    }
+    val detail = when {
+        b.full -> "Fully charged"
+        b.charging && b.fullInMs != null -> "Full in ${duration(b.fullInMs)}"
+        b.charging && b.wireless -> "Charging wirelessly"
+        b.charging -> "Charging"
+        b.low -> "Low battery"
+        else -> "${b.level}% left"
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth().height(band), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Battery", 12.sp, InkColors.sub, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Txt(source, 12.sp, InkColors.sub, maxLines = 1)
+        }
+        Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt("${b.level}%", 44.sp, batteryColor(b), bold = true, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            InkBattery(b, width = 112.dp, height = 46.dp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Txt(detail, 14.sp, InkColors.sub, maxLines = 1)
+    }
+}
+
+// ---- The pulled drop: recent notifications, one at a time ----
+
+private fun ago(at: Long, now: Long): String {
+    val minutes = (now - at) / 60_000
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        minutes < 24 * 60 -> "${minutes / 60}h"
+        else -> "${minutes / (24 * 60)}d"
+    }
+}
+
+@Composable
+internal fun PulledCard(notes: List<NoteInfo>, index: Int, battery: BatteryInfo?) {
+    val now = remember(notes, index) { System.currentTimeMillis() }
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (notes.isEmpty()) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(InkColors.tonal), contentAlignment = Alignment.Center) {
+                Glyph(R.drawable.ic_island, InkColors.on, 22.dp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("All caught up", 15.sp, InkColors.on, bold = true, maxLines = 1)
+                Txt(
+                    battery?.let { "Battery ${it.level}%" + if (it.charging) " · charging" else "" } ?: "No new notifications",
+                    13.sp, InkColors.sub, maxLines = 1,
+                )
+            }
+            if (battery != null) InkBattery(battery)
+        } else {
+            val i = index.mod(notes.size)
+            val n = notes[i]
+            NoteIcon(n, 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Txt("${n.appName} · ${ago(n.postedAt, now)}", 11.sp, InkColors.sub, maxLines = 1, modifier = Modifier.weight(1f))
+                    if (notes.size > 1) Txt("${i + 1} of ${notes.size}", 11.sp, InkColors.sub, maxLines = 1)
+                }
+                if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
+                if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+            }
         }
     }
 }

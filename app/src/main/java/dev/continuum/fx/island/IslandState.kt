@@ -72,12 +72,36 @@ data class NoteInfo(
     val demo: Boolean = false,
 )
 
+data class BatteryInfo(
+    /** 0..100 */
+    val level: Int,
+    val charging: Boolean,
+    /** BatteryManager.BATTERY_PLUGGED_* or 0 when on battery. */
+    val plugged: Int,
+    val full: Boolean,
+    /** Estimated time to full, when Android has one. */
+    val fullInMs: Long?,
+    val demo: Boolean = false,
+) {
+    val wireless: Boolean get() = plugged == 4
+    val low: Boolean get() = plugged == 0 && level <= 20
+}
+
 /** Everything the island can show, published by the notification listener. */
 object IslandRepository {
     val media = MutableStateFlow<MediaInfo?>(null)
     val call = MutableStateFlow<CallInfo?>(null)
     val timer = MutableStateFlow<TimerInfo?>(null)
     val note = MutableStateFlow<NoteInfo?>(null)
+
+    /** Notifications still in the shade, newest first, for pulling a drop out of the island. */
+    val recent = MutableStateFlow<List<NoteInfo>>(emptyList())
+
+    val battery = MutableStateFlow<BatteryInfo?>(null)
+    val batteryDemo = MutableStateFlow<BatteryInfo?>(null)
+
+    /** When the battery last had something to say: plugged in, running low, or full. */
+    val batteryFlash = MutableStateFlow(0L)
 
     /** True while the overlay is attached by the accessibility service. */
     val hostActive = MutableStateFlow(false)
@@ -164,8 +188,17 @@ object IslandRepository {
 
     fun dismissNote(n: NoteInfo) {
         if (note.value?.key == n.key) note.value = null
+        recent.value = recent.value.filterNot { it.key == n.key }
         if (!n.demo) listener?.dismiss(n.key)
     }
+
+    fun openNote(n: NoteInfo) {
+        if (note.value?.key == n.key) note.value = null
+        if (n.demo) recent.value = recent.value.filterNot { it.key == n.key }
+        send(n.open)
+    }
+
+    const val MAX_RECENT = 8
 
     fun send(intent: PendingIntent?) {
         try {
@@ -193,16 +226,28 @@ object IslandRepository {
                 open = null, actions = listOf(IslandAction("+1:00", null), IslandAction("Cancel", null)),
                 appName = "Clock", demo = true,
             )
-            "note" -> note.value = NoteInfo(
-                key = "demo-note-$now", appName = "Messages", title = "Priya Shah",
-                text = "Running five minutes late, save me a seat", largeIcon = null, smallIcon = null,
-                open = null, postedAt = now, demo = true,
-            )
+            "note" -> {
+                val n = NoteInfo(
+                    key = "demo-note-$now", appName = "Messages", title = "Priya Shah",
+                    text = "Running five minutes late, save me a seat", largeIcon = null, smallIcon = null,
+                    open = null, postedAt = now, demo = true,
+                )
+                note.value = n
+                recent.value = (listOf(n) + recent.value).take(MAX_RECENT)
+            }
+            "battery" -> {
+                batteryDemo.value = BatteryInfo(
+                    level = 64, charging = true, plugged = 4, full = false, fullInMs = 48 * 60_000L, demo = true,
+                )
+                batteryFlash.value = now
+            }
             "clear" -> {
                 if (media.value?.demo == true) media.value = null
                 if (call.value?.demo == true) call.value = null
                 if (timer.value?.demo == true) timer.value = null
                 if (note.value?.demo == true) note.value = null
+                recent.value = recent.value.filterNot { it.demo }
+                batteryDemo.value = null
             }
         }
     }
@@ -215,6 +260,9 @@ data class IslandPrefs(
     val calls: Boolean = true,
     val timers: Boolean = true,
     val notifications: Boolean = true,
+    val battery: Boolean = true,
+    /** Drag the island down to pull a drop of recent notifications out of it. */
+    val pull: Boolean = true,
 )
 
 object IslandSettings {
@@ -232,6 +280,8 @@ object IslandSettings {
             calls = p.getBoolean("calls", true),
             timers = p.getBoolean("timers", true),
             notifications = p.getBoolean("notifications", true),
+            battery = p.getBoolean("battery", true),
+            pull = p.getBoolean("pull", true),
         )
     }
 
@@ -244,6 +294,8 @@ object IslandSettings {
             ?.putBoolean("calls", next.calls)
             ?.putBoolean("timers", next.timers)
             ?.putBoolean("notifications", next.notifications)
+            ?.putBoolean("battery", next.battery)
+            ?.putBoolean("pull", next.pull)
             ?.apply()
     }
 }

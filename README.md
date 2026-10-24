@@ -9,10 +9,12 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 
 The island is one piece of ink that starts as your camera. It follows the Continuum liquid rule: ink never appears or vanishes, it only separates from, or merges with, ink already on screen.
 
-- **Music and video** stretch the camera into a pill: artwork on one side, playing bars in the track's colour on the other. Tap to open the player with a scrubber and controls.
+- **Music and video** stretch the camera into a pill: artwork on one side, and three drops of the track's colour on the other that bob and fuse like liquid while it plays, settling into one calm drop when paused. Tap to open the player with a scrubber and controls.
 - **Calls** drip down from the camera when they ring, with Decline and Answer. During a call the pill keeps a green timer; tap it to end the call.
 - **Timers** from your clock app count down in the pill, or in a second bubble that pinches off the side when music is playing too.
 - **Notifications** drip down for a few seconds. Tap to open, swipe up to dismiss.
+- **Pull a drop:** hold the island (or the bare camera) and drag down. A drop stretches out on a neck; let go early and it springs back in, pull past the snap and it tears free as a card of your recent notifications. Swipe it sideways for the next one, tap to open, swipe up to send it back.
+- **Charging and battery:** plugging in, by cable or wireless, makes the island show your charge in a liquid battery that ripples as it fills. It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
 
 On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur.
 

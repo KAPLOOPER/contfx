@@ -76,6 +76,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Call", { IslandRepository.demo("call") }, icon = R.drawable.ic_call, height = 38.dp)
             PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
             PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
+            PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
             PillButton("Clear", { IslandRepository.demo("clear") }, height = 38.dp)
         }
         Gap(28.dp)
@@ -95,6 +96,12 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             ToggleRow("Notifications", "New messages drip down for a few seconds. Swipe up to dismiss.", prefs.notifications) {
                 actions.updateIsland { it.copy(notifications = !it.notifications) }
             }
+            ToggleRow("Charging and battery", "Plugging in, wireless charging, running low and fully charged.", prefs.battery) {
+                actions.updateIsland { it.copy(battery = !it.battery) }
+            }
+            ToggleRow("Pull a drop", "Hold the island and drag down to pull out your recent notifications.", prefs.pull) {
+                actions.updateIsland { it.copy(pull = !it.pull) }
+            }
         }
         Gap(28.dp)
 
@@ -103,7 +110,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         Txt(
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
                 "pinches off a second bubble when two things are running, and drips alerts down from the camera. " +
-                "Nothing pops in or out: ink only separates and merges.",
+                "Hold it and drag down to pull a drop out on a stretchy neck: let go early and it springs back, " +
+                "pull past the snap and it tears free as your recent notifications. Swipe the card sideways for more, " +
+                "up to send it back. Nothing pops in or out: ink only separates and merges.",
             15.sp, p.sub,
         )
     }
@@ -138,6 +147,7 @@ internal fun IslandDockBar(state: UiState, actions: AppActions) {
         if (prefs.calls) add("calls")
         if (prefs.timers) add("timers")
         if (prefs.notifications) add("alerts")
+        if (prefs.battery) add("charging")
     }
     val subtitle = when {
         !state.privileges.islandReady -> "Tap to set up"

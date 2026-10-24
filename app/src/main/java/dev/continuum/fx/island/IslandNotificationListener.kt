@@ -33,6 +33,7 @@ class IslandNotificationListener : NotificationListenerService() {
     private val timers = LinkedHashMap<String, TimerInfo>()
     private val calls = LinkedHashMap<String, CallInfo>()
     private val seenNotes = HashMap<String, Int>()
+    private val recent = HashMap<String, NoteInfo>()
 
     private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener { list ->
         pickController(list.orEmpty())
@@ -61,7 +62,7 @@ class IslandNotificationListener : NotificationListenerService() {
         } catch (_: Exception) {
         }
         try {
-            activeNotifications?.forEach { scan(it, initial = true) }
+            activeNotifications?.sortedBy { it.postTime }?.forEach { scan(it, initial = true) }
         } catch (_: Exception) {
         }
         publishCallsAndTimers()
@@ -90,6 +91,7 @@ class IslandNotificationListener : NotificationListenerService() {
         calls.remove(sbn.key)
         timers.remove(sbn.key)
         seenNotes.remove(sbn.key)
+        if (recent.remove(sbn.key) != null) publishRecent()
         if (IslandRepository.note.value?.key == sbn.key) IslandRepository.note.value = null
         publishCallsAndTimers()
     }
@@ -188,17 +190,21 @@ class IslandNotificationListener : NotificationListenerService() {
             timers.remove(sbn.key)
         }
 
-        if (initial || template.contains("MediaStyle") || !isPeekWorthy(sbn)) return
+        val importance = importanceOf(sbn)
+        if (template.contains("MediaStyle") || !isListable(sbn, importance)) {
+            if (recent.remove(sbn.key) != null) publishRecent()
+            return
+        }
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: extras.getCharSequence(Notification.EXTRA_TEXT))
             ?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return
         val signature = (title + "\u0000" + text).hashCode()
-        if (seenNotes[sbn.key] == signature) return
+        val changed = seenNotes[sbn.key] != signature
+        if (!changed && recent.containsKey(sbn.key)) return
         seenNotes[sbn.key] = signature
-        if (System.currentTimeMillis() - sbn.postTime > 15_000) return
 
-        IslandRepository.note.value = NoteInfo(
+        val info = NoteInfo(
             key = sbn.key,
             appName = appName(sbn.packageName),
             title = title,
@@ -208,19 +214,38 @@ class IslandNotificationListener : NotificationListenerService() {
             open = n.contentIntent,
             postedAt = sbn.postTime,
         )
+        recent[sbn.key] = info
+        while (recent.size > IslandRepository.MAX_RECENT * 2) {
+            recent.values.minByOrNull { it.postedAt }?.let { recent.remove(it.key) } ?: break
+        }
+        publishRecent()
+
+        if (initial || !changed || importance < NotificationManager.IMPORTANCE_DEFAULT) return
+        if (System.currentTimeMillis() - sbn.postTime > 15_000) return
+        IslandRepository.note.value = info
     }
 
-    private fun isPeekWorthy(sbn: StatusBarNotification): Boolean {
+    private fun publishRecent() {
+        val demos = IslandRepository.recent.value.filter { it.demo }
+        IslandRepository.recent.value = (recent.values + demos)
+            .sortedByDescending { it.postedAt }
+            .take(IslandRepository.MAX_RECENT)
+    }
+
+    private fun importanceOf(sbn: StatusBarNotification): Int = try {
+        val ranking = Ranking()
+        if (currentRanking.getRanking(sbn.key, ranking)) ranking.importance else NotificationManager.IMPORTANCE_DEFAULT
+    } catch (_: Exception) {
+        NotificationManager.IMPORTANCE_DEFAULT
+    }
+
+    /** Worth keeping for the pull-down drop: a real message, not a status or progress item. */
+    private fun isListable(sbn: StatusBarNotification, importance: Int): Boolean {
         val n = sbn.notification
         if (sbn.isOngoing) return false
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
         if (n.category in QUIET_CATEGORIES) return false
-        return try {
-            val ranking = Ranking()
-            currentRanking.getRanking(sbn.key, ranking) && ranking.importance >= NotificationManager.IMPORTANCE_DEFAULT
-        } catch (_: Exception) {
-            true
-        }
+        return importance > NotificationManager.IMPORTANCE_MIN
     }
 
     @Suppress("DEPRECATION")

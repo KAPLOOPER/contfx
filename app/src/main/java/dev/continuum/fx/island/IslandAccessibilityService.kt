@@ -19,6 +19,7 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private var host: IslandHost? = null
     private var scope: CoroutineScope? = null
+    private var battery: BatteryWatcher? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -26,6 +27,7 @@ class IslandAccessibilityService : AccessibilityService() {
         val h = IslandHost(this)
         host = h
         IslandRepository.hostActive.value = true
+        battery = BatteryWatcher(this).also { it.start() }
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = s
         s.launch {
@@ -55,6 +57,8 @@ class IslandAccessibilityService : AccessibilityService() {
     private fun teardown() {
         scope?.cancel()
         scope = null
+        battery?.stop()
+        battery = null
         host?.detach()
         host = null
         IslandRepository.hostActive.value = false

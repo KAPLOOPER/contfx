@@ -40,6 +40,7 @@ class IslandHost(private val context: Context) {
     private var touchParams: WindowManager.LayoutParams? = null
     private var touchAdded = false
     private var bounds: Rect? = null
+    private var wantsOutside = false
 
     private val density get() = context.resources.displayMetrics.density
     private val pad get() = (6 * density).toInt()
@@ -78,6 +79,7 @@ class IslandHost(private val context: Context) {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             if (Build.VERSION.SDK_INT >= 35) requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH
             setContent { IslandRoot(spot, outsideTaps, this@IslandHost::onBounds) }
+            isHapticFeedbackEnabled = true
         }
         val root = FrameLayout(context).apply {
             setViewTreeLifecycleOwner(lifecycle)
@@ -119,7 +121,10 @@ class IslandHost(private val context: Context) {
         }
     }
 
-    private fun onBounds(rect: Rect?) {
+    /** The island reports where it can be touched, and whether a tap elsewhere should fold it up. */
+    private fun onBounds(rect: Rect?, outside: Boolean) {
+        wantsOutside = outside
+        if (rect == bounds) return
         bounds = rect
         layoutTouch()
     }
@@ -161,7 +166,7 @@ class IslandHost(private val context: Context) {
 
     private fun forward(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            outsideTaps.intValue += 1
+            if (wantsOutside) outsideTaps.intValue += 1
             return false
         }
         val target = compose ?: return false

@@ -9,12 +9,12 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 
 The island is one piece of ink that starts as your camera. It follows the Continuum liquid rule: ink never appears or vanishes, it only separates from, or merges with, ink already on screen.
 
-- **Music and video** stretch the camera into a pill: artwork on one side, and three drops of the track's colour on the other that bob and fuse like liquid while it plays, settling into one calm drop when paused. Tap to open the player with a scrubber and controls.
+- **Music and video** stretch the camera into a pill: artwork on one side, and three drops of the track's colour on the other that bob and fuse like liquid while it plays, settling into one calm drop when paused. Tap to open the player: the seek bar is a line of liquid ending in a drop that glides as the song plays and swells under your finger, play and pause melt into each other, and skip presses the triangle into the bar.
 - **Calls** drip down from the camera when they ring, with Decline and Answer. During a call the pill keeps a green timer; tap it to end the call.
 - **Timers** from your clock app count down in the pill, or in a second bubble that pinches off the side when music is playing too.
 - **Notifications** drip down for a few seconds. Tap to open, swipe up to dismiss.
 - **Pull a drop:** hold the island (or the bare camera) and drag down. A drop stretches out on a neck; let go early and it springs back in, pull past the snap and it tears free as a card of your recent notifications. Swipe it sideways for the next one, tap to open, swipe up to send it back.
-- **Always on:** switch on *Time* and *Battery* to keep them in the island all the time: the time on the far left and a small liquid battery on the far right, beside whatever else is live. With nothing playing, the island rests as a slim pill of time and battery (or time and date).
+- **Always on:** switch on *Time* and *Battery* to keep them in the island all the time, beside whatever else is live. The time can sit left of the artwork, right of it, or around the camera, with the hours on one side, the minutes on the other and the camera as the colon. The battery is an ink capsule on the far right with your charge inside it. With nothing playing, the island rests as a slim pill of time and battery (or time and date).
 - **Charging and battery:** plugging in, by cable or wireless, makes the island show your charge in a liquid battery that ripples as it fills. It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
 
 On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur.

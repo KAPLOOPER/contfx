@@ -25,9 +25,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
+import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
@@ -110,10 +112,27 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         Txt("Kept in the island all the time, beside music, calls and timers.", 15.sp, p.sub)
         Gap(10.dp)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
-            ToggleRow("Time", "On the left of the island. With nothing else on, the date sits opposite.", prefs.alwaysTime) {
+            ToggleRow("Time", "Always in the island. With nothing else on, the date sits opposite.", prefs.alwaysTime) {
                 actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
             }
-            ToggleRow("Battery", "On the right, in a liquid battery that ripples while charging. Tap the island for details.", prefs.alwaysBattery) {
+            if (prefs.alwaysTime) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        IslandPrefs.TIME_OUTSIDE to "Left of the art",
+                        IslandPrefs.TIME_INSIDE to "Right of the art",
+                        IslandPrefs.TIME_SPLIT to "Around the camera",
+                    ).forEach { (spot, label) ->
+                        Chip(label, prefs.timeSpot == spot, onClick = { actions.updateIsland { it.copy(timeSpot = spot) } }, on = Surface.Card)
+                    }
+                }
+            }
+            ToggleRow("Battery", "An ink battery on the far right with your charge inside it. Tap the island for details.", prefs.alwaysBattery) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
             }
         }

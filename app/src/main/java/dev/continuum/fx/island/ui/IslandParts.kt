@@ -5,6 +5,22 @@ import android.graphics.Bitmap
 import android.text.format.DateFormat
 import android.os.Build
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import dev.continuum.fx.ui.theme.Libron
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -83,6 +99,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sin
 
 // ---- Formatting ----
@@ -258,79 +275,75 @@ internal fun InkPill(
 
 // ---- Compact island: content either side of the camera ----
 
-/** The always-on extras for the pill. Null means not shown. */
-internal class Ambient(val time: String?, val date: String?, val battery: BatteryInfo?)
+internal const val BATTERY_W = 34f
+internal const val PILL_INNER = 4f
+internal const val PILL_GAP = 8f
 
-internal fun clockText(context: Context, at: Long): String {
-    val pattern = if (DateFormat.is24HourFormat(context)) "H:mm" else "h:mm"
+/** One thing in the pill. Widths are measured by the island so nothing gets squeezed. */
+internal sealed interface PillItem {
+    data class Label(val text: String, val size: Float, val color: Color, val bold: Boolean) : PillItem
+    data object Art : PillItem
+    data object Pulse : PillItem
+    data class Icon(@DrawableRes val res: Int, val tint: Color) : PillItem
+    /** The ink battery. */
+    data object Cell : PillItem
+    /** Pushes what follows to the far end of its side. */
+    data object Flex : PillItem
+}
+
+/** What sits either side of the camera, and how wide each side is in pixels. */
+internal data class PillLayout(val left: List<PillItem>, val right: List<PillItem>, val side: Float)
+
+internal fun clockText(context: Context, at: Long, hoursOnly: Boolean = false): String {
+    val h24 = DateFormat.is24HourFormat(context)
+    val pattern = when {
+        hoursOnly && h24 -> "H"
+        hoursOnly -> "h"
+        h24 -> "H:mm"
+        else -> "h:mm"
+    }
     return Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern(pattern))
 }
+
+internal fun minutesText(at: Long): String =
+    Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("mm"))
 
 internal fun dateText(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("EEE d", Locale.getDefault()))
 
+/** The pill: whatever is live either side of the camera, with the always-on time and battery. */
 @Composable
-internal fun BatteryChip(b: BatteryInfo) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        InkBattery(b, width = 20.dp, height = 11.dp)
-        Txt("${b.level}%", 13.sp, batteryColor(b), bold = true, maxLines = 1)
+internal fun PillContent(layout: PillLayout, side: Dp, media: MediaInfo?, battery: BatteryInfo?, height: Dp) {
+    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        PillRow(layout.left, leading = true, side = side, media = media, battery = battery, height = height)
+        Spacer(Modifier.weight(1f))
+        PillRow(layout.right, leading = false, side = side, media = media, battery = battery, height = height)
     }
 }
 
-/**
- * The pill: the live activity either side of the camera, with the always-on time on
- * the far left and battery on the far right. With nothing live, the extras alone.
- */
 @Composable
-internal fun PillContent(
-    kind: Kind?,
-    side: Dp,
-    ambient: Ambient,
-    media: MediaInfo?,
-    call: CallInfo?,
-    timer: TimerInfo?,
-    battery: BatteryInfo?,
-    now: Long,
-    height: Dp,
-) {
-    val extraBattery = ambient.battery
-    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            Modifier
-                .width(side)
-                .fillMaxHeight()
-                .padding(start = if (kind == Kind.Media && ambient.time == null) 6.dp else 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (ambient.time != null) Txt(ambient.time, 14.sp, InkColors.on, bold = true, maxLines = 1)
-            when (kind) {
-                Kind.Media -> if (media != null) Art(media.art, Color(media.accent), height - 12.dp, CircleShape)
-                Kind.Call -> Glyph(R.drawable.ic_call, InkColors.live, 18.dp)
-                Kind.Timer -> Glyph(R.drawable.ic_timer, InkColors.on, 18.dp)
-                Kind.Battery -> if (battery != null) InkBattery(battery)
-                null -> if (ambient.time == null && extraBattery != null) InkBattery(extraBattery)
+private fun PillRow(items: List<PillItem>, leading: Boolean, side: Dp, media: MediaInfo?, battery: BatteryInfo?, height: Dp) {
+    val outerItem = if (leading) items.firstOrNull() else items.lastOrNull()
+    val outer = if (outerItem == PillItem.Art) 6.dp else 14.dp
+    val flex = PillItem.Flex in items
+    Row(
+        Modifier
+            .width(side)
+            .fillMaxHeight()
+            .padding(start = if (leading) outer else PILL_INNER.dp, end = if (leading) PILL_INNER.dp else outer),
+        horizontalArrangement = if (flex || leading) Arrangement.Start else Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEachIndexed { i, item ->
+            if (i > 0 && item != PillItem.Flex && items[i - 1] != PillItem.Flex) Spacer(Modifier.width(PILL_GAP.dp))
+            when (item) {
+                is PillItem.Label -> Txt(item.text, item.size.sp, item.color, bold = item.bold, maxLines = 1)
+                PillItem.Art -> if (media != null) Art(media.art, Color(media.accent), height - 12.dp, CircleShape)
+                PillItem.Pulse -> if (media != null) InkPulse(Color(media.accent), media.playing)
+                is PillItem.Icon -> Glyph(item.res, item.tint, 18.dp)
+                PillItem.Cell -> if (battery != null) InkBattery(battery)
+                PillItem.Flex -> Spacer(Modifier.weight(1f))
             }
-        }
-        Spacer(Modifier.weight(1f))
-        Row(
-            Modifier.width(side).fillMaxHeight().padding(end = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            when (kind) {
-                Kind.Media -> if (media != null) InkPulse(Color(media.accent), media.playing)
-                Kind.Call -> if (call != null) Txt(callText(call, now), 14.sp, InkColors.live, bold = true, maxLines = 1)
-                Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 14.sp, InkColors.on, bold = true, maxLines = 1)
-                Kind.Battery -> if (battery != null) Txt("${battery.level}%", 14.sp, batteryColor(battery), bold = true, maxLines = 1)
-                null -> when {
-                    extraBattery != null && ambient.time == null ->
-                        Txt("${extraBattery.level}%", 14.sp, batteryColor(extraBattery), bold = true, maxLines = 1)
-                    extraBattery == null && ambient.date != null ->
-                        Txt(ambient.date, 13.sp, InkColors.sub, maxLines = 1)
-                }
-            }
-            if (extraBattery != null && (kind != null || ambient.time != null)) BatteryChip(extraBattery)
         }
     }
 }
@@ -350,10 +363,7 @@ internal fun BudContent(kind: Kind, media: MediaInfo?, call: CallInfo?, timer: T
                 Txt(callText(call, now), 13.sp, InkColors.live, bold = true, maxLines = 1)
             }
             Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 13.sp, InkColors.on, bold = true, maxLines = 1)
-            Kind.Battery -> if (battery != null) {
-                InkBattery(battery, width = 20.dp, height = 11.dp)
-                Txt("${battery.level}%", 13.sp, batteryColor(battery), bold = true, maxLines = 1)
-            }
+            Kind.Battery -> if (battery != null) InkBattery(battery)
         }
     }
 }
@@ -380,51 +390,94 @@ internal fun ExpandedMedia(m: MediaInfo, band: Dp) {
                 Txt(m.artist, 14.sp, InkColors.sub, maxLines = 1)
             }
         }
-        Spacer(Modifier.height(14.dp))
-        Scrubber(m)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
+        InkScrubber(m, accent)
+        Spacer(Modifier.height(6.dp))
         Row(
-            Modifier.fillMaxWidth().height(56.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+            Modifier.fillMaxWidth().height(60.dp),
+            horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconBubble(R.drawable.ic_prev, "Previous", onClick = { IslandRepository.previous() }, on = Surface.Ink, size = 48.dp)
-            RoundButton(
-                if (m.playing) R.drawable.ic_pause else R.drawable.ic_play,
-                if (m.playing) "Pause" else "Play",
-                InkColors.on, InkColors.ink, 56.dp,
-            ) { IslandRepository.playPause() }
-            IconBubble(R.drawable.ic_next, "Next", onClick = { IslandRepository.next() }, on = Surface.Ink, size = 48.dp)
+            InkSkipButton(forward = false, description = "Previous") { IslandRepository.previous() }
+            InkPlayButton(m.playing) { IslandRepository.playPause() }
+            InkSkipButton(forward = true, description = "Next") { IslandRepository.next() }
         }
     }
 }
 
 @Composable
-private fun Scrubber(m: MediaInfo) {
-    val position by produceState(m.positionNow(), m) {
-        while (true) {
-            value = m.positionNow()
-            delay(250)
+private fun rememberGoo(radius: Dp): androidx.compose.ui.graphics.RenderEffect? {
+    val density = LocalDensity.current
+    return remember(density, radius) {
+        if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { radius.toPx() }) else null
+    }
+}
+
+/**
+ * The seek bar as liquid: the played part is a line of the track's colour ending in a
+ * drop that the goo fuses to it. It flows in when the player opens, glides every frame
+ * while playing, slides to where you tap, and swells under your finger while dragging.
+ */
+@Composable
+private fun InkScrubber(m: MediaInfo, accent: Color) {
+    val duration = m.durationMs
+    val scope = rememberCoroutineScope()
+    val live = produceState(m.positionNow(), m) {
+        value = m.positionNow()
+        if (m.playing) {
+            while (true) {
+                withFrameMillis { }
+                value = m.positionNow()
+            }
         }
     }
     var drag by remember { mutableStateOf<Float?>(null) }
-    val duration = m.durationMs
-    val fraction = drag ?: if (duration > 0) (position.toFloat() / duration) else 0f
-    val thickness by animateDpAsState(if (drag != null) 10.dp else 6.dp, Motion.flow(), label = "scrubThickness")
-    val shown = if (drag != null && duration > 0) (drag!! * duration).toLong() else position
+    var pending by remember { mutableStateOf<Float?>(null) }
+    val seekAnim = remember { Animatable(0f) }
+    val intro = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { intro.animateTo(1f, spring(dampingRatio = 0.72f, stiffness = 140f)) }
+    val grab by animateFloatAsState(if (drag != null) 1f else 0f, Motion.flow(), label = "scrubGrab")
+    val playingLevel by animateFloatAsState(if (m.playing) 1f else 0f, Motion.flow(), label = "scrubPlaying")
+    val breath = rememberInfiniteTransition(label = "scrubBreath").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
+        label = "scrubBreathPhase",
+    )
+    val goo = rememberGoo(2.6.dp)
+
+    fun liveFraction() = if (duration > 0) (live.value.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    fun shownFraction(): Float = drag ?: (if (pending != null) seekAnim.value else liveFraction() * intro.value)
+    fun seek(f: Float) {
+        if (duration <= 0) return
+        val from = shownFraction()
+        IslandRepository.seekTo((f * duration).toLong())
+        scope.launch {
+            seekAnim.snapTo(from)
+            pending = f
+            drag = null
+            seekAnim.animateTo(f, Motion.flow())
+            delay(900)
+            if (pending == f) pending = null
+        }
+    }
+    val shownSeconds by remember(duration) {
+        derivedStateOf {
+            val f = drag ?: pending
+            (if (f != null && duration > 0) (f * duration).toLong() else live.value) / 1000
+        }
+    }
+
     Column(Modifier.fillMaxWidth()) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(24.dp)
+                .height(28.dp)
                 .pointerInput(duration) {
                     if (duration <= 0) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { o -> drag = (o.x / size.width).coerceIn(0f, 1f) },
-                        onDragEnd = {
-                            drag?.let { IslandRepository.seekTo((it * duration).toLong()) }
-                            drag = null
-                        },
+                        onDragEnd = { drag?.let { seek(it) } },
                         onDragCancel = { drag = null },
                     ) { change, _ ->
                         change.consume()
@@ -433,20 +486,139 @@ private fun Scrubber(m: MediaInfo) {
                 }
                 .pointerInput(duration) {
                     if (duration <= 0) return@pointerInput
-                    detectTapGestures { o -> IslandRepository.seekTo(((o.x / size.width).coerceIn(0f, 1f) * duration).toLong()) }
+                    detectTapGestures { o -> seek((o.x / size.width).coerceIn(0f, 1f)) }
                 },
-            contentAlignment = Alignment.CenterStart,
         ) {
-            val f = fraction.coerceIn(0f, 1f)
-            Canvas(Modifier.fillMaxWidth().height(thickness)) {
-                drawRoundRect(InkColors.tonal, size = size, cornerRadius = CornerRadius(size.height / 2f))
-                drawRoundRect(InkColors.on, size = Size(size.width * f, size.height), cornerRadius = CornerRadius(size.height / 2f))
+            Canvas(Modifier.fillMaxSize()) {
+                val th = 6.dp.toPx()
+                drawRoundRect(
+                    InkColors.tonal,
+                    topLeft = Offset(0f, (size.height - th) / 2f),
+                    size = Size(size.width, th),
+                    cornerRadius = CornerRadius(th / 2f),
+                )
+            }
+            Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
+                val f = shownFraction().coerceIn(0f, 1f)
+                val cy = size.height / 2f
+                val th = lerpF(6.dp.toPx(), 9.dp.toPx(), grab)
+                val swell = 1f + 0.07f * playingLevel * sin(2f * PI.toFloat() * breath.value)
+                val bulb = lerpF(5.5.dp.toPx(), 10.dp.toPx(), grab) * swell
+                val x = size.width * f
+                if (x > 0f) {
+                    drawRoundRect(accent, topLeft = Offset(0f, cy - th / 2f), size = Size(x, th), cornerRadius = CornerRadius(th / 2f))
+                }
+                drawCircle(accent, radius = bulb, center = Offset(x.coerceIn(bulb, size.width - bulb), cy))
             }
         }
         Row(Modifier.fillMaxWidth().height(16.dp)) {
-            Txt(clock(shown), 11.sp, InkColors.sub, maxLines = 1)
+            Txt(clock(shownSeconds * 1000), 11.sp, InkColors.sub, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            if (duration > 0) Txt(clock(-(duration - shown).coerceAtLeast(0)), 11.sp, InkColors.sub, maxLines = 1)
+            if (duration > 0) Txt(clock(-(duration - shownSeconds * 1000).coerceAtLeast(0)), 11.sp, InkColors.sub, maxLines = 1)
+        }
+    }
+}
+
+/** Play and pause as one drop of ink: the two bars melt together into the triangle and back. */
+@Composable
+private fun InkPlayButton(playing: Boolean, size: Dp = 60.dp, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val morph by animateFloatAsState(if (playing) 0f else 1f, spring(dampingRatio = 0.62f, stiffness = 320f), label = "playMorph")
+    val goo = rememberGoo(2.2.dp)
+    Box(
+        Modifier
+            .squash(source)
+            .size(size)
+            .clip(CircleShape)
+            .background(InkColors.on)
+            .clickable(
+                interactionSource = source,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = if (playing) "Pause" else "Play",
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(size * 0.5f).graphicsLayer { renderEffect = goo }) {
+            val u = this.size.width / 24f
+            val t = morph.coerceIn(0f, 1.1f)
+            val bars = (1f - t).coerceIn(0f, 1f)
+            // Through the goo, fading alpha makes a shape melt away rather than shrink to a dot.
+            if (bars > 0.02f) {
+                val barW = 3.8f * u * (0.45f + 0.55f * bars)
+                val barH = 14f * u * (0.6f + 0.4f * bars)
+                val off = 3.6f * u * bars
+                for (sign in listOf(-1f, 1f)) {
+                    drawRoundRect(
+                        InkColors.ink,
+                        topLeft = Offset(12f * u + sign * off - barW / 2f, 12f * u - barH / 2f),
+                        size = Size(barW, barH),
+                        cornerRadius = CornerRadius(barW / 2f),
+                        alpha = bars.pow(0.6f),
+                    )
+                }
+            }
+            if (t > 0.02f) {
+                val k = 0.55f + 0.45f * t
+                val cx = 13f * u
+                val cy = 12f * u
+                val tri = Path().apply {
+                    moveTo(cx - 4.6f * u * k, cy - 7f * u * k)
+                    lineTo(cx + 6.6f * u * k, cy)
+                    lineTo(cx - 4.6f * u * k, cy + 7f * u * k)
+                    close()
+                }
+                drawPath(tri, InkColors.ink, alpha = t.coerceAtMost(1f).pow(0.6f))
+            }
+        }
+    }
+}
+
+/**
+ * Previous and next as ink: press and the triangle slides into the bar and fuses with
+ * it, a drop of tonal ink swelling behind; let go and it springs back apart.
+ */
+@Composable
+private fun InkSkipButton(forward: Boolean, description: String, size: Dp = 50.dp, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val push = remember { Animatable(0f) }
+    LaunchedEffect(pressed) {
+        if (pressed) push.animateTo(1f, Motion.snap()) else push.animateTo(0f, spring(dampingRatio = 0.42f, stiffness = 420f))
+    }
+    val goo = rememberGoo(2.2.dp)
+    Box(
+        Modifier
+            .size(size)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = description, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val p = push.value.coerceIn(0f, 1.2f)
+            if (p > 0.01f) {
+                drawCircle(InkColors.tonal, radius = this.size.minDimension / 2f * (0.35f + 0.65f * p.coerceAtMost(1f)), alpha = p.coerceAtMost(1f))
+            }
+        }
+        Canvas(Modifier.size(26.dp).graphicsLayer { renderEffect = goo }) {
+            val u = this.size.width / 24f
+            val p = push.value
+            scale(scaleX = if (forward) 1f else -1f, scaleY = 1f, pivot = center) {
+                val shift = 3.2f * u * p
+                val tri = Path().apply {
+                    moveTo(4f * u + shift, 6f * u)
+                    lineTo(14f * u + shift * 1.15f, 12f * u)
+                    lineTo(4f * u + shift, 18f * u)
+                    close()
+                }
+                drawPath(tri, InkColors.on)
+                drawRoundRect(
+                    InkColors.on,
+                    topLeft = Offset(16.8f * u, 6f * u),
+                    size = Size(3f * u, 12f * u),
+                    cornerRadius = CornerRadius(1.5f * u),
+                )
+            }
         }
     }
 }
@@ -557,12 +729,21 @@ private fun duration(ms: Long): String {
 }
 
 /**
- * A flat battery whose charge is liquid: while charging, its edge ripples like ink
- * being drawn in. Green when charging, red when low, white otherwise.
+ * The ink battery: a flat capsule filled with liquid charge, its edge a soft meniscus
+ * that ripples while charging, with a droplet for the terminal. The percentage sits
+ * inside, black over the charge and white over the empty part, so it reads at a glance.
+ * Green when charging, red when low, white otherwise.
  */
 @Composable
-internal fun InkBattery(b: BatteryInfo, modifier: Modifier = Modifier, width: Dp = 26.dp, height: Dp = 14.dp) {
+internal fun InkBattery(
+    b: BatteryInfo,
+    modifier: Modifier = Modifier,
+    width: Dp = BATTERY_W.dp,
+    height: Dp = 18.dp,
+    showNumber: Boolean = true,
+) {
     val fill = batteryColor(b)
+    val onFill = if (fill == InkColors.end) InkColors.onEnd else InkColors.ink
     val level by animateFloatAsState(b.level / 100f, Motion.flow(), label = "batteryLevel")
     val transition = rememberInfiniteTransition(label = "batteryWave")
     val phase by transition.animateFloat(
@@ -572,34 +753,44 @@ internal fun InkBattery(b: BatteryInfo, modifier: Modifier = Modifier, width: Dp
         label = "batteryPhase",
     )
     val wave by animateFloatAsState(if (b.charging && !b.full) 1f else 0f, Motion.flow(), label = "batteryRipple")
+    val measurer = rememberTextMeasurer()
+    val number = remember(b.level, height) {
+        measurer.measure(
+            AnnotatedString("${b.level}"),
+            style = TextStyle(fontFamily = Libron, fontWeight = FontWeight.Bold, fontSize = (height.value * 0.6f).sp),
+        )
+    }
     Canvas(modifier.size(width, height)) {
         val tau = 2f * PI.toFloat()
-        val gapX = size.width * 0.05f
-        val nub = size.width * 0.07f
-        val bodyW = size.width - nub - gapX
-        val corner = CornerRadius(size.height * 0.34f)
-        drawRoundRect(InkColors.tonal, size = Size(bodyW, size.height), cornerRadius = corner)
-        drawRoundRect(
-            InkColors.tonal,
-            topLeft = Offset(bodyW + gapX, size.height * 0.3f),
-            size = Size(nub, size.height * 0.4f),
-            cornerRadius = CornerRadius(nub / 2f),
-        )
-        val body = Path().apply { addRoundRect(RoundRect(0f, 0f, bodyW, size.height, corner)) }
-        clipPath(body) {
-            val edge = bodyW * level.coerceIn(0f, 1f)
-            val amp = size.height * 0.1f * wave
-            val liquid = Path().apply {
-                moveTo(0f, 0f)
-                val steps = 14
-                for (k in 0..steps) {
-                    val f = k / steps.toFloat()
-                    lineTo(edge + sin(tau * (phase + f)) * amp, size.height * f)
-                }
-                lineTo(0f, size.height)
-                close()
+        val h = this.size.height
+        val nub = h * 0.2f
+        val gapX = h * 0.12f
+        val bodyW = this.size.width - nub * 2f - gapX
+        val body = Path().apply { addRoundRect(RoundRect(0f, 0f, bodyW, h, CornerRadius(h / 2f))) }
+        drawPath(body, InkColors.tonal)
+        drawCircle(if (b.full) fill else InkColors.tonal, radius = nub, center = Offset(bodyW + gapX + nub, h / 2f))
+
+        val edge = bodyW * level.coerceIn(0f, 1f)
+        val bulge = h * 0.14f
+        val amp = h * 0.09f * wave
+        val liquid = Path().apply {
+            moveTo(0f, 0f)
+            val steps = 16
+            for (k in 0..steps) {
+                val f = k / steps.toFloat()
+                lineTo(edge + bulge * sin(PI.toFloat() * f) - bulge * 0.5f + sin(tau * (phase + f)) * amp, h * f)
             }
-            drawPath(liquid, fill)
+            lineTo(0f, h)
+            close()
+        }
+        clipPath(body) { drawPath(liquid, fill) }
+
+        if (showNumber) {
+            val tl = Offset((bodyW - number.size.width) / 2f, (h - number.size.height) / 2f)
+            clipPath(body) {
+                clipPath(liquid) { drawText(number, color = onFill, topLeft = tl) }
+                clipPath(liquid, clipOp = ClipOp.Difference) { drawText(number, color = InkColors.on, topLeft = tl) }
+            }
         }
     }
 }
@@ -628,7 +819,7 @@ internal fun ExpandedBattery(b: BatteryInfo, band: Dp) {
         Row(Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.CenterVertically) {
             Txt("${b.level}%", 44.sp, batteryColor(b), bold = true, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            InkBattery(b, width = 112.dp, height = 46.dp)
+            InkBattery(b, width = 112.dp, height = 46.dp, showNumber = false)
         }
         Spacer(Modifier.height(8.dp))
         Txt(detail, 14.sp, InkColors.sub, maxLines = 1)

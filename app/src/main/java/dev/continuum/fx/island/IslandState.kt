@@ -267,7 +267,18 @@ data class IslandPrefs(
     val alwaysTime: Boolean = false,
     /** Keep the battery in the island at all times, beside whatever else is live. */
     val alwaysBattery: Boolean = false,
-)
+    /** Where the always-on time sits: [TIME_OUTSIDE], [TIME_INSIDE] or [TIME_SPLIT]. */
+    val timeSpot: String = TIME_OUTSIDE,
+) {
+    companion object {
+        /** Left of the artwork, at the far end of the island. */
+        const val TIME_OUTSIDE = "outside"
+        /** Right of the artwork, beside the camera. */
+        const val TIME_INSIDE = "inside"
+        /** Around the camera: hours on one side, minutes on the other, the camera as the colon. */
+        const val TIME_SPLIT = "split"
+    }
+}
 
 object IslandSettings {
     private const val FILE = "island"
@@ -288,6 +299,7 @@ object IslandSettings {
             pull = p.getBoolean("pull", true),
             alwaysTime = p.getBoolean("alwaysTime", false),
             alwaysBattery = p.getBoolean("alwaysBattery", false),
+            timeSpot = p.getString("timeSpot", null) ?: IslandPrefs.TIME_OUTSIDE,
         )
     }
 
@@ -304,6 +316,7 @@ object IslandSettings {
             ?.putBoolean("pull", next.pull)
             ?.putBoolean("alwaysTime", next.alwaysTime)
             ?.putBoolean("alwaysBattery", next.alwaysBattery)
+            ?.putString("timeSpot", next.timeSpot)
             ?.apply()
     }
 }

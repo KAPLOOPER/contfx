@@ -46,6 +46,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import dev.continuum.fx.R
+import dev.continuum.fx.island.IslandPrefs
+import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.island.CallInfo
 import dev.continuum.fx.island.CameraSpot
 import dev.continuum.fx.island.IslandRepository
@@ -144,6 +152,8 @@ fun IslandRoot(
         }
     }
     val timeLabel = if (alwaysTime) clockText(context, clock) else null
+    val hoursLabel = if (alwaysTime) clockText(context, clock, hoursOnly = true) else null
+    val minutesLabel = if (alwaysTime) minutesText(clock) else null
     val dateLabel = if (alwaysTime) dateText(clock) else null
 
     // A one-second clock, running only while something on the island counts.
@@ -264,39 +274,112 @@ fun IslandRoot(
 
     val timerLabel = timer?.let { timerText(it, now) } ?: ""
     val callLabel = ongoing?.let { callText(it, now) } ?: ""
-    fun sideOf(k: Kind): Float = when (k) {
-        Kind.Media -> px(44f)
-        Kind.Call -> px(if (callLabel.length > 5) 80f else 66f)
-        Kind.Timer -> px(if (timerLabel.length > 5) 80f else 66f)
-        Kind.Battery -> px(66f)
+    // The pill is laid out as items either side of the camera, measured for real so
+    // nothing is squeezed or cut off.
+    val measurer = rememberTextMeasurer()
+    fun textW(t: PillItem.Label): Float = measurer.measure(
+        AnnotatedString(t.text),
+        style = TextStyle(fontFamily = Libron, fontSize = t.size.sp, fontWeight = if (t.bold) FontWeight.Bold else FontWeight.Normal),
+    ).size.width + px(1f)
+    fun itemW(it: PillItem): Float = when (it) {
+        is PillItem.Label -> textW(it)
+        PillItem.Art -> band - px(12f)
+        PillItem.Pulse -> px(24f)
+        is PillItem.Icon -> px(18f)
+        PillItem.Cell -> px(BATTERY_W)
+        PillItem.Flex -> 0f
     }
-    val timeW = px(if ((timeLabel?.length ?: 0) > 4) 46f else 40f)
-    val chipW = px(54f)
-    /** One side of the pill, either side of the camera, with room for the always-on extras. */
-    fun pillSide(k: Kind?, time: Boolean, batt: Boolean): Float {
-        val tw = if (time) timeW else 0f
-        val bw = if (batt) chipW else 0f
-        return if (k == null) {
-            val left = if (time) tw else px(26f)
-            val right = when {
-                batt && time -> bw
-                time -> px(54f)
-                else -> px(40f)
-            }
-            px(14f) + max(left, right)
-        } else {
-            sideOf(k) + max(tw, bw)
+    fun rowW(items: List<PillItem>, leading: Boolean): Float {
+        if (items.isEmpty()) return px(14f)
+        val outer = if ((if (leading) items.first() else items.last()) == PillItem.Art) px(6f) else px(14f)
+        var w = outer + px(PILL_INNER) + items.sumOf { itemW(it).toDouble() }.toFloat()
+        for (i in 1 until items.size) if (items[i] != PillItem.Flex && items[i - 1] != PillItem.Flex) w += px(PILL_GAP)
+        if (PillItem.Flex in items) w += px(PILL_GAP)
+        return w
+    }
+    val batteryStatus = batteryData?.let { b ->
+        when {
+            b.full -> PillItem.Label("Charged", 13f, InkColors.live, true)
+            b.charging && b.wireless -> PillItem.Label("Wireless", 13f, InkColors.live, true)
+            b.charging -> PillItem.Icon(R.drawable.ic_bolt, InkColors.live)
+            b.low -> PillItem.Label("Low", 13f, InkColors.end, true)
+            else -> PillItem.Label("${b.level}%", 13f, InkColors.on, true)
         }
+    }
+    fun leftOf(k: Kind): List<PillItem> = when (k) {
+        Kind.Media -> listOf(PillItem.Art)
+        Kind.Call -> listOf(PillItem.Icon(R.drawable.ic_call, InkColors.live))
+        Kind.Timer -> listOf(PillItem.Icon(R.drawable.ic_timer, InkColors.on))
+        Kind.Battery -> listOf(PillItem.Cell)
+    }
+    fun rightOf(k: Kind): List<PillItem> = when (k) {
+        Kind.Media -> listOf(PillItem.Pulse)
+        Kind.Call -> listOf(PillItem.Label(callLabel, 14f, InkColors.live, true))
+        Kind.Timer -> listOf(PillItem.Label(timerLabel, 14f, InkColors.on, true))
+        Kind.Battery -> listOfNotNull(batteryStatus)
+    }
+    /** What sits on each side of the camera, for a live [k] (or none) plus the always-on extras. */
+    fun pillLayout(k: Kind?, time: Boolean, batt: Boolean): PillLayout {
+        val left = mutableListOf<PillItem>()
+        val right = mutableListOf<PillItem>()
+        val t = if (time) timeLabel else null
+        val split = prefs.timeSpot == IslandPrefs.TIME_SPLIT && t != null
+        if (k != null && split) {
+            // Hours hug the camera on the left, minutes on the right. The live activity's
+            // second half goes on whichever side keeps the pill balanced.
+            val hours = PillItem.Label(hoursLabel.orEmpty(), 14f, InkColors.on, true)
+            val minutes = PillItem.Label(minutesLabel.orEmpty(), 14f, InkColors.on, true)
+            val cell = if (batt) listOf<PillItem>(PillItem.Cell) else emptyList()
+            val apart = PillLayout(
+                leftOf(k) + PillItem.Flex + hours,
+                listOf(minutes, PillItem.Flex) + rightOf(k) + cell,
+                0f,
+            )
+            val together = PillLayout(
+                leftOf(k) + rightOf(k) + PillItem.Flex + hours,
+                listOf(minutes, PillItem.Flex) + cell,
+                0f,
+            )
+            return listOf(apart, together)
+                .map { it.copy(side = max(rowW(it.left, true), rowW(it.right, false))) }
+                .minBy { it.side }
+        }
+        if (k != null) {
+            when {
+                t != null && prefs.timeSpot == IslandPrefs.TIME_INSIDE -> { left += leftOf(k); left += PillItem.Label(t, 14f, InkColors.on, true) }
+                t != null -> { left += PillItem.Label(t, 14f, InkColors.on, true); left += leftOf(k) }
+                else -> left += leftOf(k)
+            }
+            right += rightOf(k)
+            if (batt) right += PillItem.Cell
+        } else {
+            when {
+                split -> {
+                    left += PillItem.Flex; left += PillItem.Label(hoursLabel.orEmpty(), 14f, InkColors.on, true)
+                    right += PillItem.Label(minutesLabel.orEmpty(), 14f, InkColors.on, true); right += PillItem.Flex
+                    if (batt) right += PillItem.Cell
+                }
+                t != null -> {
+                    left += PillItem.Label(t, 14f, InkColors.on, true)
+                    if (batt) right += PillItem.Cell else dateLabel?.let { right += PillItem.Label(it, 13f, InkColors.sub, false) }
+                }
+                batt -> {
+                    if (batteryData?.charging == true) left += PillItem.Icon(R.drawable.ic_bolt, InkColors.live)
+                    right += PillItem.Cell
+                }
+            }
+        }
+        return PillLayout(left, right, max(rowW(left, true), rowW(right, false)))
     }
     fun budWidthOf(k: Kind): Float = when (k) {
         Kind.Media -> band
-        Kind.Call -> px(if (callLabel.length > 5) 96f else 82f)
-        Kind.Timer -> px(if (timerLabel.length > 5) 88f else 70f)
-        Kind.Battery -> px(84f)
+        Kind.Call -> px(10f + 14f + 6f + 10f) + textW(PillItem.Label(callLabel, 13f, InkColors.live, true))
+        Kind.Timer -> px(20f) + textW(PillItem.Label(timerLabel, 13f, InkColors.on, true))
+        Kind.Battery -> px(BATTERY_W + 20f)
     }
     fun expandedHeight(k: Kind): Float = band + px(
         when (k) {
-            Kind.Media -> 192f
+            Kind.Media -> 198f
             Kind.Call -> 138f
             Kind.Timer -> 132f
             Kind.Battery -> 112f
@@ -320,7 +403,7 @@ fun IslandRoot(
             tW = cardW; tH = expandedHeight(open); tTop = top; tR = px(30f)
         }
         else -> {
-            tW = camSlot + pillSide(primary, mode.time, mode.battery) * 2f; tH = band; tTop = top; tR = band / 2f
+            tW = camSlot + pillLayout(primary, mode.time, mode.battery).side * 2f; tH = band; tTop = top; tR = band / 2f
         }
     }
     val mW by animateFloatAsState(tW, Motion.flow(), label = "mainW")
@@ -525,7 +608,8 @@ fun IslandRoot(
         Crossfade(targetState = mode, modifier = Modifier.fillMaxSize(), animationSpec = tween(220), label = "islandContent") { md ->
             val k = md.kind
             if (k == null && !md.time && !md.battery) return@Crossfade
-            val w = if (md.expanded && k != null) cardW else camSlot + pillSide(k, md.time, md.battery) * 2f
+            val layout = pillLayout(k, md.time, md.battery)
+            val w = if (md.expanded && k != null) cardW else camSlot + layout.side * 2f
             val h = if (md.expanded && k != null) expandedHeight(k) else band
             val left = centerFor(w) - w / 2f
             Box(Modifier.fillMaxSize()) {
@@ -573,18 +657,10 @@ fun IslandRoot(
                         }
                     } else {
                         PillContent(
-                            kind = k,
-                            side = toDp(pillSide(k, md.time, md.battery)),
-                            ambient = Ambient(
-                                time = if (md.time) timeLabel else null,
-                                date = if (md.time) dateLabel else null,
-                                battery = if (md.battery) ambientBattery ?: lastBattery else null,
-                            ),
+                            layout = layout,
+                            side = toDp(layout.side),
                             media = lastMedia,
-                            call = lastCall,
-                            timer = lastTimer,
                             battery = lastBattery,
-                            now = now,
                             height = toDp(band),
                         )
                     }

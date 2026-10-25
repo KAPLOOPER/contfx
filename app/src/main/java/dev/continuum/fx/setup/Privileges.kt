@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import dev.continuum.fx.island.IslandAccessibilityService
+import dev.continuum.fx.volume.VolumeService
 import dev.continuum.fx.island.IslandNotificationListener
 import rikka.shizuku.Shizuku
 
@@ -28,6 +29,8 @@ data class PrivilegeState(
     val popups: Boolean = false,
     /** Allowed to read the calendar, for the island's next event. */
     val calendar: Boolean = false,
+    /** The volume panel's accessibility service is switched on. */
+    val volumeService: Boolean = false,
 ) {
     /** Everything required before processing can start. */
     val ready: Boolean get() = recordAudio && dump
@@ -62,10 +65,11 @@ object Privileges {
         islandListener = listenerOn(context),
         popups = granted(context, WRITE_SECURE_SETTINGS),
         calendar = granted(context, Manifest.permission.READ_CALENDAR),
+        volumeService = accessibilityOn(context, VolumeService::class.java),
     )
 
-    private fun accessibilityOn(context: Context): Boolean = try {
-        val target = ComponentName(context, IslandAccessibilityService::class.java)
+    private fun accessibilityOn(context: Context, service: Class<*> = IslandAccessibilityService::class.java): Boolean = try {
+        val target = ComponentName(context, service)
         Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             ?.split(':')
             ?.any { ComponentName.unflattenFromString(it) == target } == true
@@ -103,6 +107,20 @@ object Privileges {
             "settings put secure accessibility_enabled 1"
         val overlay = shizukuExec(script)
         return listener && overlay
+    }
+
+    /**
+     * Switches the volume panel's accessibility service on through Shizuku, keeping any services
+     * already on. Blocks; call it off the main thread.
+     */
+    fun grantVolumeWithShizuku(packageName: String): Boolean {
+        val service = "$packageName/$packageName.volume.VolumeService"
+        shizukuExec("appops set $packageName ACCESS_RESTRICTED_SETTINGS allow")
+        val script = "s=\$(settings get secure enabled_accessibility_services); " +
+            "case \"\$s\" in *$service*) ;; null|'') settings put secure enabled_accessibility_services $service ;; " +
+            "*) settings put secure enabled_accessibility_services \"\$s:$service\" ;; esac; " +
+            "settings put secure accessibility_enabled 1"
+        return shizukuExec(script)
     }
 
     fun adbCommands(packageName: String): String =

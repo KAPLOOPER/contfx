@@ -17,6 +17,7 @@ import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.Limiter
 import dev.continuum.fx.dsp.ParametricEq
 import kotlin.math.max
+import kotlin.math.pow
 
 /**
  * Captures what other apps play, runs it through the DSP chain and plays it back.
@@ -126,10 +127,40 @@ class AudioEngine(
             if (read == 0) continue
             val frames = read / 2
             eq.process(buffer, frames)
+            boost(buffer, frames)
             limiter.process(buffer, frames)
             if (LiveAudio.listening) LiveAudio.tap.push(buffer, frames, 2)
             out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
         }
+    }
+
+    private var boostDb = 0f
+    private var boostTarget = 1f
+    private var boostGain = 1f
+
+    /**
+     * The volume panel's boost: extra gain ahead of the limiter, which keeps the peaks clean.
+     * A change glides across one chunk, so stepping it never clicks.
+     */
+    private fun boost(buffer: FloatArray, frames: Int) {
+        val db = EngineStatus.boostDb.value
+        if (db != boostDb) {
+            boostDb = db
+            boostTarget = if (db <= 0f) 1f else 10f.pow(db / 20f)
+        }
+        val start = boostGain
+        val end = boostTarget
+        if (start == 1f && end == 1f) return
+        if (start == end) {
+            for (i in 0 until frames * 2) buffer[i] *= end
+            return
+        }
+        for (f in 0 until frames) {
+            val g = start + (end - start) * (f + 1) / frames
+            buffer[2 * f] *= g
+            buffer[2 * f + 1] *= g
+        }
+        boostGain = end
     }
 
     fun stop() {

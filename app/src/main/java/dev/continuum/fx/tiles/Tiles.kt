@@ -15,6 +15,10 @@ import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.setup.Privileges
+import dev.continuum.fx.volume.VolumeService
+import dev.continuum.fx.volume.VolumeSettings
+import dev.continuum.fx.volume.VolumeStatus
+import dev.continuum.fx.volume.VolumeTrampoline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,7 +70,7 @@ abstract class ContinuumTile : TileService() {
     companion object {
         /** Asks the shade to redraw both tiles. */
         fun refresh(context: Context) {
-            for (cls in listOf(EqTile::class.java, IslandTile::class.java)) {
+            for (cls in listOf(EqTile::class.java, IslandTile::class.java, VolumeTile::class.java)) {
                 try {
                     requestListeningState(context, ComponentName(context, cls))
                 } catch (_: Exception) {
@@ -118,5 +122,32 @@ class IslandTile : ContinuumTile() {
             return
         }
         IslandSettings.update { it.copy(enabled = !it.enabled) }
+    }
+}
+
+/** The volume panel from the shade, for when the volume buttons aren't to hand (or have worn out). */
+class VolumeTile : ContinuumTile() {
+    override fun CoroutineScope.follow() {
+        launch {
+            combine(VolumeStatus.serviceOn, VolumeSettings.state) { on, prefs -> on && prefs.enabled }.collect { on ->
+                show(on, if (on) "Open" else "Set up")
+            }
+        }
+    }
+
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    override fun onClick() {
+        super.onClick()
+        if (VolumeService.instance == null) {
+            openApp(MainActivity.ACTION_OPEN_VOLUME)
+            return
+        }
+        val intent = Intent(this, VolumeTrampoline::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startActivityAndCollapse(PendingIntent.getActivity(this, 7, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
+        }
     }
 }

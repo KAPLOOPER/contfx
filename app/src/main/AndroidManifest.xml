@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A light tick on each volume step. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Only with the island's Calendar events switched on: the next event, read on the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- In-app updates: checks and downloads new builds from the GitHub releases, then installs them. -->
@@ -99,6 +101,29 @@
                 android:resource="@xml/island_accessibility" />
         </service>
 
+        <!-- The volume panel: the volume keys, caught by an accessibility service. -->
+        <service
+            android:name=".volume.VolumeService"
+            android:exported="true"
+            android:label="@string/volume_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/volume_accessibility" />
+        </service>
+
+        <!-- Raises the volume panel from Quick Settings: an activity is what folds the shade away. -->
+        <activity
+            android:name=".volume.VolumeTrampoline"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".island.IslandNotificationListener"
             android:exported="true"
@@ -135,6 +160,16 @@
             <meta-data
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true" />
+        </service>
+        <service
+            android:name=".tiles.VolumeTile"
+            android:exported="true"
+            android:icon="@drawable/ic_volume"
+            android:label="@string/tile_volume"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <receiver

@@ -31,6 +31,11 @@ import dev.continuum.fx.dsp.EqImport
 import dev.continuum.fx.island.IslandNotificationListener
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
+import dev.continuum.fx.volume.VolumeHelper
+import dev.continuum.fx.volume.VolumeModel
+import dev.continuum.fx.volume.VolumePrefs
+import dev.continuum.fx.volume.VolumeService
+import dev.continuum.fx.volume.VolumeSettings
 import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.ui.KeyboardStatus
 import dev.continuum.fx.update.KeyboardUpdater
@@ -351,6 +356,88 @@ class MainActivity : ComponentActivity(), AppActions {
         calendarPermission.launch(Manifest.permission.READ_CALENDAR)
     }
 
+    // ---- Volume ----
+
+    override fun toggleVolume() {
+        refresh()
+        if (!privileges.value.volumeService) {
+            setupOpen.value = true
+            return
+        }
+        VolumeSettings.update { it.copy(enabled = !it.enabled) }
+    }
+
+    override fun updateVolume(transform: (VolumePrefs) -> VolumePrefs) {
+        VolumeSettings.update(transform)
+    }
+
+    override fun grantVolumeWithShizuku() {
+        when (Privileges.shizukuState()) {
+            ShizukuState.NOT_RUNNING ->
+                message.value = "Shizuku isn't running. Start it in the Shizuku app, or use accessibility settings."
+            ShizukuState.NEEDS_PERMISSION -> try {
+                afterShizukuPermission = ::runVolumeShizukuGrant
+                Shizuku.requestPermission(REQUEST_SHIZUKU)
+            } catch (_: Throwable) {
+                message.value = "Couldn't reach Shizuku. Use accessibility settings instead."
+            }
+            ShizukuState.READY -> runVolumeShizukuGrant()
+        }
+    }
+
+    private fun runVolumeShizukuGrant() {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) { Privileges.grantVolumeWithShizuku(packageName) }
+            VolumeHelper.connect()
+            delay(700)
+            refresh()
+            val ready = privileges.value.volumeService
+            if (ready) VolumeSettings.update { it.copy(enabled = true) }
+            message.value = when {
+                ready -> "The volume panel is on. Press a volume key."
+                ok -> "Nearly there. Check the steps that are left."
+                else -> "Shizuku couldn't switch it on. Use accessibility settings instead."
+            }
+        }
+    }
+
+    override fun connectVolumeHelper() {
+        when (Privileges.shizukuState()) {
+            ShizukuState.NOT_RUNNING ->
+                message.value = "Shizuku isn't running. Start it in the Shizuku app first."
+            ShizukuState.NEEDS_PERMISSION -> try {
+                afterShizukuPermission = { VolumeHelper.connect() }
+                Shizuku.requestPermission(REQUEST_SHIZUKU)
+            } catch (_: Throwable) {
+                message.value = "Couldn't reach Shizuku."
+            }
+            ShizukuState.READY -> {
+                VolumeHelper.connect()
+                lifecycleScope.launch {
+                    delay(4_000)
+                    if (!VolumeHelper.ready.value) message.value = "The helper didn't start. Try again, or restart Shizuku."
+                }
+            }
+        }
+    }
+
+    override fun showVolumePanel(expanded: Boolean) {
+        val service = VolumeService.instance
+        if (service == null) {
+            refresh()
+            setupOpen.value = true
+            message.value = "Switch the volume panel on first."
+            return
+        }
+        service.showPanel(expanded)
+    }
+
+    override fun setPlaysAlongside(pkg: String, on: Boolean) {
+        VolumeHelper.setPlaysAlongside(pkg, on) { ok ->
+            if (!ok) runOnUiThread { message.value = "Couldn't change that. Is Shizuku still running?" }
+        }
+    }
+
     override fun updateIsland(transform: (IslandPrefs) -> IslandPrefs) {
         IslandSettings.update(transform)
     }
@@ -544,6 +631,11 @@ class MainActivity : ComponentActivity(), AppActions {
                 refresh()
                 if (!privileges.value.islandReady) setupOpen.value = true
             }
+            ACTION_OPEN_VOLUME -> {
+                setSection(Section.Volume)
+                refresh()
+                if (!privileges.value.volumeService) setupOpen.value = true
+            }
             TileService.ACTION_QS_TILE_PREFERENCES -> {
                 val tile: ComponentName? = if (Build.VERSION.SDK_INT >= 33) {
                     intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME, ComponentName::class.java)
@@ -551,7 +643,13 @@ class MainActivity : ComponentActivity(), AppActions {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME)
                 }
-                setSection(if (tile?.className?.endsWith("IslandTile") == true) Section.Island else Section.Sound)
+                setSection(
+                    when {
+                        tile?.className?.endsWith("IslandTile") == true -> Section.Island
+                        tile?.className?.endsWith("VolumeTile") == true -> Section.Volume
+                        else -> Section.Sound
+                    },
+                )
             }
             Intent.ACTION_VIEW -> intent.data?.let { importUri(it) }
             Intent.ACTION_SEND -> {
@@ -619,6 +717,8 @@ class MainActivity : ComponentActivity(), AppActions {
         const val ACTION_START_PROCESSING = "dev.continuum.fx.action.START_PROCESSING"
         /** From the island tile, when the island still needs setting up. */
         const val ACTION_OPEN_ISLAND = "dev.continuum.fx.action.OPEN_ISLAND"
+        /** From the volume panel's settings button and its tile. */
+        const val ACTION_OPEN_VOLUME = "dev.continuum.fx.action.OPEN_VOLUME"
         private const val REQUEST_SHIZUKU = 42
         private const val MAX_IMPORT_BYTES = 256 * 1024
     }

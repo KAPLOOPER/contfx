@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.island.IslandSettings
+import dev.continuum.fx.volume.VolumeModel
+import dev.continuum.fx.volume.VolumeSettings
+import dev.continuum.fx.volume.VolumeStatus
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
@@ -26,6 +29,8 @@ class ContinuumApp : Application() {
         super.onCreate()
         store = ProfileStore(this)
         IslandSettings.init(this)
+        VolumeSettings.init(this)
+        VolumeModel.start(this)
         followOutputs()
         keepTilesCurrent()
         val channel = NotificationChannel(
@@ -70,7 +75,8 @@ class ContinuumApp : Application() {
                 store.state.map { it.active.name to it.eqEnabled },
                 IslandSettings.state.map { it.enabled },
                 IslandRepository.hostActive,
-            ) { a, b, c, d -> listOf(a, b, c, d) }
+                combine(VolumeStatus.serviceOn, VolumeSettings.state.map { it.enabled }) { a, b -> a to b },
+            ) { a, b, c, d, e -> listOf(a, b, c, d, e) }
                 .distinctUntilChanged()
                 .collect { ContinuumTile.refresh(this@ContinuumApp) }
         }

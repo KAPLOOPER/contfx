@@ -7,4 +7,8 @@
     <string name="island_accessibility_description">Continuum uses this only to draw the island over other apps, around the front camera: playing music, calls, timers and new notifications. It doesn\'t read or collect anything on your screen.</string>
     <string name="tile_eq">Continuum EQ</string>
     <string name="tile_island">Island</string>
+    <string name="volume_service_label">Continuum volume</string>
+    <string name="volume_accessibility_summary">Opens the ink volume panel when you press a volume key.</string>
+    <string name="volume_accessibility_description">Continuum uses this only to catch the two volume keys, so they open its volume panel instead of Android\'s. It doesn\'t read or collect anything on your screen; it notes only which app is in front, so the camera keeps its shutter key.</string>
+    <string name="tile_volume">Volume</string>
 </resources>

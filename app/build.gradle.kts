@@ -61,6 +61,8 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        // The volume panel's Shizuku helper talks over AIDL.
+        aidl = true
     }
 
     testOptions {

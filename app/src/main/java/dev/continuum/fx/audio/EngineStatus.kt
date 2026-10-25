@@ -18,4 +18,7 @@ object EngineStatus {
 
     /** Held down to hear the music without the EQ (at matched loudness), for comparison. */
     val comparing = MutableStateFlow(false)
+
+    /** Volume boost past 100%, in dB, from the volume panel. Applied in front of the limiter. */
+    val boostDb = MutableStateFlow(0f)
 }

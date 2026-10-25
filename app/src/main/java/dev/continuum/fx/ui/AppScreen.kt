@@ -88,7 +88,7 @@ import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
 
-enum class Section { Sound, Island, Keyboard }
+enum class Section { Sound, Island, Volume, Keyboard }
 
 data class UiState(
     val library: Library,
@@ -128,6 +128,12 @@ interface AppActions {
     fun grantPopupsWithShizuku()
     /** Asks for calendar access, then turns the island's Calendar events on. */
     fun requestCalendar()
+    fun toggleVolume()
+    fun updateVolume(transform: (dev.continuum.fx.volume.VolumePrefs) -> dev.continuum.fx.volume.VolumePrefs)
+    fun grantVolumeWithShizuku()
+    fun connectVolumeHelper()
+    fun showVolumePanel(expanded: Boolean)
+    fun setPlaysAlongside(pkg: String, on: Boolean)
     fun openAccessibilitySettings()
     fun openListenerSettings()
     fun openAppInfo()
@@ -167,6 +173,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
             ) {
                 SectionTitle("Sound", state.section == Section.Sound) { actions.setSection(Section.Sound) }
                 SectionTitle("Island", state.section == Section.Island) { actions.setSection(Section.Island) }
+                SectionTitle("Volume", state.section == Section.Volume) { actions.setSection(Section.Volume) }
                 SectionTitle("Keyboard", state.section == Section.Keyboard) { actions.setSection(Section.Keyboard) }
             }
             Gap(2.dp)
@@ -188,6 +195,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         SoundContent(state, store, actions)
                     }
                     Section.Island -> IslandContent(state, actions)
+                    Section.Volume -> VolumeContent(state, actions)
                     Section.Keyboard -> KeyboardContent(state, actions)
                 }
             }
@@ -595,8 +603,10 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
         Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
             when {
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
+                open && section == Section.Volume -> VolumeSetupSheet(state, actions)
                 open && section == Section.Sound -> SetupSheet(state, actions)
                 section == Section.Island -> IslandDockBar(state, actions)
+                section == Section.Volume -> VolumeDockBar(state, actions)
                 section == Section.Keyboard -> KeyboardDockBar(state, actions)
                 else -> DockBar(state, actions)
             }

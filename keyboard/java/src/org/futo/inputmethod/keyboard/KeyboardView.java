@@ -124,6 +124,10 @@ public class KeyboardView extends View {
     private final Canvas mOffscreenCanvas = new Canvas();
     @Nonnull
     private final Paint mPaint = new Paint();
+
+    // Continuum Keyboard: keys squash when pressed.
+    private final org.futo.inputmethod.keyboard.internal.KeySquash mSquash =
+            new org.futo.inputmethod.keyboard.internal.KeySquash(this);
     private final Paint.FontMetrics mFontMetrics = new Paint.FontMetrics();
 
     public KeyboardView(final Context context, final AttributeSet attrs) {
@@ -311,8 +315,9 @@ public class KeyboardView extends View {
 
         final Paint paint = mPaint;
         final Drawable background = getBackground();
+        final boolean squashing = mSquash.step();
         // Calculate clip region and set.
-        final boolean drawAllKeys = mInvalidateAllKeys || mInvalidatedKeys.isEmpty();
+        final boolean drawAllKeys = squashing || mInvalidateAllKeys || mInvalidatedKeys.isEmpty();
         final boolean isHardwareAccelerated = canvas.isHardwareAccelerated();
         final List<Integer> layers = mDrawableProvider.getLayers();
         if (drawAllKeys || isHardwareAccelerated || layers.size() > 1) {
@@ -350,6 +355,11 @@ public class KeyboardView extends View {
 
         mInvalidatedKeys.clear();
         mInvalidateAllKeys = false;
+        if (squashing) {
+            // Keep drawing until every key has settled.
+            mInvalidateAllKeys = true;
+            postInvalidateOnAnimation();
+        }
     }
 
     private Rect getKeyDrawOffsetAndSize(final Key key, final KeyDrawingConfiguration cfg) {
@@ -397,6 +407,16 @@ public class KeyboardView extends View {
         final Rect drawOffsetAndSize = getKeyDrawOffsetAndSize(key, kdc);
         canvas.translate(drawOffsetAndSize.left, drawOffsetAndSize.top);
 
+        final float squash = mSquash.track(key, key.getPressed());
+        if (squash != 0f) {
+            canvas.save();
+            canvas.scale(
+                    1f + org.futo.inputmethod.keyboard.internal.KeySquash.WIDEN * squash,
+                    1f - org.futo.inputmethod.keyboard.internal.KeySquash.FLATTEN * squash,
+                    drawOffsetAndSize.right / 2f,
+                    drawOffsetAndSize.bottom / 2f);
+        }
+
 
         final Drawable background = kdc.getBackground();
         if (background != null) {
@@ -407,6 +427,7 @@ public class KeyboardView extends View {
             onDrawKeyTopVisuals(key, canvas, paint, params, kdc, drawOffsetAndSize.right, drawOffsetAndSize.bottom);
         }
 
+        if (squash != 0f) canvas.restore();
         canvas.translate(-drawOffsetAndSize.left, -drawOffsetAndSize.top);
     }
 

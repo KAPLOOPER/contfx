@@ -122,7 +122,7 @@ object VolumeModel {
         try {
             a.adjustStreamVolume(stream.id, if (dir > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, 0)
         } catch (e: SecurityException) {
-            problem.value = dndProblem(stream)
+            report(dndProblem(stream))
             return StepResult.AtEnd
         }
         val after = a.getStreamVolume(stream.id)
@@ -144,7 +144,7 @@ object VolumeModel {
             refresh()
             true
         } catch (e: SecurityException) {
-            problem.value = dndProblem(stream)
+            report(dndProblem(stream))
             false
         }
     }
@@ -160,7 +160,7 @@ object VolumeModel {
             try {
                 a.ringerMode = mode
             } catch (e: SecurityException) {
-                problem.value = "Silent needs Do Not Disturb access, or Shizuku for the helper."
+                report("Silent needs Do Not Disturb access, or Shizuku for the helper.")
             }
             main.postDelayed({ refresh() }, 120)
         }
@@ -169,6 +169,15 @@ object VolumeModel {
         } else {
             direct()
         }
+    }
+
+    private val clearProblem = Runnable { problem.value = null }
+
+    /** Says why something didn't change, for a few seconds. */
+    private fun report(message: String) {
+        problem.value = message
+        main.removeCallbacks(clearProblem)
+        main.postDelayed(clearProblem, 6_000)
     }
 
     private fun dndProblem(stream: VolStream) =

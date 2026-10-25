@@ -345,18 +345,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val hideLeft = w - side - d
         val room = hideLeft - hubRect.right
         val n = STRIP_TOOLS.size
-        var gap = 10f * u
+        var space = 10f * u
         var td = d
-        if (n * td + (n + 1) * gap > room) {
-            gap = max(6f * u, (room - n * td) / (n + 1))
-            if (n * td + (n + 1) * gap > room) td = max(d * 0.7f, (room - (n + 1) * gap) / n)
+        if (n * td + (n + 1) * space > room) {
+            space = max(6f * u, (room - n * td) / (n + 1))
+            if (n * td + (n + 1) * space > room) td = max(d * 0.7f, (room - (n + 1) * space) / n)
         }
-        toolGap = gap
-        var x = hubRect.right + gap
+        toolGap = space
+        var x = hubRect.right + space
         val inset = (d - td) / 2f
         for (t in STRIP_TOOLS) {
             toolRects[t]!!.set(x, stripTop + inset, x + td, stripTop + inset + td)
-            x += td + gap
+            x += td + space
         }
         toolRects[Tool.Hide]!!.set(hideLeft, stripTop, w - side, stripTop + d)
     }

@@ -15,4 +15,7 @@ object EngineStatus {
 
     /** Labels of apps that block audio capture, so they play unprocessed. */
     val blocked = MutableStateFlow<List<String>>(emptyList())
+
+    /** Held down to hear the music without the EQ (at matched loudness), for comparison. */
+    val comparing = MutableStateFlow(false)
 }

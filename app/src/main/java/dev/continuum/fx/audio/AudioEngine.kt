@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import dev.continuum.fx.data.Library
+import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.Limiter
 import dev.continuum.fx.dsp.ParametricEq
@@ -37,8 +38,18 @@ class AudioEngine(
     private var record: AudioRecord? = null
     private var track: AudioTrack? = null
 
-    fun applyLibrary(library: Library) {
-        eq.setProfile(if (library.eqEnabled) library.active else null)
+    /**
+     * Uses the active EQ, or none when it's switched off. While [compare] is held the EQ
+     * steps aside but its overall loudness stays, so the two can be judged on sound alone:
+     * otherwise whichever is louder tends to win.
+     */
+    fun applyLibrary(library: Library, compare: Boolean = false) {
+        val profile = when {
+            !library.eqEnabled -> null
+            compare -> EqProfile(name = "Original", preampDb = EqResponse.loudnessDb(library.active))
+            else -> library.active
+        }
+        eq.setProfile(profile)
     }
 
     // RECORD_AUDIO is checked before the service is started.

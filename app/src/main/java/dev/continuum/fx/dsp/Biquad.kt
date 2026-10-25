@@ -125,6 +125,26 @@ object EqResponse {
     /** Highest boost anywhere in the audible range, ignoring the preamp. */
     fun peakDb(profile: EqProfile): Double = curve(profile, 400).maxOrNull() ?: 0.0
 
+    /**
+     * How much louder (or quieter) [profile] makes music overall, preamp included, in dB.
+     * Music carries roughly equal energy per octave, so the gain is power-averaged over
+     * log-spaced frequencies, across 50 Hz to 12 kHz where hearing judges loudness.
+     */
+    fun loudnessDb(profile: EqProfile): Double {
+        val points = 96
+        val lo = log10(50.0)
+        val hi = log10(12000.0)
+        val coeffs = profile.bands.filter { it.enabled }.map { BiquadCoefficients.design(it, SAMPLE_RATE) }
+        var power = 0.0
+        for (i in 0 until points) {
+            val f = 10.0.pow(lo + (hi - lo) * i / (points - 1))
+            var db = profile.preampDb
+            for (c in coeffs) db += c.magnitudeDb(f, SAMPLE_RATE)
+            power += 10.0.pow(db / 10.0)
+        }
+        return 10.0 * log10(power / points)
+    }
+
     /** Preamp that keeps the loudest boost at or below 0 dB, rounded to 0.1 dB. */
     fun suggestedPreamp(profile: EqProfile): Double {
         val peak = max(0.0, peakDb(profile))

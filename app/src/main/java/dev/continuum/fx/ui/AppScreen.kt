@@ -1,6 +1,7 @@
 package dev.continuum.fx.ui
 
 import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -12,7 +13,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,12 +49,18 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.audio.OutputDevice
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.data.Library
@@ -228,9 +238,11 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         }
         Gap(16.dp)
 
+        val comparing by EngineStatus.comparing.collectAsState()
         EqGraph(
             profile = profile,
             live = state.running,
+            comparing = comparing && state.running && library.eqEnabled,
             selected = selected,
             onSelect = { selected = it },
             onMove = { i, f, g ->
@@ -249,6 +261,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         PreampSection(
             preampDb = profile.preampDb,
             eqEnabled = library.eqEnabled,
+            canCompare = state.running && library.eqEnabled,
             onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
             onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
             onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
@@ -360,6 +373,7 @@ private fun StatusLine(state: UiState) {
 private fun PreampSection(
     preampDb: Double,
     eqEnabled: Boolean,
+    canCompare: Boolean,
     onPreamp: (Double) -> Unit,
     onAuto: () -> Unit,
     onToggleEq: () -> Unit,
@@ -378,10 +392,56 @@ private fun PreampSection(
             fill = p.text,
         )
         Gap(6.dp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Chip(if (eqEnabled) "EQ on" else "EQ off", eqEnabled, onToggleEq)
             PillButton("Auto preamp", onAuto, height = 38.dp)
+            if (canCompare) ComparePill()
         }
+    }
+}
+
+/**
+ * Hold to hear the music without the EQ. The loudness is matched, so the comparison is of
+ * sound, not volume (the louder of two otherwise tends to sound better).
+ */
+@Composable
+private fun ComparePill() {
+    val p = LocalPalette.current
+    val source = remember { MutableInteractionSource() }
+    val view = LocalView.current
+    val comparing by EngineStatus.comparing.collectAsState()
+    DisposableEffect(Unit) { onDispose { EngineStatus.comparing.value = false } }
+    val bg by animateColorAsState(if (comparing) p.primary else p.surface, Motion.flow(), label = "compareBg")
+    val fg by animateColorAsState(if (comparing) p.onPrimary else p.text, Motion.flow(), label = "compareFg")
+    Box(
+        Modifier
+            .squash(source, pill = true)
+            .height(38.dp)
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = { pos ->
+                    val press = PressInteraction.Press(pos)
+                    source.emit(press)
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    EngineStatus.comparing.value = true
+                    val lifted = tryAwaitRelease()
+                    EngineStatus.comparing.value = false
+                    source.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press))
+                })
+            }
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = "Hold to hear without the EQ"
+            }
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Txt("Hold to compare", 15.sp, fg, maxLines = 1)
     }
 }
 

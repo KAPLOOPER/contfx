@@ -150,3 +150,38 @@ class SpectrumTest {
         assertTrue(out.max() < 0.05f)
     }
 }
+
+class LoudnessTest {
+    @Test
+    fun flatIsUnchanged() {
+        assertEquals(0.0, EqResponse.loudnessDb(EqProfile.flat()), 1e-9)
+    }
+
+    @Test
+    fun preampAloneIsItsOwnLoudness() {
+        assertEquals(-6.0, EqResponse.loudnessDb(EqProfile(name = "p", preampDb = -6.0)), 1e-6)
+    }
+
+    @Test
+    fun aBassBoostAddsSomeLoudnessButLessThanItsPeak() {
+        val bass = EqProfile(name = "b", bands = listOf(EqBand(FilterType.LOW_SHELF, 150.0, 6.0, 0.7)))
+        val l = EqResponse.loudnessDb(bass)
+        assertTrue("bass shelf loudness $l", l > 0.5 && l < 6.0)
+    }
+
+    @Test
+    fun aMatchedPreampLandsNearZero() {
+        // The usual squig.link pattern: boosts, then a preamp that keeps the peak at 0 dB.
+        val eq = EqProfile(
+            name = "m",
+            bands = listOf(
+                EqBand(FilterType.LOW_SHELF, 105.0, 5.0, 0.7),
+                EqBand(FilterType.PEAK, 3000.0, 3.0, 1.4),
+                EqBand(FilterType.HIGH_SHELF, 9000.0, -2.0, 0.7),
+            ),
+        )
+        val withPre = eq.copy(preampDb = EqResponse.suggestedPreamp(eq))
+        val l = EqResponse.loudnessDb(withPre)
+        assertTrue("matched loudness $l", l < 0.0 && l > -6.0)
+    }
+}

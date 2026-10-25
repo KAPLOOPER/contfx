@@ -21,6 +21,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Foreground service that owns the capture session for as long as processing is on. */
@@ -75,10 +78,12 @@ class CaptureService : Service() {
             watcher = SessionWatcher(this).also { it.start() }
 
             scope.launch {
-                app.store.state.collect { library ->
-                    eng.applyLibrary(library)
-                    main.post { updateNotification(library.active.name) }
-                }
+                // Only when the name changes: dragging a band shouldn't re-post the notification.
+                app.store.state.map { it.active.name }.distinctUntilChanged().collect { name -> main.post { updateNotification(name) } }
+            }
+            scope.launch {
+                combine(app.store.state, EngineStatus.comparing) { library, compare -> library to compare }
+                    .collect { (library, compare) -> eng.applyLibrary(library, compare) }
             }
             EngineStatus.error.value = null
             EngineStatus.running.value = true
@@ -95,6 +100,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        EngineStatus.comparing.value = false
         watcher?.stop()
         watcher = null
         engine?.stop()

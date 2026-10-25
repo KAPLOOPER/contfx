@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -19,10 +21,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -37,6 +41,7 @@ import dev.continuum.fx.dsp.SpectrumAnalyzer
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.ui.theme.LocalPalette
+import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -63,6 +68,8 @@ fun EqGraph(
     onMove: (index: Int, frequency: Double, gainDb: Double) -> Unit,
     modifier: Modifier = Modifier,
     live: Boolean = false,
+    /** Held to compare: the curve drains flat, as the sound does. */
+    comparing: Boolean = false,
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -99,6 +106,7 @@ fun EqGraph(
         }
     }
     val curve = remember(profile) { EqResponse.curve(profile, POINTS) }
+    val shape by animateFloatAsState(if (comparing) 0f else 1f, Motion.flow(), label = "compare")
     val range = remember(curve) {
         val peak = curve.maxOfOrNull { abs(it) } ?: 0.0
         max(12.0, ceil((peak + 2.0) / 6.0) * 6.0)
@@ -128,10 +136,10 @@ fun EqGraph(
         fun yOf(db: Double, r: Double): Float = (top + (1.0 - (db + r) / (2.0 * r)) * plotH).toFloat()
         fun freqOf(x: Float): Double = EqLimits.MIN_FREQ * 10.0.pow(((x - padX) / plotW).coerceIn(0f, 1f) * 3.0)
         fun dbOf(y: Float, r: Double): Double = (1.0 - ((y - top) / plotH).coerceIn(0f, 1f)) * 2.0 * r - r
-        fun dotY(index: Int, prof: EqProfile, r: Double): Float {
+        fun dotY(index: Int, prof: EqProfile, r: Double, k: Float = 1f): Float {
             val b = prof.bands[index]
             val db = if (b.type.usesGain) b.gainDb else EqResponse.gainAt(prof, b.frequency)
-            return yOf(db.coerceIn(-r, r), r)
+            return yOf(db.coerceIn(-r, r) * k, r)
         }
         fun nearest(pos: Offset): Int {
             val prof = latestProfile.value
@@ -204,7 +212,7 @@ fun EqGraph(
             val path = Path()
             for (i in 0 until POINTS) {
                 val x = xOf(EqResponse.frequencyAt(i, POINTS))
-                val y = yOf(curve[i].coerceIn(-range, range), range)
+                val y = yOf(curve[i].coerceIn(-range, range) * shape, range)
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(
@@ -214,7 +222,7 @@ fun EqGraph(
             )
 
             profile.bands.forEachIndexed { i, b ->
-                val c = Offset(xOf(b.frequency), dotY(i, profile, range))
+                val c = Offset(xOf(b.frequency), dotY(i, profile, range, shape))
                 val isSel = i == selected
                 val radius = with(density) { (if (isSel) 11.dp else 7.dp).toPx() }
                 drawCircle(if (b.enabled) p.text else p.sub, radius, c)
@@ -230,6 +238,14 @@ fun EqGraph(
         }
         Box(Modifier.offset { IntOffset((padX + 4f).roundToInt(), (top - 2f).roundToInt()) }) {
             Txt("+${range.roundToInt()}", 12.sp, p.sub)
+        }
+        if (shape < 0.98f) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 18.dp)
+                    .graphicsLayer { alpha = (1f - shape).coerceIn(0f, 1f) },
+            ) { Txt("Original · matched loudness", 12.sp, p.text) }
         }
         Box(Modifier.offset { IntOffset((padX + 4f).roundToInt(), (top + plotH - with(density) { 16.dp.toPx() }).roundToInt()) }) {
             Txt("−${range.roundToInt()}", 12.sp, p.sub)

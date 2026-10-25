@@ -4,6 +4,18 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
 - **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers and notifications.
+- **Keyboard:** **Continuum Keyboard**, a separate app built on [FUTO Keyboard](https://github.com/futo-org/android-keyboard) and redesigned in Continuum. Install it, switch it on and open its settings from the Keyboard tab.
+
+## Continuum Keyboard
+
+Continuum Keyboard keeps everything FUTO Keyboard does (on-device predictions and autocorrect that learn as you type, offline voice typing, swipe typing, many languages and layouts, clipboard history, emoji, and password-manager suggestions above the keys) and works entirely offline: it has no internet access. On top of that:
+
+- **The Continuum look:** Continuum Ink by default (pure black, flat pill keys, Libron), or Continuum Light, or one that follows the system. Keys squash when pressed and bounce back.
+- **Scan text:** take a picture, tap the lines you want, and they're typed where you were. The text is read on the phone.
+- **Clipboard:** keep clips for 1 hour, a day, 3 days, a week, a month, or until you remove them; pin the ones you reuse.
+- **Emoji:** a Frequently used row alongside Recent.
+
+It lives in `keyboard/` under the **FUTO Source First License 1.1** (see `keyboard/LICENSE.md` and `keyboard/README.md`): free to use and share, not for commercial use, and FUTO's payment options stay in place. If you find it useful, you can pay FUTO for FUTO Keyboard from its settings, or from the Keyboard tab.
 
 ## The island
 
@@ -109,7 +121,8 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 
 ## Credits and licences
 
-- Licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
+- Continuum FX is licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
+- Continuum Keyboard (`keyboard/`) is a modified version of FUTO Keyboard by FUTO Holdings, Inc., under the FUTO Source First License 1.1; it's a separate app and isn't covered by the GPL.
 - The rootless approach (capture, then silence the originals through a per-session effect) follows [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP) by Tim Schneeberger.
 - Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*.
 - [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open Font License 1.1 (see `fonts/LIBRON-OFL.txt`).

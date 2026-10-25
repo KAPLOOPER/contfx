@@ -169,9 +169,14 @@ fun VolumePanel(
     val extraH = boostShown * px(52f)
     val margin = px(12f)
     val d = px(46f)
-    val gap = px(10f)
+    // Far enough apart that the goo lets the drops go at rest; they only join while moving.
+    val gap = px(16f)
     val stackH = d + gap + baseH + gap + d
-    val cy = (screenH * prefs.height).coerceIn(px(64f) + stackH / 2f, screenH - px(64f) - stackH / 2f)
+    // Kept clear of the screen's ends; on a short (landscape) screen the room shrinks, never inverts.
+    val room = min(px(64f), ((screenH - stackH) / 2f).coerceAtLeast(0f))
+    val cyLow = room + stackH / 2f
+    val cyHigh = screenH - room - stackH / 2f
+    val cy = if (cyLow <= cyHigh) (screenH * prefs.height).coerceIn(cyLow, cyHigh) else screenH / 2f
     val capBottom = cy + baseH / 2f
     val capTop = cy - baseH / 2f - extraH
 
@@ -192,7 +197,7 @@ fun VolumePanel(
         px(16f + 44f + 12f + 44f + 10f) + VolStream.entries.size * px(50f) +
             (if (apps.isNotEmpty()) px(30f) + apps.size * px(50f) else 0f) + px(30f),
     )
-    val cardTop = (cy - cardH / 2f).coerceIn(px(56f), screenH - px(56f) - cardH)
+    val cardTop = (cy - cardH / 2f).coerceIn(px(56f), (screenH - px(56f) - cardH).coerceAtLeast(px(56f)))
     val card = side(margin, cardW, cardTop, cardTop + cardH)
     val body = lerpRect(capsule, card, e)
     val radius = lerpF(w / 2f, px(30f), e.coerceIn(0f, 1f))
@@ -224,8 +229,8 @@ fun VolumePanel(
     val fullY = capBottom - baseH + px(5f)
     val liquidY = lerpF(innerBottom, fullY, fill.value.coerceIn(0f, 1f))
     val surfaceY = if (extraH > 0.5f) innerTop else liquidY
-    val tellCy = surfaceY.coerceIn(innerTop + tellH / 2f, innerBottom - tellH / 2f)
-    val tellNear = lerpF(near + w / 2f - tellW / 2f, near + w + px(12f), t)
+    val tellCy = if (innerBottom - innerTop > tellH) surfaceY.coerceIn(innerTop + tellH / 2f, innerBottom - tellH / 2f) else capsule.center.y
+    val tellNear = lerpF(near + w / 2f - tellW / 2f, near + w + px(18f), t)
     val tellRect = side(tellNear, tellW, tellCy - tellH / 2f, tellCy + tellH / 2f)
 
     // Touchable: the capsule and its buds, or the sheet.
@@ -280,7 +285,8 @@ fun VolumePanel(
         val ringerPainter = painterResource(ringerIcon(snap.ringer))
         val morePainter = painterResource(R.drawable.ic_tune)
         val liquid = if (stream == VolStream.Call) InkColors.live else InkColors.on
-        Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e * 2.2f).coerceIn(0f, 1f) * o.coerceIn(0f, 1f) }) {
+        // The liquid shows at full strength early on, rather than greying in with the capsule.
+        Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e * 2.2f).coerceIn(0f, 1f) * ((o - 0.15f) / 0.35f).coerceIn(0f, 1f) }) {
             val inner = RoundRect(
                 Rect(capsule.left + px(5f), innerTop, capsule.right - px(5f), innerBottom),
                 CornerRadius((w - px(10f)) / 2f),

@@ -4,6 +4,7 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
 - **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
+- **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
 ## Continuum Keyboard
@@ -20,6 +21,19 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 - **Edit panel:** arrows that keep going while held, jumps by word and to either end of the line, *Select* to grow a selection with the same arrows, Select all, Copy, Cut, Paste, Undo and Redo.
 - Caps lock shows a bar under the shift arrow, so it never reads as a one-letter shift.
 - Slide on space to move the cursor, number row, key height, double-space full stop.
+
+## Volume
+
+Press a volume key and an ink capsule grows out of the screen edge beside the buttons. Liquid fills it to the level and sloshes as it moves; a drop pinches off its side with the number and merges back when you stop. Two more drops separate from its ends: the ringer (ring, vibrate, silent) above, and below, the way into everything else. Tap that and the capsule spreads into a sheet: where sound is going (tap it for Android 14's output picker), the ringer, media, calls, ring, notifications and alarms, and a slider for each app that's playing. Drag the capsule itself to set the level, with a tick on every step.
+
+- **Each app's own volume** (with Shizuku): turn one app down without touching the rest. The level is kept while the app is open, re-applied whenever it opens a new player, and remembered for next time; back to full forgets it.
+- **Play alongside** (with Shizuku): let an app keep playing when another starts, instead of pausing.
+- **Boost past 100%:** off until you switch it on. At full media volume, press volume up twice to go louder in 5% steps (each one +1.5 dB, up to 150%); volume down brings it back first, and a held key never climbs into it. With the EQ processing, the boost sits inside its chain in front of the limiter; otherwise Android's loudness effect does it through Shizuku. It clears itself when the sound moves to another device.
+- **Silent without Do Not Disturb** (with Shizuku): silent goes through Android's own internal path, the way its panel does it.
+- **Knows when to step aside:** a ringing call (the keys silence it), casting (the keys move the cast device) and the camera (the keys are its shutter) are left to Android.
+- **The Volume page:** every stream with − and + (hold to keep going) and its real step, `73% · 11/15`, so it's clear why a level lands where it does; the ringer; apps; play alongside; the panel's side and height; and a **Volume** Quick Settings tile for when the buttons aren't to hand.
+
+It needs one accessibility switch (*Continuum volume*), which listens to the two volume keys and nothing else. *Switch on with Shizuku* in the dock's setup flips it for you; Shizuku also starts a small helper for the per-app parts.
 
 ## The island
 
@@ -130,6 +144,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] squig.link / AutoEQ / Equalizer APO import and export
 - [ ] ViPER effects from the open-source reverse-engineered engine (bass, clarity, surround, convolver, compressor and more)
 - [x] EQ per output device, live spectrum, hold to compare, Quick Settings tiles
+- [x] A volume panel in liquid ink: per-app volume, play alongside, boost, silent without Do Not Disturb
 - [ ] Per-app exclusions
 - [x] Liquid ink island: music, calls, timers and notifications
 - [x] Island: alarms, calendar, downloads and directions, charging, sound mode, headphones
@@ -142,6 +157,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 
 - Continuum FX is licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
 - Continuum Keyboard (`keyboard/`) is original code, also under the GPL v3.0, with an additional permission to use Google's ML Kit text recognition (see `keyboard/README.md`). Its word data comes from wordfreq (CC BY-SA 4.0), SCOWL and the Google Books Ngram data via SymSpell (CC BY 3.0); emoji data from Emojibase (MIT).
+- The volume panel's key handling, Shizuku helper, per-app volume sessions and boost scale are adapted from [Volume++](https://github.com/noel-digital-fan/volume_plus_plus) by noel-digital-fan (MIT). See `THIRD_PARTY_NOTICES.md`.
 - The rootless approach (capture, then silence the originals through a per-session effect) follows [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP) by Tim Schneeberger.
 - Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*.
 - [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open Font License 1.1 (see `fonts/LIBRON-OFL.txt`).

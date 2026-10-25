@@ -1,7 +1,10 @@
 package dev.continuum.fx.island
 
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.Context
+import android.content.Intent
+import android.os.Bundle
 import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.media.session.MediaController
@@ -60,6 +63,15 @@ data class TimerInfo(
     val demo: Boolean = false,
 )
 
+/** A button from a notification. With [inputs], it takes a typed reply. */
+data class NoteAction(
+    val title: String,
+    val intent: PendingIntent?,
+    val inputs: List<RemoteInput> = emptyList(),
+) {
+    val isReply: Boolean get() = inputs.isNotEmpty()
+}
+
 data class NoteInfo(
     val key: String,
     val appName: String,
@@ -69,8 +81,56 @@ data class NoteInfo(
     val smallIcon: Icon?,
     val open: PendingIntent?,
     val postedAt: Long,
+    /** The notification's own buttons, Reply first when it has one. */
+    val actions: List<NoteAction> = emptyList(),
+    /** Whether swiping can clear it from the shade. */
+    val clearable: Boolean = true,
     val demo: Boolean = false,
 )
+
+/** The next alarm set on the phone. */
+data class AlarmInfo(
+    /** Wall-clock time it goes off. */
+    val at: Long,
+    /** Opens the alarm in its clock app. */
+    val show: PendingIntent?,
+    val demo: Boolean = false,
+)
+
+/** An alarm, or a timer that's finished, ringing now. */
+data class AlarmRing(
+    val key: String,
+    val title: String,
+    val text: String,
+    val appName: String,
+    val smallIcon: Icon?,
+    /** Snooze, Stop and the like, as the clock app offers them. */
+    val actions: List<NoteAction>,
+    val open: PendingIntent?,
+    val demo: Boolean = false,
+)
+
+/** Something under way: a download, directions, a delivery or a ride. */
+data class LiveInfo(
+    val key: String,
+    val appName: String,
+    val title: String,
+    val text: String,
+    /** A few characters for the pill ("4 min", "200 m"), when the app gives one. */
+    val short: String?,
+    /** 0..1, or a negative number while the app can't say how far along it is; null without a bar. */
+    val progress: Float?,
+    val smallIcon: Icon?,
+    /** The app's colour for the notification, when it set one. */
+    val accent: Int?,
+    val open: PendingIntent?,
+    val actions: List<NoteAction>,
+    val updatedAt: Long,
+    val demo: Boolean = false,
+)
+
+/** The ring/vibrate/silent switch just changed. [mode] is an AudioManager.RINGER_MODE_* value. */
+data class SoundMode(val mode: Int, val at: Long)
 
 data class BatteryInfo(
     /** 0..100 */
@@ -93,6 +153,19 @@ object IslandRepository {
     val call = MutableStateFlow<CallInfo?>(null)
     val timer = MutableStateFlow<TimerInfo?>(null)
     val note = MutableStateFlow<NoteInfo?>(null)
+
+    /** The next alarm, from the clock. */
+    val alarm = MutableStateFlow<AlarmInfo?>(null)
+    val alarmDemo = MutableStateFlow<AlarmInfo?>(null)
+
+    /** An alarm or finished timer ringing right now. */
+    val alarmRing = MutableStateFlow<AlarmRing?>(null)
+
+    /** The most recent thing under way: a download, directions, a delivery. */
+    val live = MutableStateFlow<LiveInfo?>(null)
+
+    /** The last time the ring/vibrate/silent switch changed. */
+    val sound = MutableStateFlow<SoundMode?>(null)
 
     /** Notifications still in the shade, newest first, for pulling a drop out of the island. */
     val recent = MutableStateFlow<List<NoteInfo>>(emptyList())
@@ -186,10 +259,105 @@ object IslandRepository {
 
     // ---- Notification actions ----
 
+    /** Clears [n] from the island and from the notification shade. */
     fun dismissNote(n: NoteInfo) {
         if (note.value?.key == n.key) note.value = null
         recent.value = recent.value.filterNot { it.key == n.key }
         if (!n.demo) listener?.dismiss(n.key)
+    }
+
+    /** Puts [n] away: off the island, but still in the shade and the pulled drop. */
+    fun tuckNote(n: NoteInfo) {
+        if (note.value?.key == n.key) note.value = null
+    }
+
+    /** Clears every notification that can be cleared, like the shade's Clear all. */
+    fun clearAll() {
+        note.value = null
+        val real = recent.value.any { !it.demo }
+        recent.value = recent.value.filter { !it.clearable && !it.demo }
+        if (real) listener?.clearAll()
+    }
+
+    /** Taps one of a notification's buttons. Replies open the reply card instead. */
+    fun noteAction(context: Context, n: NoteInfo, action: NoteAction) {
+        if (action.isReply) {
+            startReply(context, n, action)
+            return
+        }
+        if (note.value?.key == n.key) note.value = null
+        if (n.demo) {
+            recent.value = recent.value.filterNot { it.key == n.key }
+            return
+        }
+        send(action.intent)
+    }
+
+    /** The reply being written, held for the reply card. */
+    @Volatile
+    var replying: Pair<NoteInfo, NoteAction>? = null
+        private set
+
+    fun startReply(context: Context, n: NoteInfo, action: NoteAction) {
+        replying = n to action
+        if (note.value?.key == n.key) note.value = null
+        try {
+            context.startActivity(
+                Intent(context, ReplyActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS),
+            )
+        } catch (_: Exception) {
+            send(n.open)
+        }
+    }
+
+    /** Sends [text] as the reply, the way the app's own Reply button would. */
+    fun sendReply(context: Context, n: NoteInfo, action: NoteAction, text: String): Boolean {
+        replying = null
+        if (n.demo) {
+            recent.value = recent.value.filterNot { it.key == n.key }
+            return true
+        }
+        val intent = action.intent ?: return false
+        return try {
+            val fill = Intent()
+            val results = Bundle()
+            action.inputs.forEach { results.putCharSequence(it.resultKey, text) }
+            RemoteInput.addResultsToIntent(action.inputs.toTypedArray(), fill, results)
+            intent.send(context, 0, fill)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun cancelReply() {
+        replying = null
+    }
+
+    // ---- Alarm actions ----
+
+    fun alarmAction(r: AlarmRing, action: NoteAction) {
+        if (r.demo) {
+            alarmRing.value = null
+            return
+        }
+        send(action.intent)
+    }
+
+    fun openAlarm() {
+        val a = alarmDemo.value ?: alarm.value ?: return
+        if (!a.demo) send(a.show)
+    }
+
+    // ---- Live activity actions ----
+
+    fun liveAction(l: LiveInfo, action: NoteAction) {
+        if (l.demo) {
+            live.value = null
+            return
+        }
+        send(action.intent)
     }
 
     fun openNote(n: NoteInfo) {
@@ -199,6 +367,9 @@ object IslandRepository {
     }
 
     const val MAX_RECENT = 8
+
+    private fun clockLabel(at: Long): String =
+        java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(at))
 
     fun send(intent: PendingIntent?) {
         try {
@@ -230,10 +401,32 @@ object IslandRepository {
                 val n = NoteInfo(
                     key = "demo-note-$now", appName = "Messages", title = "Priya Shah",
                     text = "Running five minutes late, save me a seat", largeIcon = null, smallIcon = null,
-                    open = null, postedAt = now, demo = true,
+                    open = null, postedAt = now,
+                    actions = listOf(NoteAction("Reply", null, listOf(RemoteInput.Builder("demo").setLabel("Reply").build())), NoteAction("Mark as read", null)),
+                    demo = true,
                 )
                 note.value = n
                 recent.value = (listOf(n) + recent.value).take(MAX_RECENT)
+            }
+            "alarm" -> {
+                alarmDemo.value = AlarmInfo(at = now + 7 * 3_600_000L + 12 * 60_000L, show = null, demo = true)
+                alarmRing.value = AlarmRing(
+                    key = "demo-alarm", title = "Alarm", text = clockLabel(now), appName = "Clock", smallIcon = null,
+                    actions = listOf(NoteAction("Snooze", null), NoteAction("Stop", null)), open = null, demo = true,
+                )
+            }
+            "download" -> live.value = LiveInfo(
+                key = "demo-live", appName = "Files", title = "Holiday photos.zip", text = "Downloading · 148 MB of 240 MB",
+                short = null, progress = 0.62f, smallIcon = null, accent = null, open = null,
+                actions = listOf(NoteAction("Pause", null), NoteAction("Cancel", null)), updatedAt = now, demo = true,
+            )
+            "sound" -> {
+                val next = when (sound.value?.mode) {
+                    2 -> 1
+                    1 -> 0
+                    else -> 2
+                }
+                sound.value = SoundMode(next, now)
             }
             "battery" -> {
                 batteryDemo.value = BatteryInfo(
@@ -248,6 +441,9 @@ object IslandRepository {
                 if (note.value?.demo == true) note.value = null
                 recent.value = recent.value.filterNot { it.demo }
                 batteryDemo.value = null
+                alarmDemo.value = null
+                if (alarmRing.value?.demo == true) alarmRing.value = null
+                if (live.value?.demo == true) live.value = null
             }
         }
     }
@@ -271,6 +467,14 @@ data class IslandPrefs(
     val timeSpot: String = TIME_OUTSIDE,
     /** Switch Android's own notification pop-ups off while the island shows notifications. */
     val hidePopups: Boolean = false,
+    /** The next alarm, and alarms as they ring. */
+    val alarms: Boolean = true,
+    /** Show the next alarm whatever the time, not just in the last 12 hours before it. */
+    val alarmAlways: Boolean = false,
+    /** Downloads, directions, deliveries and other things under way. */
+    val live: Boolean = true,
+    /** Ring, vibrate or silent, for a moment when you switch. */
+    val sound: Boolean = true,
 ) {
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
@@ -306,6 +510,10 @@ object IslandSettings {
             alwaysBattery = p.getBoolean("alwaysBattery", false),
             timeSpot = p.getString("timeSpot", null) ?: IslandPrefs.TIME_OUTSIDE,
             hidePopups = p.getBoolean("hidePopups", false),
+            alarms = p.getBoolean("alarms", true),
+            alarmAlways = p.getBoolean("alarmAlways", false),
+            live = p.getBoolean("live", true),
+            sound = p.getBoolean("sound", true),
         )
     }
 
@@ -324,6 +532,10 @@ object IslandSettings {
             ?.putBoolean("alwaysBattery", next.alwaysBattery)
             ?.putString("timeSpot", next.timeSpot)
             ?.putBoolean("hidePopups", next.hidePopups)
+            ?.putBoolean("alarms", next.alarms)
+            ?.putBoolean("alarmAlways", next.alarmAlways)
+            ?.putBoolean("live", next.live)
+            ?.putBoolean("sound", next.sound)
             ?.apply()
     }
 }

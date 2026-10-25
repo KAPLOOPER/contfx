@@ -32,6 +32,8 @@ class IslandNotificationListener : NotificationListenerService() {
     private var controller: MediaController? = null
     private val timers = LinkedHashMap<String, TimerInfo>()
     private val calls = LinkedHashMap<String, CallInfo>()
+    private val alarmRings = LinkedHashMap<String, AlarmRing>()
+    private val lives = LinkedHashMap<String, LiveInfo>()
     /** Full-screen alerts already opened, so updates don't open them again. */
     private val openedFullScreen = HashSet<String>()
     private val seenNotes = HashMap<String, Int>()
@@ -91,6 +93,8 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         openedFullScreen.remove(sbn.key)
+        alarmRings.remove(sbn.key)
+        lives.remove(sbn.key)
         calls.remove(sbn.key)
         timers.remove(sbn.key)
         seenNotes.remove(sbn.key)
@@ -102,6 +106,14 @@ class IslandNotificationListener : NotificationListenerService() {
     fun dismiss(key: String) {
         try {
             cancelNotification(key)
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Clears everything clearable, like the shade's Clear all. */
+    fun clearAll() {
+        try {
+            cancelAllNotifications()
         } catch (_: Exception) {
         }
     }
@@ -170,17 +182,23 @@ class IslandNotificationListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return
         val n = sbn.notification
         val extras = n.extras
+        val prefs = IslandSettings.state.value
+
+        // An alarm, or a finished timer, ringing now: the island shows it with its buttons.
+        val ring = parseAlarmRing(sbn)
+        if (ring != null) alarmRings[sbn.key] = ring else alarmRings.remove(sbn.key)
 
         // With Android's pop-ups off, alerts that would have popped up over what you're doing
-        // (alarms, or calls when the island isn't showing them) open full screen instead.
+        // (alarms or calls the island isn't showing) open full screen instead.
         val fullScreen = n.fullScreenIntent
         if (!initial && fullScreen != null && sbn.key !in openedFullScreen && PopupGuard.hiding(this)) {
-            val islandRings = n.category == Notification.CATEGORY_CALL && IslandSettings.state.value.calls
+            val islandRings = (n.category == Notification.CATEGORY_CALL && prefs.calls) || (ring != null && prefs.alarms)
             if (!islandRings) {
                 openedFullScreen += sbn.key
                 PopupGuard.openFullScreen(this, fullScreen)
             }
         }
+        if (ring != null) return
 
         if (n.category == Notification.CATEGORY_CALL) {
             parseCall(sbn)?.let { calls[sbn.key] = it } ?: calls.remove(sbn.key)
@@ -202,6 +220,14 @@ class IslandNotificationListener : NotificationListenerService() {
             return
         } else {
             timers.remove(sbn.key)
+        }
+
+        val live = parseLive(sbn, template)
+        if (live != null) {
+            lives[sbn.key] = live
+            return
+        } else {
+            lives.remove(sbn.key)
         }
 
         val importance = importanceOf(sbn)
@@ -227,6 +253,8 @@ class IslandNotificationListener : NotificationListenerService() {
             smallIcon = n.smallIcon,
             open = n.contentIntent,
             postedAt = sbn.postTime,
+            actions = actionsOf(n),
+            clearable = sbn.isClearable,
         )
         recent[sbn.key] = info
         while (recent.size > IslandRepository.MAX_RECENT * 2) {
@@ -306,6 +334,69 @@ class IslandNotificationListener : NotificationListenerService() {
         )
     }
 
+    /** A notification's buttons, Reply first, leaving out the system's suggested replies. */
+    private fun actionsOf(n: Notification): List<NoteAction> = n.actions.orEmpty().mapNotNull { a ->
+        if (Build.VERSION.SDK_INT >= 29 && a.isContextual) return@mapNotNull null
+        val title = a.title?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val inputs = a.remoteInputs.orEmpty().filter { it.allowFreeFormInput }
+        NoteAction(title, a.actionIntent, inputs)
+    }.sortedByDescending { it.isReply }.take(3)
+
+    /** A ringing alarm or finished timer: an alarm that wants the whole screen. */
+    private fun parseAlarmRing(sbn: StatusBarNotification): AlarmRing? {
+        val n = sbn.notification
+        if (n.category != Notification.CATEGORY_ALARM || n.fullScreenIntent == null) return null
+        val extras = n.extras
+        return AlarmRing(
+            key = sbn.key,
+            title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() } ?: "Alarm",
+            text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
+            appName = appName(sbn.packageName),
+            smallIcon = n.smallIcon,
+            actions = actionsOf(n).filter { !it.isReply }.take(2),
+            open = n.contentIntent ?: n.fullScreenIntent,
+        )
+    }
+
+    /**
+     * Something under way that belongs in the island: a progress bar (downloads, uploads,
+     * installs), directions, or one of Android's live updates (deliveries, rides).
+     */
+    private fun parseLive(sbn: StatusBarNotification, template: String): LiveInfo? {
+        val n = sbn.notification
+        if (sbn.packageName in SYSTEM_PACKAGES || template.contains("MediaStyle")) return null
+        val extras = n.extras
+        val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val indeterminate = extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE)
+        val promoted = (n.flags and FLAG_PROMOTED_ONGOING) != 0
+        val progressStyle = template.contains("ProgressStyle")
+        val directions = n.category == Notification.CATEGORY_NAVIGATION
+        val bar = max > 0 || indeterminate
+        if (!sbn.isOngoing && !promoted) return null
+        if (!bar && !directions && !promoted && !progressStyle) return null
+        val progress = when {
+            max > 0 -> (extras.getInt(Notification.EXTRA_PROGRESS, 0).toFloat() / max).coerceIn(0f, 1f)
+            indeterminate -> -1f
+            else -> null
+        }
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = (extras.getCharSequence(Notification.EXTRA_TEXT) ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT))?.toString().orEmpty()
+        if (title.isBlank() && text.isBlank() && progress == null) return null
+        return LiveInfo(
+            key = sbn.key,
+            appName = appName(sbn.packageName),
+            title = title,
+            text = text,
+            short = extras.getCharSequence(EXTRA_SHORT_CRITICAL_TEXT)?.toString()?.takeIf { it.isNotBlank() },
+            progress = progress,
+            smallIcon = n.smallIcon,
+            accent = n.color.takeIf { it != 0 && it != Notification.COLOR_DEFAULT },
+            open = n.contentIntent,
+            actions = actionsOf(n).filter { !it.isReply }.take(2),
+            updatedAt = sbn.postTime,
+        )
+    }
+
     @Suppress("DEPRECATION")
     private fun pendingIntent(extras: android.os.Bundle, key: String): PendingIntent? =
         if (Build.VERSION.SDK_INT >= 33) extras.getParcelable(key, PendingIntent::class.java) else extras.getParcelable(key)
@@ -316,6 +407,8 @@ class IslandNotificationListener : NotificationListenerService() {
         val now = System.currentTimeMillis()
         val timer = timers.values.filter { it.countDown }.minByOrNull { it.base - now } ?: timers.values.lastOrNull()
         if (IslandRepository.timer.value?.demo != true) IslandRepository.timer.value = timer
+        if (IslandRepository.alarmRing.value?.demo != true) IslandRepository.alarmRing.value = alarmRings.values.lastOrNull()
+        if (IslandRepository.live.value?.demo != true) IslandRepository.live.value = lives.values.maxByOrNull { it.updatedAt }
     }
 
     private fun appName(pkg: String): String = try {
@@ -339,6 +432,11 @@ class IslandNotificationListener : NotificationListenerService() {
         private const val CALL_TYPE_INCOMING = 1
         private const val CALL_TYPE_ONGOING = 2
         private const val CALL_TYPE_SCREENING = 3
+        /** Notification.FLAG_PROMOTED_ONGOING (Android 16): one of Android's live updates. */
+        private const val FLAG_PROMOTED_ONGOING = 0x00040000
+        /** Notification.EXTRA_SHORT_CRITICAL_TEXT (Android 16): a few characters for a status chip. */
+        private const val EXTRA_SHORT_CRITICAL_TEXT = "android.shortCriticalText"
+        private val SYSTEM_PACKAGES = setOf("android", "com.android.systemui")
 
         private val ANSWER_WORDS = listOf("answer", "accept", "pick up")
         private val DECLINE_WORDS = listOf("decline", "reject")

@@ -81,8 +81,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import dev.continuum.fx.R
+import dev.continuum.fx.island.AlarmInfo
+import dev.continuum.fx.island.AlarmRing
 import dev.continuum.fx.island.BatteryInfo
 import dev.continuum.fx.island.CallInfo
+import dev.continuum.fx.island.LiveInfo
+import dev.continuum.fx.island.NoteAction
+import dev.continuum.fx.island.SoundMode
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.MediaInfo
 import dev.continuum.fx.island.NoteInfo
@@ -289,6 +294,10 @@ internal sealed interface PillItem {
     data object Cell : PillItem
     /** Pushes what follows to the far end of its side. */
     data object Flex : PillItem
+    /** An app's own small icon, tinted to the ink. */
+    data class AppIcon(val icon: android.graphics.drawable.Icon?, val tint: Color) : PillItem
+    /** A ring of progress; negative spins while the app can't say how far along it is. */
+    data class Ring(val progress: Float, val color: Color) : PillItem
 }
 
 /** What sits either side of the camera, and how wide each side is in pixels. */
@@ -343,6 +352,8 @@ private fun PillRow(items: List<PillItem>, leading: Boolean, side: Dp, media: Me
                 is PillItem.Icon -> Glyph(item.res, item.tint, 18.dp)
                 PillItem.Cell -> if (battery != null) InkBattery(battery)
                 PillItem.Flex -> Spacer(Modifier.weight(1f))
+                is PillItem.AppIcon -> AppGlyph(item.icon, item.tint, 18.dp)
+                is PillItem.Ring -> InkRing(item.progress, item.color, 18.dp)
             }
         }
     }
@@ -350,7 +361,17 @@ private fun PillRow(items: List<PillItem>, leading: Boolean, side: Dp, media: Me
 
 /** The bud: a second live activity, pinched off to the side of the island. */
 @Composable
-internal fun BudContent(kind: Kind, media: MediaInfo?, call: CallInfo?, timer: TimerInfo?, battery: BatteryInfo?, now: Long) {
+internal fun BudContent(
+    kind: Kind,
+    media: MediaInfo?,
+    call: CallInfo?,
+    timer: TimerInfo?,
+    battery: BatteryInfo?,
+    now: Long,
+    alarm: AlarmInfo? = null,
+    live: LiveInfo? = null,
+    sound: SoundMode? = null,
+) {
     Row(
         Modifier.fillMaxSize().padding(horizontal = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -364,6 +385,15 @@ internal fun BudContent(kind: Kind, media: MediaInfo?, call: CallInfo?, timer: T
             }
             Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 13.sp, InkColors.on, bold = true, maxLines = 1)
             Kind.Battery -> if (battery != null) InkBattery(battery)
+            Kind.Alarm -> if (alarm != null) {
+                Glyph(R.drawable.ic_alarm, InkColors.on, 14.dp)
+                Txt(clockText(LocalContext.current, alarm.at), 13.sp, InkColors.on, bold = true, maxLines = 1)
+            }
+            Kind.Live -> if (live != null) {
+                if (live.progress != null) InkRing(live.progress, liveColor(live), 16.dp) else AppGlyph(live.smallIcon, InkColors.on, 14.dp)
+                liveShort(live)?.let { Txt(it, 13.sp, InkColors.on, bold = true, maxLines = 1) }
+            }
+            Kind.Sound -> if (sound != null) Glyph(soundIcon(sound.mode), soundColor(sound.mode), 16.dp)
         }
     }
 }
@@ -694,17 +724,20 @@ internal fun RingingDrip(c: CallInfo) {
 
 @Composable
 internal fun NoteDrip(n: NoteInfo) {
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        NoteIcon(n, 44.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
-            if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
-            if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().height(84.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NoteIcon(n, 44.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
+                if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
+                if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+            }
         }
+        if (n.actions.isNotEmpty()) NoteActions(n, Modifier.padding(start = 12.dp, end = 12.dp))
     }
 }
 
@@ -868,6 +901,348 @@ internal fun PulledCard(notes: List<NoteInfo>, index: Int, battery: BatteryInfo?
                     Txt("${n.appName} · ${ago(n.postedAt, now)}", 11.sp, InkColors.sub, maxLines = 1, modifier = Modifier.weight(1f))
                     if (notes.size > 1) Txt("${i + 1} of ${notes.size}", 11.sp, InkColors.sub, maxLines = 1)
                 }
+                if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
+                if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+            }
+        }
+    }
+}
+
+
+// ---- App icons and progress ----
+
+/** An app's small icon from its notification, tinted to the ink. */
+@Composable
+internal fun AppGlyph(icon: android.graphics.drawable.Icon?, tint: Color, size: Dp) {
+    val context = LocalContext.current
+    val image = remember(icon) {
+        try {
+            icon?.loadDrawable(context)?.toBitmap(72, 72)?.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
+    if (image != null) {
+        Image(image, contentDescription = null, modifier = Modifier.size(size), colorFilter = ColorFilter.tint(tint))
+    } else {
+        Glyph(R.drawable.ic_island, tint, size)
+    }
+}
+
+/**
+ * Progress as a ring of liquid filling round a dark track; while the app can't say how
+ * far along it is, a short drop runs round it instead.
+ */
+@Composable
+internal fun InkRing(progress: Float, color: Color, size: Dp, stroke: Dp = 3.dp) {
+    val shown by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.flow(), label = "ring")
+    val spin = rememberInfiniteTransition(label = "ringSpin")
+    val turn by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "ringTurn")
+    Canvas(Modifier.size(size)) {
+        val w = stroke.toPx()
+        val inset = w / 2f
+        val arcSize = Size(this.size.width - w, this.size.height - w)
+        val style = androidx.compose.ui.graphics.drawscope.Stroke(width = w, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawArc(InkColors.tonal, 0f, 360f, false, Offset(inset, inset), arcSize, style = style)
+        if (progress < 0f) {
+            drawArc(color, turn, 80f, false, Offset(inset, inset), arcSize, style = style)
+        } else if (shown > 0.005f) {
+            drawArc(color, -90f, 360f * shown, false, Offset(inset, inset), arcSize, style = style)
+        }
+    }
+}
+
+/** A flat bar of liquid progress for the open island. */
+@Composable
+internal fun InkBar(progress: Float, color: Color, modifier: Modifier = Modifier) {
+    val shown by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.flow(), label = "bar")
+    val spin = rememberInfiniteTransition(label = "barSpin")
+    val run by spin.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = LinearEasing)), label = "barRun")
+    Canvas(modifier.fillMaxWidth().height(8.dp)) {
+        val h = this.size.height
+        drawRoundRect(InkColors.tonal, Offset.Zero, this.size, CornerRadius(h / 2f))
+        if (progress < 0f) {
+            val w = this.size.width * 0.28f
+            val x = (this.size.width + w) * run - w
+            clipPath(Path().apply { addRoundRect(RoundRect(0f, 0f, this@Canvas.size.width, h, CornerRadius(h / 2f))) }) {
+                drawRoundRect(color, Offset(x, 0f), Size(w, h), CornerRadius(h / 2f))
+            }
+        } else {
+            drawRoundRect(color, Offset.Zero, Size(this.size.width * shown, h), CornerRadius(h / 2f))
+        }
+    }
+}
+
+internal fun liveColor(l: LiveInfo): Color = l.accent?.let { Color(brighten(it)) } ?: InkColors.live
+
+/** An app colour, lifted enough to read on black ink. */
+private fun brighten(color: Int): Int {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(color, hsv)
+    hsv[2] = maxOf(hsv[2], 0.75f)
+    return android.graphics.Color.HSVToColor(hsv)
+}
+
+/** What a live item shows in the pill. */
+internal fun liveShort(l: LiveInfo): String? = when {
+    l.short != null -> l.short
+    l.progress != null && l.progress >= 0f -> "${(l.progress * 100).toInt()}%"
+    l.progress != null -> null
+    else -> l.title.takeIf { it.isNotBlank() }?.let { if (it.length > 14) it.take(13) + "…" else it }
+}
+
+// ---- Sound mode ----
+
+@DrawableRes
+internal fun soundIcon(mode: Int): Int = when (mode) {
+    0 -> R.drawable.ic_bell_off
+    1 -> R.drawable.ic_vibrate
+    else -> R.drawable.ic_bell
+}
+
+internal fun soundLabel(mode: Int): String = when (mode) {
+    0 -> "Silent"
+    1 -> "Vibrate"
+    else -> "Ring"
+}
+
+internal fun soundColor(mode: Int): Color = if (mode == 0) InkColors.end else InkColors.on
+
+// ---- Alarms ----
+
+/** "Today", "Tomorrow" or the day's name, for an alarm time. */
+internal fun alarmDay(at: Long, now: Long): String {
+    val zone = ZoneId.systemDefault()
+    val day = Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    return when (day) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> day.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
+    }
+}
+
+/** The alarm's time in the phone's own style, with AM/PM when it uses them. */
+internal fun alarmTime(context: Context, at: Long): String =
+    DateFormat.getTimeFormat(context).format(java.util.Date(at))
+
+@Composable
+internal fun ExpandedAlarm(a: AlarmInfo, now: Long, band: Dp) {
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth().height(band), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Next alarm", 12.sp, InkColors.sub, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Txt(alarmDay(a.at, now), 12.sp, InkColors.sub, maxLines = 1)
+        }
+        Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(46.dp).clip(CircleShape).background(InkColors.tonal), contentAlignment = Alignment.Center) {
+                Glyph(R.drawable.ic_alarm, InkColors.on, 24.dp)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(alarmTime(context, a.at), 30.sp, InkColors.on, bold = true, maxLines = 1)
+                Txt("Goes off in ${duration((a.at - now).coerceAtLeast(0))}", 14.sp, InkColors.sub, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        InkPill("Open clock", InkColors.tonal, InkColors.on, Modifier.fillMaxWidth(), icon = R.drawable.ic_alarm) { IslandRepository.openAlarm() }
+    }
+}
+
+/** An alarm or finished timer ringing: what it is, with the clock's own Snooze and Stop. */
+@Composable
+internal fun AlarmRingDrip(r: AlarmRing) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(InkColors.tonal), contentAlignment = Alignment.Center) {
+                Glyph(R.drawable.ic_alarm, InkColors.on, 22.dp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(r.appName, 11.sp, InkColors.sub, maxLines = 1)
+                Txt(r.title, 16.sp, InkColors.on, bold = true, maxLines = 1)
+                if (r.text.isNotBlank()) Txt(r.text, 13.sp, InkColors.sub, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            r.actions.forEachIndexed { i, a ->
+                // The last button is the one that ends it (Stop, Dismiss): it gets the bright fill.
+                val last = i == r.actions.lastIndex
+                InkPill(a.title, if (last) InkColors.on else InkColors.tonal, if (last) InkColors.ink else InkColors.on, Modifier.weight(1f)) {
+                    IslandRepository.alarmAction(r, a)
+                }
+            }
+            if (r.actions.isEmpty()) {
+                InkPill("Open", InkColors.on, InkColors.ink, Modifier.weight(1f)) { IslandRepository.send(r.open) }
+            }
+        }
+    }
+}
+
+// ---- Live activities ----
+
+@Composable
+internal fun ExpandedLive(l: LiveInfo, band: Dp) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth().height(band), verticalAlignment = Alignment.CenterVertically) {
+            AppGlyph(l.smallIcon, InkColors.sub, 14.dp)
+            Spacer(Modifier.width(6.dp))
+            Txt(l.appName, 12.sp, InkColors.sub, maxLines = 1, modifier = Modifier.weight(1f))
+            liveShort(l)?.let { Txt(it, 12.sp, InkColors.on, bold = true, maxLines = 1) }
+        }
+        if (l.title.isNotBlank()) Txt(l.title, 17.sp, InkColors.on, bold = true, maxLines = 1)
+        if (l.text.isNotBlank()) Txt(l.text, 14.sp, InkColors.sub, maxLines = 2)
+        if (l.progress != null) {
+            Spacer(Modifier.height(12.dp))
+            InkBar(l.progress, liveColor(l))
+        }
+        Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            l.actions.forEach { a ->
+                InkPill(a.title, InkColors.tonal, InkColors.on, Modifier.weight(1f)) { IslandRepository.liveAction(l, a) }
+            }
+            if (l.open != null || l.demo) {
+                InkPill("Open", InkColors.tonal, InkColors.on, Modifier.weight(1f)) { if (!l.demo) IslandRepository.send(l.open) }
+            }
+        }
+    }
+}
+
+// ---- Notifications with their buttons ----
+
+/** The buttons under a notification: Reply first, then the app's others. */
+@Composable
+internal fun NoteActions(n: NoteInfo, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        n.actions.take(3).forEach { a ->
+            InkPill(
+                a.title, InkColors.tonal, InkColors.on, Modifier.weight(1f),
+                icon = if (a.isReply) R.drawable.ic_reply else null,
+            ) { IslandRepository.noteAction(context, n, a) }
+        }
+    }
+}
+
+/** How tall a notification drop is: taller when it has buttons. */
+internal fun noteDripHeight(n: NoteInfo): Float = if (n.actions.isEmpty()) 84f else 140f
+
+/**
+ * The pulled drop: your recent notifications as a short list. Swipe one sideways to clear
+ * it, tap to open; the next alarm and Clear all sit at the foot.
+ */
+@Composable
+internal fun PulledList(
+    notes: List<NoteInfo>,
+    battery: BatteryInfo?,
+    alarm: AlarmInfo?,
+    onOpen: (NoteInfo) -> Unit,
+    onClear: (NoteInfo) -> Unit,
+    onClearAll: () -> Unit,
+) {
+    val now = remember(notes) { System.currentTimeMillis() }
+    val context = LocalContext.current
+    if (notes.isEmpty()) {
+        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(InkColors.tonal), contentAlignment = Alignment.Center) {
+                Glyph(R.drawable.ic_island, InkColors.on, 22.dp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("All caught up", 15.sp, InkColors.on, bold = true, maxLines = 1)
+                val bits = listOfNotNull(
+                    alarm?.let { "Alarm ${alarmTime(context, it.at)} ${alarmDay(it.at, now).lowercase()}" },
+                    battery?.let { "Battery ${it.level}%" + if (it.charging) " · charging" else "" },
+                )
+                Txt(bits.joinToString(" · ").ifEmpty { "No new notifications" }, 13.sp, InkColors.sub, maxLines = 1)
+            }
+            if (battery != null) InkBattery(battery)
+        }
+        return
+    }
+    Column(Modifier.fillMaxSize().padding(top = 8.dp, bottom = 8.dp)) {
+        notes.take(PULLED_ROWS).forEach { n ->
+            androidx.compose.runtime.key(n.key) {
+                SwipeRow(n, now, onOpen, onClear)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth().height(PULLED_FOOT.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (alarm != null) {
+                Glyph(R.drawable.ic_alarm, InkColors.sub, 14.dp)
+                Spacer(Modifier.width(6.dp))
+                Txt("${alarmTime(context, alarm.at)} ${alarmDay(alarm.at, now).lowercase()}", 12.sp, InkColors.sub, maxLines = 1)
+            } else if (notes.size > PULLED_ROWS) {
+                Txt("${notes.size - PULLED_ROWS} more in the shade", 12.sp, InkColors.sub, maxLines = 1)
+            }
+            Spacer(Modifier.weight(1f))
+            if (notes.any { it.clearable }) {
+                InkPill("Clear all", InkColors.tonal, InkColors.on, icon = R.drawable.ic_trash, onClick = onClearAll)
+            }
+        }
+    }
+}
+
+internal const val PULLED_ROWS = 4
+internal const val PULLED_ROW = 62f
+internal const val PULLED_FOOT = 52f
+
+/** How tall the pulled drop is for [count] notifications. */
+internal fun pulledHeight(count: Int): Float =
+    if (count == 0) 84f else 16f + PULLED_ROW * minOf(count, PULLED_ROWS) + PULLED_FOOT
+
+/** One notification in the pulled list: follows your finger sideways and clears past halfway. */
+@Composable
+private fun SwipeRow(n: NoteInfo, now: Long, onOpen: (NoteInfo) -> Unit, onClear: (NoteInfo) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val dx = remember { Animatable(0f) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(PULLED_ROW.dp)
+            .pointerInput(n.key) { detectTapGestures { onOpen(n) } }
+            .pointerInput(n.key) {
+                val width = size.width.toFloat()
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val past = abs(dx.value) > width * 0.35f
+                        scope.launch {
+                            if (past && n.clearable) {
+                                dx.animateTo(if (dx.value > 0) width * 1.2f else -width * 1.2f, tween(180))
+                                onClear(n)
+                            } else {
+                                dx.animateTo(0f, Motion.flow())
+                            }
+                        }
+                    },
+                    onDragCancel = { scope.launch { dx.animateTo(0f, Motion.flow()) } },
+                ) { change, amount ->
+                    change.consume()
+                    // Notifications that can't be cleared only give a little.
+                    val give = if (n.clearable) 1f else 0.25f
+                    scope.launch { dx.snapTo(dx.value + amount * give) }
+                }
+            },
+    ) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = dx.value
+                    alpha = 1f - (abs(dx.value) / (size.width * 0.9f)).coerceIn(0f, 0.9f)
+                }
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NoteIcon(n, 40.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Txt("${n.appName} · ${ago(n.postedAt, now)}", 11.sp, InkColors.sub, maxLines = 1)
                 if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
                 if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
             }

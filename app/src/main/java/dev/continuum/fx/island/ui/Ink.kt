@@ -129,3 +129,32 @@ internal fun DrawScope.neckDown(
     }
     drawPath(path, color)
 }
+
+/**
+ * A neck from [a] (above) down to [b] (below) that leans: it leaves [a] at [x1] and meets
+ * [b] at [x2], so a drop dragged sideways stays tied on until the neck thins out and snaps.
+ * [k] is how thick it still is, 1 at rest down to 0 when it lets go.
+ */
+internal fun DrawScope.neckSlant(a: Rect, b: Rect, x1: Float, x2: Float, k: Float, maxHalf: Float, color: Color) {
+    if (k <= 0.02f) return
+    val d = (b.top - a.bottom).coerceAtLeast(0f)
+    val t = min(min(a.width / 2f * 0.72f, maxHalf), min(b.width / 2f * 0.72f, maxHalf)) * 0.8f * k
+    val w1 = lerpF(t, min(a.width / 2f * 0.72f, maxHalf), k.pow(0.5f))
+    val w2 = lerpF(t, min(b.width / 2f * 0.72f, maxHalf), k.pow(0.5f))
+    val o1 = min(a.height * 0.3f, maxHalf)
+    val o2 = min(b.height * 0.3f, maxHalf)
+    val y1 = a.bottom
+    val y2 = b.top
+    val ym = (y1 + y2) / 2f
+    val xm = (x1 + x2) / 2f
+    val path = Path().apply {
+        moveTo(x1 - w1, y1 - o1)
+        cubicTo(x1 - w1, y1 + d * 0.25f, xm - t, ym - d * 0.2f, xm - t, ym)
+        cubicTo(xm - t, ym + d * 0.2f, x2 - w2, y2 - d * 0.25f, x2 - w2, y2 + o2)
+        lineTo(x2 + w2, y2 + o2)
+        cubicTo(x2 + w2, y2 - d * 0.25f, xm + t, ym + d * 0.2f, xm + t, ym)
+        cubicTo(xm + t, ym - d * 0.2f, x1 + w1, y1 + d * 0.25f, x1 + w1, y1 - o1)
+        close()
+    }
+    drawPath(path, color)
+}

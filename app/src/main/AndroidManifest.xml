@@ -64,6 +64,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Replying from the island: an ink card that grows out of it, over whatever is open. -->
+        <activity
+            android:name=".island.ReplyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Continuum.Reply"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
         <service
             android:name=".audio.CaptureService"
             android:exported="false"

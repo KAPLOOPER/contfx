@@ -78,6 +78,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Call", { IslandRepository.demo("call") }, icon = R.drawable.ic_call, height = 38.dp)
             PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
             PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
+            PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm, height = 38.dp)
+            PillButton("Download", { IslandRepository.demo("download") }, height = 38.dp)
+            PillButton("Sound mode", { IslandRepository.demo("sound") }, icon = R.drawable.ic_bell, height = 38.dp)
             PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
             PillButton("Clear", { IslandRepository.demo("clear") }, height = 38.dp)
         }
@@ -95,13 +98,38 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             ToggleRow("Timers", "Countdowns and stopwatches from your clock app.", prefs.timers) {
                 actions.updateIsland { it.copy(timers = !it.timers) }
             }
-            ToggleRow("Notifications", "New messages drip down for a few seconds. Swipe up to dismiss.", prefs.notifications) {
+            ToggleRow(
+                "Notifications",
+                "New messages drip down with their buttons, Reply included. Swipe sideways to clear, up to tuck away.",
+                prefs.notifications,
+            ) {
                 actions.updateIsland { it.copy(notifications = !it.notifications) }
+            }
+            ToggleRow("Alarms", "Your next alarm, and alarms and timers as they ring, with Snooze and Stop.", prefs.alarms) {
+                actions.updateIsland { it.copy(alarms = !it.alarms) }
+            }
+            if (prefs.alarms) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } }, on = Surface.Card)
+                    Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } }, on = Surface.Card)
+                }
+            }
+            ToggleRow("Downloads and live updates", "Progress, directions, deliveries and rides while they're happening.", prefs.live) {
+                actions.updateIsland { it.copy(live = !it.live) }
+            }
+            ToggleRow("Sound mode", "Ring, vibrate or silent, for a moment when you switch.", prefs.sound) {
+                actions.updateIsland { it.copy(sound = !it.sound) }
             }
             ToggleRow("Charging and battery", "Plugging in, wireless charging, running low and fully charged.", prefs.battery) {
                 actions.updateIsland { it.copy(battery = !it.battery) }
             }
-            ToggleRow("Pull a drop", "Hold the island and drag down to pull out your recent notifications.", prefs.pull) {
+            ToggleRow("Pull a drop", "Hold the island and drag down for your recent notifications. Swipe one away to clear it.", prefs.pull) {
                 actions.updateIsland { it.copy(pull = !it.pull) }
             }
         }
@@ -147,8 +175,8 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
                 "pinches off a second bubble when two things are running, and drips alerts down from the camera. " +
                 "Hold it and drag down to pull a drop out on a stretchy neck: let go early and it springs back, " +
-                "pull past the snap and it tears free as your recent notifications. Swipe the card sideways for more, " +
-                "up to send it back. Nothing pops in or out: ink only separates and merges.",
+                "pull past the snap and it tears free as your recent notifications. Swipe a notification sideways and it " +
+                "leans away on a neck that thins and snaps; swipe up to send it back. Nothing pops in or out: ink only separates and merges.",
             15.sp, p.sub,
         )
     }

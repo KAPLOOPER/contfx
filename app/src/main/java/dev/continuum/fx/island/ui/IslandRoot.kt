@@ -54,6 +54,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import dev.continuum.fx.R
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.island.AlarmRing
 import dev.continuum.fx.island.CallInfo
 import dev.continuum.fx.island.CameraSpot
 import dev.continuum.fx.island.IslandRepository
@@ -68,7 +69,7 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-enum class Kind { Call, Media, Timer, Battery }
+enum class Kind { Call, Media, Timer, Battery, Alarm, Live, Sound }
 
 private data class Mode(val kind: Kind?, val expanded: Boolean, val time: Boolean, val battery: Boolean)
 
@@ -81,6 +82,11 @@ private sealed interface Drip {
 
     data class Peek(val note: NoteInfo) : Drip {
         override val key get() = note.key
+    }
+
+    /** An alarm, or a finished timer, ringing now. */
+    data class Alarm(val ring: AlarmRing) : Drip {
+        override val key get() = ring.key
     }
 
     /** A drop pulled out of the island by hand: recent notifications. */
@@ -128,6 +134,11 @@ fun IslandRoot(
     val batteryReal by IslandRepository.battery.collectAsState()
     val batteryDemo by IslandRepository.batteryDemo.collectAsState()
     val batteryFlash by IslandRepository.batteryFlash.collectAsState()
+    val alarmReal by IslandRepository.alarm.collectAsState()
+    val alarmDemo by IslandRepository.alarmDemo.collectAsState()
+    val alarmRingRaw by IslandRepository.alarmRing.collectAsState()
+    val liveRaw by IslandRepository.live.collectAsState()
+    val soundRaw by IslandRepository.sound.collectAsState()
     val bounds by rememberUpdatedState(onBounds)
 
     // ---- What to show ----
@@ -138,6 +149,9 @@ fun IslandRoot(
     val note = noteRaw?.takeIf { prefs.notifications }
     val batteryData = batteryDemo ?: batteryReal
     val battery = batteryData?.takeIf { prefs.battery }
+    val nextAlarm = (alarmDemo ?: alarmReal)?.takeIf { prefs.alarms }
+    val alarmRinging = alarmRingRaw?.takeIf { prefs.alarms }
+    val live = liveRaw?.takeIf { prefs.live }
 
     // The always-on clock: checked every second, but only changes once a minute, so it
     // is right again the moment the screen wakes.
@@ -187,13 +201,39 @@ fun IslandRoot(
         }
     }
 
+    // The next alarm sits in the island for the last 12 hours before it (or always, if you
+    // asked), checked once a minute so it turns up on time.
+    val alarmShown by produceState(false, nextAlarm, prefs.alarmAlways) {
+        while (true) {
+            val a = nextAlarm
+            val left = a?.let { it.at - System.currentTimeMillis() }
+            value = left != null && left > 0 && (prefs.alarmAlways || left <= 12 * 3_600_000L)
+            if (a == null) break
+            delay(60_000)
+        }
+    }
+
+    // Ring, vibrate or silent speaks up for a moment when you switch.
+    var soundShowing by remember { mutableStateOf(false) }
+    val soundAt = soundRaw?.at ?: 0L
+    LaunchedEffect(soundAt) {
+        if (prefs.sound && soundAt > 0 && System.currentTimeMillis() - soundAt < 3_000) {
+            soundShowing = true
+            delay(2_400)
+            soundShowing = false
+        }
+    }
+
     val ongoing = call?.takeIf { !it.ringing }
     val ringing = call?.takeIf { it.ringing }
     val kinds = buildList {
+        if (soundRaw != null && soundShowing) add(Kind.Sound)
         if (batteryData != null && ((battery != null && batteryShowing) || expanded == Kind.Battery)) add(Kind.Battery)
         if (ongoing != null) add(Kind.Call)
         if (mediaShown) add(Kind.Media)
         if (timer != null) add(Kind.Timer)
+        if (live != null) add(Kind.Live)
+        if (nextAlarm != null && (alarmShown || expanded == Kind.Alarm)) add(Kind.Alarm)
     }
     val open = expanded?.takeIf { it in kinds }
     val primary = open ?: kinds.firstOrNull()
@@ -203,6 +243,9 @@ fun IslandRoot(
     val lastCall = rememberLast(ongoing)
     val lastTimer = rememberLast(timer)
     val lastBattery = rememberLast(batteryData)
+    val lastAlarm = rememberLast(nextAlarm)
+    val lastLive = rememberLast(live)
+    val lastSound = rememberLast(soundRaw)
 
     // Always-on extras share the pill with whatever is live.
     val ambientBattery = if (prefs.alwaysBattery && primary != Kind.Battery) batteryData else null
@@ -238,24 +281,27 @@ fun IslandRoot(
             pulledOpen = false
         }
     }
-    LaunchedEffect(ringing?.key) { if (ringing != null) pulledOpen = false }
+    LaunchedEffect(ringing?.key, alarmRinging?.key) { if (ringing != null || alarmRinging != null) pulledOpen = false }
 
     // Notification peeks drip down for a few seconds, then merge back up.
+    // Notifications with buttons stay a little longer, and touching one keeps it there.
     var peek by remember { mutableStateOf<NoteInfo?>(null) }
-    LaunchedEffect(note?.key, note?.postedAt) {
+    var peekTouch by remember { mutableIntStateOf(0) }
+    LaunchedEffect(note?.key, note?.postedAt, peekTouch) {
         val n = note
         if (n == null) {
             peek = null
             return@LaunchedEffect
         }
         peek = n
-        delay(5_000)
+        delay(if (n.actions.isEmpty()) 5_000 else 8_000)
         peek = null
         delay(700)
         if (IslandRepository.note.value?.key == n.key) IslandRepository.note.value = null
     }
 
     val drip: Drip? = ringing?.let { Drip.Ring(it) }
+        ?: alarmRinging?.let { Drip.Alarm(it) }
         ?: (if (pulledOpen) Drip.Pulled else null)
         ?: peek?.let { Drip.Peek(it) }
     val lastDrip = rememberLast(drip)
@@ -288,6 +334,8 @@ fun IslandRoot(
         is PillItem.Icon -> px(18f)
         PillItem.Cell -> px(BATTERY_W)
         PillItem.Flex -> 0f
+        is PillItem.AppIcon -> px(18f)
+        is PillItem.Ring -> px(18f)
     }
     fun rowW(items: List<PillItem>, leading: Boolean): Float {
         if (items.isEmpty()) return px(14f)
@@ -306,17 +354,32 @@ fun IslandRoot(
             else -> PillItem.Label("${b.level}%", 13f, InkColors.on, true)
         }
     }
+    val alarmLabel = lastAlarm?.let { clockText(context, it.at) } ?: ""
+    val liveLabel = lastLive?.let { liveShort(it) }
+    val soundMode = lastSound?.mode ?: 2
     fun leftOf(k: Kind): List<PillItem> = when (k) {
         Kind.Media -> listOf(PillItem.Art)
         Kind.Call -> listOf(PillItem.Icon(R.drawable.ic_call, InkColors.live))
         Kind.Timer -> listOf(PillItem.Icon(R.drawable.ic_timer, InkColors.on))
         Kind.Battery -> listOf(PillItem.Cell)
+        Kind.Alarm -> listOf(PillItem.Icon(R.drawable.ic_alarm, InkColors.on))
+        Kind.Live -> listOf(PillItem.AppIcon(lastLive?.smallIcon, InkColors.on))
+        Kind.Sound -> listOf(PillItem.Icon(soundIcon(soundMode), soundColor(soundMode)))
     }
     fun rightOf(k: Kind): List<PillItem> = when (k) {
         Kind.Media -> listOf(PillItem.Pulse)
         Kind.Call -> listOf(PillItem.Label(callLabel, 14f, InkColors.live, true))
         Kind.Timer -> listOf(PillItem.Label(timerLabel, 14f, InkColors.on, true))
         Kind.Battery -> listOfNotNull(batteryStatus)
+        Kind.Alarm -> listOf(PillItem.Label(alarmLabel, 14f, InkColors.on, true))
+        Kind.Live -> {
+            val l = lastLive
+            val bits = mutableListOf<PillItem>()
+            if (liveLabel != null) bits += PillItem.Label(liveLabel, 14f, InkColors.on, true)
+            if (l?.progress != null) bits += PillItem.Ring(l.progress, liveColor(l))
+            bits
+        }
+        Kind.Sound -> listOf(PillItem.Label(soundLabel(soundMode), 14f, soundColor(soundMode), true))
     }
     /** What sits on each side of the camera, for a live [k] (or none) plus the always-on extras. */
     fun pillLayout(k: Kind?, time: Boolean, batt: Boolean): PillLayout {
@@ -376,6 +439,9 @@ fun IslandRoot(
         Kind.Call -> px(10f + 14f + 6f + 10f) + textW(PillItem.Label(callLabel, 13f, InkColors.live, true))
         Kind.Timer -> px(20f) + textW(PillItem.Label(timerLabel, 13f, InkColors.on, true))
         Kind.Battery -> px(BATTERY_W + 20f)
+        Kind.Alarm -> px(20f + 14f + 6f) + textW(PillItem.Label(alarmLabel, 13f, InkColors.on, true))
+        Kind.Live -> px(20f + 16f) + (liveLabel?.let { px(6f) + textW(PillItem.Label(it, 13f, InkColors.on, true)) } ?: 0f)
+        Kind.Sound -> px(20f + 16f)
     }
     fun expandedHeight(k: Kind): Float = band + px(
         when (k) {
@@ -383,6 +449,9 @@ fun IslandRoot(
             Kind.Call -> 138f
             Kind.Timer -> 132f
             Kind.Battery -> 112f
+            Kind.Alarm -> 140f
+            Kind.Live -> if (lastLive?.progress != null) 150f else 130f
+            Kind.Sound -> 0f
         },
     )
     fun centerFor(w: Float): Float {
@@ -457,7 +526,19 @@ fun IslandRoot(
     // Drips fall from the island, overshoot, and spring back to hang just below it.
     // A pulled drop follows the finger instead, and spreads into a card once it tears free.
     val dripW = cardW
-    val dripH = px(84f)
+    // Drops are as tall as what they hold: buttons, a list, or a single line.
+    val dripHTarget = px(
+        when (val d = lastDrip) {
+            is Drip.Peek -> noteDripHeight(d.note)
+            is Drip.Alarm -> 140f
+            Drip.Pulled -> pulledHeight(recent.size)
+            else -> 84f
+        },
+    )
+    val dripH by animateFloatAsState(dripHTarget, Motion.flow(), label = "dripH")
+    // Swiping a notification sideways: it leans away on a neck that thins and snaps.
+    val dripDx = remember { Animatable(0f) }
+    val sideLatch = remember { NeckLatch() }
     val dripP = remember { Animatable(0f) }
     LaunchedEffect(dripVisible) {
         if (dripVisible) {
@@ -484,14 +565,14 @@ fun IslandRoot(
         val w = lerpF(s, dripW, spread) * (1f - 0.14f * stretch)
         val h = lerpF(s, dripH, spread) * (1f + 0.16f * stretch)
         val t = lerpF(m.bottom - s, m.bottom + gap, q)
-        val cx = lerpF(m.center.x, centerFor(dripW), spread)
+        val cx = lerpF(m.center.x, centerFor(dripW), spread) + dripDx.value
         return Rect(cx - w / 2f, t, cx + w / 2f, t + h)
     }
     fun dripRadius(r: Rect): Float {
         val spread = dripSpread(if (pullPx >= 0f) 0f else dripP.value)
         return lerpF(min(r.width, r.height) / 2f, px(28f), spread).coerceAtMost(min(r.width, r.height) / 2f)
     }
-    val dripTarget = Rect(centerFor(dripW) - dripW / 2f, mainTarget.bottom + gap, centerFor(dripW) + dripW / 2f, mainTarget.bottom + gap + dripH)
+    val dripTarget = Rect(centerFor(dripW) - dripW / 2f, mainTarget.bottom + gap, centerFor(dripW) + dripW / 2f, mainTarget.bottom + gap + max(dripH, dripHTarget))
 
     // ---- Pulling a drop out by hand ----
 
@@ -500,7 +581,7 @@ fun IslandRoot(
 
     val canPull = prefs.pull && drip == null && open == null
     val canPullNow by rememberUpdatedState(canPull)
-    val tapTarget by rememberUpdatedState(primary ?: if (ambientBattery != null) Kind.Battery else null)
+    val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null) Kind.Battery else null)?.takeIf { it != Kind.Sound })
 
     fun haptic(strong: Boolean) {
         val kind = when {
@@ -599,7 +680,20 @@ fun IslandRoot(
                 val d = dripRect(m)
                 drawRoundRect(InkColors.ink, d.topLeft, d.size, CornerRadius(dripRadius(d)))
                 val reach = if (dripFromPull && !pulledOpen) tearGap else px(26f)
-                neckDown(m, d, m.center.x, dripLatch, reach, px(2f), px(26f), InkColors.ink)
+                val lean = dripDx.value
+                if (abs(lean) < 0.5f) {
+                    sideLatch.joined = true
+                    neckDown(m, d, m.center.x, dripLatch, reach, px(2f), px(26f), InkColors.ink)
+                } else {
+                    // Leaning away: the neck thins as the drop goes, and once it snaps it stays apart.
+                    val side = (1f - abs(lean) / px(90f)).coerceIn(0f, 1f)
+                    if (side <= 0f) sideLatch.joined = false
+                    if (sideLatch.joined) {
+                        val gapNow = (d.top - m.bottom).coerceAtLeast(0f)
+                        val rest = (1f - gapNow / reach).coerceIn(0f, 1f).pow(1.5f)
+                        neckSlant(m, d, m.center.x, m.center.x + lean, rest * side.pow(1.5f), px(26f), InkColors.ink)
+                    }
+                }
             }
         }
 
@@ -654,6 +748,9 @@ fun IslandRoot(
                             Kind.Call -> lastCall?.let { ExpandedCall(it, now, toDp(band)) }
                             Kind.Timer -> lastTimer?.let { ExpandedTimer(it, now, toDp(band)) }
                             Kind.Battery -> lastBattery?.let { ExpandedBattery(it, toDp(band)) }
+                            Kind.Alarm -> lastAlarm?.let { ExpandedAlarm(it, System.currentTimeMillis(), toDp(band)) }
+                            Kind.Live -> lastLive?.let { ExpandedLive(it, toDp(band)) }
+                            Kind.Sound -> Unit
                         }
                     } else {
                         PillContent(
@@ -723,12 +820,12 @@ fun IslandRoot(
                         }
                         .pointerInput(budKind) { detectTapGestures { expanded = budKind } },
                 ) {
-                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now)
+                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now, lastAlarm, lastLive, lastSound)
                 }
             }
         }
 
-        // The drip's content: an incoming call, a notification, or the pulled drop.
+        // The drip's content: an incoming call, a ringing alarm, a notification, or the pulled drop.
         val dripAlpha by animateFloatAsState(
             if (dripVisible) 1f else 0f,
             if (dripVisible) tween(240, delayMillis = 160) else tween(120),
@@ -736,6 +833,24 @@ fun IslandRoot(
         )
         val shownDrip = lastDrip
         if (shownDrip != null && dripAlpha > 0.01f) {
+            val cardWidth = dripTarget.width
+            // Sideways: the notification follows your finger; past a third of the way it flies
+            // off and is cleared, otherwise it springs back and the neck joins up again.
+            fun swipeEnd(n: NoteInfo) {
+                val past = abs(dripDx.value) > cardWidth * 0.33f && n.clearable
+                scope.launch {
+                    if (past) {
+                        haptic(strong = true)
+                        dripDx.animateTo(if (dripDx.value > 0f) sw else -sw, tween(200))
+                        dripP.snapTo(0f)
+                        dripDx.snapTo(0f)
+                        peek = null
+                        IslandRepository.dismissNote(n)
+                    } else {
+                        dripDx.animateTo(0f, Motion.flow())
+                    }
+                }
+            }
             Box(Modifier.fillMaxSize()) {
                 Box(
                     Modifier
@@ -749,22 +864,29 @@ fun IslandRoot(
                             clipPath(path) { this@drawWithContent.drawContent() }
                         }
                         .pointerInput(shownDrip.key) {
+                            // Touching a notification keeps it out for longer.
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                if (shownDrip is Drip.Peek) peekTouch++
+                            }
+                        }
+                        .pointerInput(shownDrip.key) {
+                            if (shownDrip == Drip.Pulled) return@pointerInput
                             detectTapGestures {
                                 when (shownDrip) {
                                     is Drip.Ring -> IslandRepository.send(shownDrip.call.open)
+                                    is Drip.Alarm -> IslandRepository.send(shownDrip.ring.open)
                                     is Drip.Peek -> {
                                         peek = null
                                         IslandRepository.openNote(shownDrip.note)
                                     }
-                                    Drip.Pulled -> {
-                                        val list = recent
-                                        if (list.isNotEmpty()) IslandRepository.openNote(list[pullIndex.mod(list.size)])
-                                        pulledOpen = false
-                                    }
+                                    Drip.Pulled -> Unit
                                 }
                             }
                         }
                         .pointerInput(shownDrip.key) {
+                            // Up tucks a notification back into the island (it stays in the shade),
+                            // or sends the pulled drop home.
                             var dy = 0f
                             detectVerticalDragGestures(
                                 onDragStart = { dy = 0f },
@@ -773,10 +895,10 @@ fun IslandRoot(
                                         when (shownDrip) {
                                             is Drip.Peek -> {
                                                 peek = null
-                                                IslandRepository.dismissNote(shownDrip.note)
+                                                IslandRepository.tuckNote(shownDrip.note)
                                             }
                                             Drip.Pulled -> pulledOpen = false
-                                            is Drip.Ring -> Unit
+                                            is Drip.Ring, is Drip.Alarm -> Unit
                                         }
                                     }
                                 },
@@ -786,26 +908,42 @@ fun IslandRoot(
                             }
                         }
                         .pointerInput(shownDrip.key) {
-                            if (shownDrip != Drip.Pulled) return@pointerInput
-                            var dx = 0f
+                            if (shownDrip !is Drip.Peek) return@pointerInput
+                            val n = shownDrip.note
                             detectHorizontalDragGestures(
-                                onDragStart = { dx = 0f },
-                                onDragEnd = {
-                                    if (abs(dx) > px(36f)) {
-                                        pullIndex += if (dx < 0f) 1 else -1
-                                        haptic(strong = false)
-                                    }
-                                },
+                                onDragEnd = { swipeEnd(n) },
+                                onDragCancel = { scope.launch { dripDx.animateTo(0f, Motion.flow()) } },
                             ) { change, amount ->
                                 change.consume()
-                                dx += amount
+                                val give = if (n.clearable) 1f else 0.25f
+                                scope.launch { dripDx.snapTo(dripDx.value + amount * give) }
                             }
                         },
                 ) {
-                    when (shownDrip) {
-                        is Drip.Ring -> RingingDrip(shownDrip.call)
-                        is Drip.Peek -> NoteDrip(shownDrip.note)
-                        Drip.Pulled -> PulledCard(recent, pullIndex, lastBattery)
+                    Box(Modifier.fillMaxSize().graphicsLayer { translationX = dripDx.value }) {
+                        when (shownDrip) {
+                            is Drip.Ring -> RingingDrip(shownDrip.call)
+                            is Drip.Alarm -> AlarmRingDrip(shownDrip.ring)
+                            is Drip.Peek -> NoteDrip(shownDrip.note)
+                            Drip.Pulled -> PulledList(
+                                notes = recent,
+                                battery = lastBattery,
+                                alarm = nextAlarm,
+                                onOpen = { n ->
+                                    pulledOpen = false
+                                    IslandRepository.openNote(n)
+                                },
+                                onClear = { n ->
+                                    haptic(strong = false)
+                                    IslandRepository.dismissNote(n)
+                                },
+                                onClearAll = {
+                                    haptic(strong = true)
+                                    IslandRepository.clearAll()
+                                    pulledOpen = false
+                                },
+                            )
+                        }
                     }
                 }
             }

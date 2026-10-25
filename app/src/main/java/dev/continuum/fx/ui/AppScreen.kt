@@ -33,6 +33,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -87,6 +95,7 @@ import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class Section { Sound, Island, Volume, Keyboard }
 
@@ -157,69 +166,130 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     val p = LocalPalette.current
     BackHandler(enabled = state.setupOpen) { actions.setSetupOpen(false) }
 
+    val sections = Section.entries
+    val pivot = remember { PivotState(state.section.ordinal, sections.size) }
+    val scope = rememberCoroutineScope()
+    // Each page keeps its own place, as pivot pages do.
+    val scrolls = remember { sections.associateWith { ScrollState(0) } }
+
+    // Wherever the page changed from (a swipe, a title, a tile or a notification), the pivot
+    // springs to it, carrying on with any fling.
+    LaunchedEffect(state.section) {
+        if (pivot.indexOf(pivot.contentSlot) != state.section.ordinal) {
+            pivot.contentSlot = pivot.nearest(state.section.ordinal, pivot.contentSlot)
+        }
+        val v = pivot.fling
+        pivot.fling = 0f
+        pivot.slot.animateTo(pivot.contentSlot.toFloat(), Motion.flow(), initialVelocity = v)
+    }
+    fun go(slot: Int, velocity: Float = 0f) {
+        val section = sections[pivot.indexOf(slot)]
+        pivot.contentSlot = slot
+        if (section == state.section) {
+            scope.launch { pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) }
+        } else {
+            pivot.fling = velocity
+            actions.setSection(section)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(p.ground)) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 120.dp),
-        ) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                SectionTitle("Sound", state.section == Section.Sound) { actions.setSection(Section.Sound) }
-                SectionTitle("Island", state.section == Section.Island) { actions.setSection(Section.Island) }
-                SectionTitle("Volume", state.section == Section.Volume) { actions.setSection(Section.Volume) }
-                SectionTitle("Keyboard", state.section == Section.Keyboard) { actions.setSection(Section.Keyboard) }
-            }
-            Gap(2.dp)
-            UpdateCard(
-                update = state.update,
-                title = { "Build ${it.build} is ready" },
-                subtitle = "Your settings and permissions stay as they are.",
-                actionLabel = "Update now",
-                installingNote = "Installing. Continuum FX closes for a moment while it updates, then it's back as it was.",
-                onAction = actions::installUpdate,
-                onAllow = actions::allowInstalls,
-                onDismiss = actions::dismissUpdate,
-            )
-            Crossfade(targetState = state.section, label = "section") { section ->
-                when (section) {
-                    Section.Sound -> Column {
-                        StatusLine(state)
-                        Gap(20.dp)
-                        SoundContent(state, store, actions)
+        Column(Modifier.fillMaxSize()) {
+            PivotHeader(
+                titles = sections.map { it.name.lowercase() },
+                pivot = pivot,
+                onSelect = { slot ->
+                    if (slot == pivot.contentSlot) {
+                        // The current title takes its page back to the top.
+                        scope.launch { scrolls.getValue(state.section).animateScrollTo(0) }
+                    } else {
+                        go(slot)
                     }
-                    Section.Island -> IslandContent(state, actions)
-                    Section.Volume -> VolumeContent(state, actions)
-                    Section.Keyboard -> KeyboardContent(state, actions)
+                },
+                modifier = Modifier.statusBarsPadding().padding(top = 18.dp),
+            )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clipToBounds()
+                    .pointerInput(Unit) {
+                        // Swiping the page sideways turns the pivot, the titles following the finger.
+                        val tracker = VelocityTracker()
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                tracker.resetTracking()
+                                scope.launch { pivot.slot.stop() }
+                            },
+                            onDragEnd = {
+                                val width = size.width.toFloat().coerceAtLeast(1f)
+                                val v = tracker.calculateVelocity().x
+                                val from = pivot.contentSlot
+                                val target = when {
+                                    v < -FLING -> from + 1
+                                    v > FLING -> from - 1
+                                    else -> pivot.slot.value.roundToInt().coerceIn(from - 1, from + 1)
+                                }
+                                go(target, -v / width)
+                            },
+                            onDragCancel = { go(pivot.contentSlot) },
+                        ) { change, dx ->
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            change.consume()
+                            val width = size.width.toFloat().coerceAtLeast(1f)
+                            val from = pivot.contentSlot.toFloat()
+                            scope.launch { pivot.slot.snapTo((pivot.slot.value - dx / width).coerceIn(from - 1f, from + 1f)) }
+                        }
+                    },
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            // The page slides with the titles and gives way to the next one halfway.
+                            val shift = pivot.contentSlot - pivot.slot.value
+                            translationX = shift * size.width * 0.55f
+                            alpha = (1f - abs(shift) * 1.3f).coerceIn(0f, 1f)
+                        }
+                        .verticalScroll(scrolls.getValue(state.section))
+                        .navigationBarsPadding()
+                        .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 120.dp),
+                ) {
+                    UpdateCard(
+                        update = state.update,
+                        title = { "Build ${it.build} is ready" },
+                        subtitle = "Your settings and permissions stay as they are.",
+                        actionLabel = "Update now",
+                        installingNote = "Installing. Continuum FX closes for a moment while it updates, then it's back as it was.",
+                        onAction = actions::installUpdate,
+                        onAllow = actions::allowInstalls,
+                        onDismiss = actions::dismissUpdate,
+                    )
+                    when (state.section) {
+                        Section.Sound -> Column {
+                            StatusLine(state)
+                            Gap(20.dp)
+                            SoundContent(state, store, actions)
+                        }
+                        Section.Island -> IslandContent(state, actions)
+                        Section.Volume -> VolumeContent(state, actions)
+                        Section.Keyboard -> KeyboardContent(state, actions)
+                    }
+                    Gap(30.dp)
+                    UpdateFooter(state, actions)
                 }
+                // Pages dissolve into the ground under the titles rather than being cut off.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .background(Brush.verticalGradient(listOf(p.ground, p.ground.copy(alpha = 0f)))),
+                )
             }
-            Gap(30.dp)
-            UpdateFooter(state, actions)
         }
 
         MessagePill(state.message, actions::dismissMessage, Modifier.align(Alignment.BottomCenter))
         Dock(state, actions, Modifier.align(Alignment.BottomCenter))
-    }
-}
-
-/** The page titles double as tabs: the current one in full ink, the other a tone down. */
-@Composable
-private fun SectionTitle(text: String, selected: Boolean, onClick: () -> Unit) {
-    val p = LocalPalette.current
-    val source = remember { MutableInteractionSource() }
-    val color by animateColorAsState(if (selected) p.text else p.sub, Motion.flow(), label = "sectionColor")
-    Box(
-        Modifier
-            .squash(source)
-            .clickable(interactionSource = source, indication = null, role = Role.Tab, onClick = onClick),
-    ) {
-        Txt(text, 31.sp, color, bold = true, maxLines = 1)
     }
 }
 
@@ -749,3 +819,6 @@ internal fun StepRow(
         }
     }
 }
+
+/** Fling speed, in pixels a second, that turns the pivot without dragging it halfway. */
+private const val FLING = 650f

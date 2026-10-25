@@ -3,7 +3,7 @@
 The **Continuum** toolkit for Android, built in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
-- **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers and notifications.
+- **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
 ## Continuum Keyboard
@@ -17,6 +17,8 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 - **Clipboard and emoji:** clipboard history kept from 1 hour to forever, with pins and a paste suggestion in the strip; every emoji your phone can draw, with Frequent and skin tones.
 - **Scan text:** take a picture, tap the lines you want, and they're typed where you were.
 - **Autofill:** passwords and addresses from your autofill service as chips in the strip.
+- **Edit panel:** arrows that keep going while held, jumps by word and to either end of the line, *Select* to grow a selection with the same arrows, Select all, Copy, Cut, Paste, Undo and Redo.
+- Caps lock shows a bar under the shift arrow, so it never reads as a one-letter shift.
 - Slide on space to move the cursor, number row, key height, double-space full stop.
 
 ## The island
@@ -26,12 +28,16 @@ The island is one piece of ink that starts as your camera. It follows the Contin
 - **Music and video** stretch the camera into a pill: artwork on one side, and three drops of the track's colour on the other that bob and fuse like liquid while it plays, settling into one calm drop when paused. Tap to open the player: the seek bar is a line of liquid ending in a drop that glides as the song plays and swells under your finger, play and pause melt into each other, and skip presses the triangle into the bar.
 - **Calls** drip down from the camera when they ring, with Decline and Answer. During a call the pill keeps a green timer; tap it to end the call.
 - **Timers** from your clock app count down in the pill, or in a second bubble that pinches off the side when music is playing too.
-- **Notifications** drip down for a few seconds. Tap to open, swipe up to dismiss.
+- **Notifications** drip down for a few seconds with their own buttons, Reply included. Tap to open, swipe sideways to clear, up to tuck away. *Only the island* switches Android's own pop-ups off while the island shows them.
+- **Alarms:** your next alarm sits in the island for the 12 hours before it (or whenever one is set). Alarms and finished timers drip down as they ring, with the clock's Snooze and Stop.
+- **Calendar:** your next event from 15 minutes before it starts, counting down by the minute and turning green at *Now*. Open it for the time and place, and **Join** when it has a Meet, Zoom, Teams or similar link. Off until you switch it on and allow calendar access; it's read on the phone only.
+- **Downloads and live updates:** progress rings for downloads, plus directions, deliveries and rides while they're happening.
+- **Sound mode and headphones** speak up for a moment: ring, vibrate or silent as you switch, and headphones, speakers or the car as they connect.
 - **Pull a drop:** hold the island (or the bare camera) and drag down. A drop stretches out on a neck; let go early and it springs back in, pull past the snap and it tears free as a card of your recent notifications. Swipe it sideways for the next one, tap to open, swipe up to send it back.
 - **Always on:** switch on *Time* and *Battery* to keep them in the island all the time, beside whatever else is live. The time can sit left of the artwork, right of it, or around the camera, with the hours on one side, the minutes on the other and the camera as the colon. The battery is an ink capsule on the far right with your charge inside it. With nothing playing, the island rests as a slim pill of time and battery (or time and date).
 - **Charging and battery:** plugging in, by cable or wireless, makes the island show your charge in a liquid battery that ripples as it fills. It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
 
-On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur.
+On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur. With the screen off the island rests completely and draws nothing.
 
 ### Setting up the island
 
@@ -48,6 +54,15 @@ adb shell cmd notification allow_listener dev.continuum.fx/dev.continuum.fx.isla
 ```
 
 then switch on *Continuum island* in accessibility settings. The **Try it** buttons send sample music, a call, a timer and a notification so you can see the motion straight away.
+
+## Sound
+
+- **Parametric EQ** with a response graph you drag: sideways for frequency, up and down for gain.
+- **Live spectrum:** while processing, the music itself moves behind the curve as a soft liquid outline.
+- **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.
+- **EQ per device:** link an EQ to your headphones, speaker, car or USB DAC, and it comes on by itself whenever they connect.
+- **Quick Settings tiles:** *Continuum EQ* (on or off, showing which EQ is playing) and *Island*.
+- Changes glide in over 10 ms, so dragging a band never clicks, and apps that start playing are picked up within moments.
 
 ## Sound: how it works without root
 
@@ -114,9 +129,11 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] Global parametric EQ with draggable response graph
 - [x] squig.link / AutoEQ / Equalizer APO import and export
 - [ ] ViPER effects from the open-source reverse-engineered engine (bass, clarity, surround, convolver, compressor and more)
-- [ ] Per-app exclusions and per-device profiles
+- [x] EQ per output device, live spectrum, hold to compare, Quick Settings tiles
+- [ ] Per-app exclusions
 - [x] Liquid ink island: music, calls, timers and notifications
-- [ ] Island: navigation, charging and more sources; per-device camera fine-tuning
+- [x] Island: alarms, calendar, downloads and directions, charging, sound mode, headphones
+- [ ] Island: per-device camera fine-tuning
 - [x] In-app updates that install over the top
 - [x] The Continuum keyboard
 - [ ] Liquid-ink transitions for the remaining sheets

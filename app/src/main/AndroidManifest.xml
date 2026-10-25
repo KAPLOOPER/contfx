@@ -21,6 +21,11 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- Continuum Keyboard, a separate app this one installs, updates and opens. -->
+    <queries>
+        <package android:name="dev.continuum.keyboard" />
+    </queries>
+
     <application
         android:name=".ContinuumApp"
         android:allowAudioPlaybackCapture="false"

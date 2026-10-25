@@ -111,6 +111,7 @@ import org.futo.inputmethod.latin.uix.getUnlockedSetting
 import org.futo.inputmethod.latin.uix.isDirectBootUnlocked
 import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
+import org.futo.inputmethod.latin.uix.settings.SettingRadio
 import org.futo.inputmethod.latin.uix.settings.SettingSlider
 import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
 import org.futo.inputmethod.latin.uix.settings.SettingToggleRaw
@@ -141,6 +142,9 @@ val ClipboardHistoryTimeToKeep = SettingsKey(
     intPreferencesKey("clipboard_history_time_to_keep"),
     3 * 24
 )
+
+/** Continuum Keyboard: "until I remove them". Large enough that nothing ever expires. */
+const val ClipboardKeepForever = Int.MAX_VALUE
 
 val ClipboardHistoryUnpinnedFileMbToKeep = SettingsKey(
     intPreferencesKey("clipboard_history_unpinned_file_mb_to_keep"),
@@ -1167,10 +1171,16 @@ val ClipboardHistoryAction = Action(
                     ScrollableList {
                         PaymentSurface(isPrimary = true) {
                             PaymentSurfaceHeading(title = stringResource(R.string.action_clipboard_manager_error_clipboard_history_disabled_title))
-                            ParagraphText(stringResource(R.string.action_clipboard_manager_error_clipboard_history_disabled_text_v2,
-                                    context.getSetting(ClipboardHistoryItemsToKeep),
-                                    (context.getSetting(ClipboardHistoryTimeToKeep) / 24.0f).roundToInt()
-                                )
+                            val hoursToKeep = context.getSetting(ClipboardHistoryTimeToKeep)
+                            ParagraphText(
+                                if (hoursToKeep >= ClipboardKeepForever) {
+                                    stringResource(R.string.continuum_clipboard_disabled_forever, context.getSetting(ClipboardHistoryItemsToKeep))
+                                } else {
+                                    stringResource(R.string.action_clipboard_manager_error_clipboard_history_disabled_text_v2,
+                                        context.getSetting(ClipboardHistoryItemsToKeep),
+                                        (hoursToKeep / 24.0f).roundToInt()
+                                    )
+                                }
                             )
                             Button(onClick = {
                                     clipboardHistory.setValue(true)
@@ -1389,15 +1399,23 @@ val ClipboardHistoryAction = Action(
                 visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }
             ),
 
+            // Continuum Keyboard: clear choices instead of an hours slider, up to keeping clips
+            // until you remove them.
             UserSetting(
                 name = R.string.action_clipboard_manager_settings_hours_to_keep_clips,
                 component = {
-                    SettingSlider(
-                        stringResource(R.string.action_clipboard_manager_settings_hours_to_keep_clips),
-                        ClipboardHistoryTimeToKeep,
-                        range = 1.0f..336.0f,
-                        hardRange = 0.0f..Float.POSITIVE_INFINITY,
-                        transform = { it.toInt() },
+                    SettingRadio(
+                        title = stringResource(R.string.continuum_clipboard_keep_title),
+                        options = listOf(1, 24, 3 * 24, 7 * 24, 30 * 24, ClipboardKeepForever),
+                        optionNames = listOf(
+                            stringResource(R.string.continuum_clipboard_keep_hour),
+                            stringResource(R.string.continuum_clipboard_keep_day),
+                            stringResource(R.string.continuum_clipboard_keep_three_days),
+                            stringResource(R.string.continuum_clipboard_keep_week),
+                            stringResource(R.string.continuum_clipboard_keep_month),
+                            stringResource(R.string.continuum_clipboard_keep_forever),
+                        ),
+                        setting = useDataStore(ClipboardHistoryTimeToKeep),
                     )
                 },
                 visibilityCheck = { useDataStoreValue(ClipboardHistoryEnabled) }

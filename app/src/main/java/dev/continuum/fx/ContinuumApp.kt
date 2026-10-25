@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.island.IslandSettings
-import dev.continuum.fx.keyboard.KeyboardSettings
 
 class ContinuumApp : Application() {
 
@@ -16,7 +15,6 @@ class ContinuumApp : Application() {
         super.onCreate()
         store = ProfileStore(this)
         IslandSettings.init(this)
-        KeyboardSettings.init(this)
         val channel = NotificationChannel(
             CHANNEL_PROCESSING,
             "Audio processing",

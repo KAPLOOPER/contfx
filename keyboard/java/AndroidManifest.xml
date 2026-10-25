@@ -35,6 +35,12 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove"/>
 
+    <!-- Continuum Keyboard: the camera for Scan text. Text is read on the phone, and the
+         keyboard keeps FUTO's promise of no internet access, even if a library asks for it. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove"/>
+
     <application android:label="@string/english_ime_name"
          android:icon="@mipmap/ic_launcher"
          android:roundIcon="@mipmap/ic_launcher_round"
@@ -71,6 +77,14 @@
         -->
 
         <!-- Activities -->
+        <activity android:name=".uix.actions.scantext.ScanTextActivity"
+             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+             android:exported="false"
+             android:excludeFromRecents="true"
+             android:noHistory="true"
+             android:taskAffinity=""
+             android:screenOrientation="portrait"/>
+
         <activity android:name=".uix.settings.SettingsActivity"
              android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
              android:icon="@mipmap/ic_launcher"

@@ -40,11 +40,13 @@ class InstallReceiver : BroadcastReceiver() {
             }
             return
         }
-        Updater.onInstallResult(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+        UpdateChannel.byId(intent.getStringExtra(EXTRA_CHANNEL))
+            .onInstallResult(context, status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
     }
 
     companion object {
         const val ACTION = "dev.continuum.fx.INSTALL_STATUS"
+        const val EXTRA_CHANNEL = "channel"
     }
 }
 

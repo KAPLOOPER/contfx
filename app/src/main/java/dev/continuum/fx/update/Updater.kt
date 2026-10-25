@@ -11,8 +11,8 @@ import dev.continuum.fx.setup.ShizukuState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.io.File
@@ -42,30 +42,28 @@ sealed interface UpdateState {
 }
 
 /**
- * Updates from inside the app. Checks the GitHub releases this app is built to, downloads
- * the newer APK and installs it over the top: silently through Shizuku when it's running,
- * otherwise through Android's installer, which asks once per update. Android only accepts
- * an update signed with the same key, so a tampered APK can't install over this one.
+ * One app kept up to date from this repository's releases. Checks the GitHub releases,
+ * downloads the newer APK and installs it over the top: silently through Shizuku when
+ * it's running, otherwise through Android's installer, which asks once per install.
+ * Android only accepts an update signed with the same key, so a tampered APK can't
+ * replace either app.
  */
-object Updater {
-
-    private const val PREFS = "updates"
-    private const val AUTO_CHECK_EVERY = 6 * 60 * 60 * 1000L
-
+abstract class UpdateChannel(
+    /** Sent with the installer's callback, to route the result back here. */
+    val id: String,
+    private val tag: Regex,
+    private val fileName: String,
+) {
     val state = MutableStateFlow<UpdateState>(UpdateState.Idle)
-
-    /** The installer's confirmation screen, for the activity to show while it's in front. */
-    val confirm = MutableStateFlow<Intent?>(null)
 
     @Volatile
     var installing: Release? = null
         private set
 
-    /** True while the app's screen is in front, so it can show the installer's confirmation. */
-    @Volatile
-    var screenVisible = false
+    /** The installed build, or 0 when the app isn't installed. */
+    abstract fun currentBuild(context: Context): Int
 
-    val current: Int get() = BuildConfig.BUILD_NUMBER
+    abstract fun targetPackage(context: Context): String
 
     /** Downloads outlive the screen, so they run here rather than in the activity. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -76,7 +74,7 @@ object Updater {
     }
 
     fun shouldAutoCheck(context: Context): Boolean {
-        val last = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("lastCheck", 0L)
+        val last = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("lastCheck-$id", 0L)
         return System.currentTimeMillis() - last > AUTO_CHECK_EVERY
     }
 
@@ -90,9 +88,9 @@ object Updater {
         try {
             val latest = withContext(Dispatchers.IO) { latestRelease() }
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putLong("lastCheck", System.currentTimeMillis()).apply()
+                .putLong("lastCheck-$id", System.currentTimeMillis()).apply()
             state.value = when {
-                latest != null && latest.build > current -> UpdateState.Available(latest)
+                latest != null && latest.build > currentBuild(context) -> UpdateState.Available(latest)
                 quiet -> if (before is UpdateState.Available) UpdateState.Idle else before
                 else -> UpdateState.UpToDate
             }
@@ -120,10 +118,15 @@ object Updater {
         installing = release
         state.value = UpdateState.Installing(release)
         if (Privileges.shizukuState() == ShizukuState.READY) {
-            // Through Shizuku the update installs without a prompt, and marks this app as its
-            // own installer, so later updates can go through quietly on Android 12+ too.
+            // Through Shizuku it installs without a prompt, and marks Continuum FX as the
+            // installer, so later updates can go through quietly on Android 12+ too.
             val ok = withContext(Dispatchers.IO) { installWithShizuku(context, apk) }
-            if (ok) return
+            if (ok) {
+                // Reached only when installing the other app; updating this one ends the process.
+                state.value = UpdateState.Idle
+                onInstalled(context)
+                return
+            }
         }
         if (!context.packageManager.canRequestPackageInstalls()) {
             state.value = UpdateState.NeedsPermission(release)
@@ -136,33 +139,39 @@ object Updater {
         }
     }
 
+    /** Called once an install has gone through. */
+    protected open fun onInstalled(context: Context) = Unit
+
     /** Called when Android reports back on an install. */
-    fun onInstallResult(status: Int, message: String?) {
+    fun onInstallResult(context: Context, status: Int, message: String?) {
         val release = installing
         when (status) {
-            PackageInstaller.STATUS_SUCCESS -> state.value = UpdateState.Idle
+            PackageInstaller.STATUS_SUCCESS -> {
+                state.value = UpdateState.Idle
+                onInstalled(context)
+            }
             PackageInstaller.STATUS_FAILURE_ABORTED -> state.value = release?.let { UpdateState.Available(it) } ?: UpdateState.Idle
             PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
                 state.value = UpdateState.Failed(
-                    "This build is signed differently from the one on your phone. Uninstall once and " +
-                        "install it from GitHub; after that, updates install in place.",
+                    "This build is signed differently from the copy on your phone. Uninstall that copy once, " +
+                        "then install again; after that, updates install in place.",
                     release,
                 )
-            PackageInstaller.STATUS_FAILURE_STORAGE -> state.value = UpdateState.Failed("There isn't enough space to install the update.", release)
-            else -> state.value = UpdateState.Failed(message?.takeIf { it.isNotBlank() } ?: "The update didn't install.", release)
+            PackageInstaller.STATUS_FAILURE_STORAGE -> state.value = UpdateState.Failed("There isn't enough space to install it.", release)
+            else -> state.value = UpdateState.Failed(message?.takeIf { it.isNotBlank() } ?: "It didn't install.", release)
         }
     }
 
     // ---- GitHub ----
 
     private fun latestRelease(): Release? {
-        val text = get("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases?per_page=15")
+        val text = get("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases?per_page=60")
         val list = JSONArray(text)
         var best: Release? = null
         for (i in 0 until list.length()) {
             val o = list.getJSONObject(i)
             if (o.optBoolean("draft")) continue
-            val build = BUILD_TAG.find(o.optString("tag_name"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            val build = tag.matchEntire(o.optString("tag_name"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
             val assets = o.optJSONArray("assets") ?: continue
             var url: String? = null
             var size = 0L
@@ -202,8 +211,8 @@ object Updater {
     }
 
     private suspend fun download(context: Context, release: Release): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-        val name = "ContinuumFX-build${release.build}.apk"
+        val dir = File(context.cacheDir, "updates/$id").apply { mkdirs() }
+        val name = "$fileName-${release.build}.apk"
         dir.listFiles()?.forEach { if (it.name != name) it.delete() }
         val file = File(dir, name)
         if (release.size > 0 && file.length() == release.size) return@withContext file
@@ -240,7 +249,7 @@ object Updater {
             conn.disconnect()
         }
         file.delete()
-        if (!part.renameTo(file)) throw IOException("Couldn't save the update")
+        if (!part.renameTo(file)) throw IOException("Couldn't save the download")
         file
     }
 
@@ -252,7 +261,7 @@ object Updater {
             false
         } else {
             process.outputStream.use { out -> apk.inputStream().use { it.copyTo(out) } }
-            // On success Android replaces this app, ending this process before it returns.
+            // When updating this app, Android replaces it and ends this process before it returns.
             process.waitFor() == 0
         }
     } catch (_: Throwable) {
@@ -262,23 +271,68 @@ object Updater {
     private fun installWithSession(context: Context, apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            setAppPackageName(context.packageName)
+            setAppPackageName(targetPackage(context))
             if (Build.VERSION.SDK_INT >= 31) {
                 setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
         }
-        val id = installer.createSession(params)
-        installer.openSession(id).use { session ->
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
             session.openWrite("base.apk", 0, apk.length()).use { out ->
                 apk.inputStream().use { it.copyTo(out) }
                 session.fsync(out)
             }
-            val intent = Intent(context, InstallReceiver::class.java).setAction(InstallReceiver.ACTION)
+            val intent = Intent(context, InstallReceiver::class.java)
+                .setAction(InstallReceiver.ACTION)
+                .putExtra(InstallReceiver.EXTRA_CHANNEL, id)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-            val pending = PendingIntent.getBroadcast(context, id, intent, flags)
+            val pending = PendingIntent.getBroadcast(context, sessionId, intent, flags)
             session.commit(pending.intentSender)
         }
     }
 
-    private val BUILD_TAG = Regex("""build-(\d+)""")
+    companion object {
+        private const val PREFS = "updates"
+        private const val AUTO_CHECK_EVERY = 6 * 60 * 60 * 1000L
+
+        fun byId(id: String?): UpdateChannel = if (id == KeyboardUpdater.id) KeyboardUpdater else Updater
+    }
+}
+
+/** Continuum FX itself. */
+object Updater : UpdateChannel("app", Regex("""build-(\d+)"""), "ContinuumFX") {
+
+    /** The installer's confirmation screen, for the activity to show while it's in front. */
+    val confirm = MutableStateFlow<Intent?>(null)
+
+    /** True while the app's screen is in front, so it can show the installer's confirmation. */
+    @Volatile
+    var screenVisible = false
+
+    val current: Int get() = BuildConfig.BUILD_NUMBER
+
+    override fun currentBuild(context: Context) = BuildConfig.BUILD_NUMBER
+
+    override fun targetPackage(context: Context): String = context.packageName
+}
+
+/** Continuum Keyboard, a separate app installed and kept up to date from here. */
+object KeyboardUpdater : UpdateChannel("keyboard", Regex("""keyboard-(\d+)"""), "ContinuumKeyboard") {
+
+    const val PACKAGE = "dev.continuum.keyboard"
+
+    /** Bumped whenever the keyboard is installed or updated, so screens can look again. */
+    val installedTick = MutableStateFlow(0)
+
+    override fun currentBuild(context: Context): Int = try {
+        context.packageManager.getPackageInfo(PACKAGE, 0).longVersionCode.toInt()
+    } catch (_: Exception) {
+        0
+    }
+
+    override fun targetPackage(context: Context): String = PACKAGE
+
+    override fun onInstalled(context: Context) {
+        installedTick.value += 1
+    }
 }

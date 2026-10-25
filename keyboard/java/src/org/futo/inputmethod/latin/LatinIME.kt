@@ -630,6 +630,14 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         imeManager.onStartInput()
         latinIMELegacy.onStartInputView(info, restarting)
         lifecycleScope.launch { uixManager.showUpdateNoticeIfNeeded() }
+
+        // Continuum Keyboard: type text read by Scan text into the field we came back to.
+        org.futo.inputmethod.latin.uix.actions.scantext.ScanTextResult.take()?.let { scanned ->
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(150)
+                currentInputConnection?.commitText(scanned, 1)
+            }
+        }
         updateColorsIfDynamicChanged()
         uixManager.updateEmojiTranslationsIfNeeded()
     }

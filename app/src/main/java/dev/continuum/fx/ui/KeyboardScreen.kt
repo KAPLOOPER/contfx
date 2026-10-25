@@ -2,17 +2,14 @@ package dev.continuum.fx.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -24,135 +21,165 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
-import dev.continuum.fx.keyboard.KeyboardPrefs
-import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.IconBubble
+import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Txt
+import dev.continuum.fx.update.UpdateState
 
-/** Options for the Continuum keyboard, saved ahead of the keyboard itself. */
+/** Where Continuum Keyboard stands on this phone. */
+data class KeyboardStatus(
+    /** The installed build, or 0 when it isn't installed. */
+    val build: Int = 0,
+    /** Switched on in Android's keyboard settings. */
+    val enabled: Boolean = false,
+    /** The keyboard in use right now. */
+    val selected: Boolean = false,
+    val update: UpdateState = UpdateState.Idle,
+) {
+    val installed: Boolean get() = build > 0
+}
+
+private fun statusText(k: KeyboardStatus) = when {
+    !k.installed -> "Not installed yet"
+    !k.enabled -> "Installed · switch it on"
+    !k.selected -> "On · not in use right now"
+    else -> "In use · build ${k.build}"
+}
+
+/** The Keyboard tab: get Continuum Keyboard going, then jump into its settings. */
 @Composable
 internal fun KeyboardContent(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val k = state.keyboard
     Column {
-        Txt("Coming next · set it up now", 17.sp, p.sub, maxLines = 2)
-        Gap(22.dp)
+        Txt(statusText(k), 17.sp, if (k.selected) p.text else p.sub, maxLines = 2)
 
-        Txt("Feel", 21.sp, p.text, bold = true)
-        Gap(10.dp)
-        OptionCard {
-            ToggleRow("Ink presses", "Keys squash under your finger and a drop of ink rises with the letter.", k.inkPress) {
-                actions.updateKeyboard { it.copy(inkPress = !it.inkPress) }
-            }
-            ChoiceRow(
-                "Haptics", null,
-                listOf(KeyboardPrefs.HAPTICS_OFF to "Off", KeyboardPrefs.HAPTICS_LIGHT to "Light", KeyboardPrefs.HAPTICS_FIRM to "Firm"),
-                k.haptics,
-            ) { v -> actions.updateKeyboard { it.copy(haptics = v) } }
-            ToggleRow("Key sounds", "A soft tap with each key.", k.sounds) {
-                actions.updateKeyboard { it.copy(sounds = !it.sounds) }
-            }
-        }
-        Gap(28.dp)
-
-        Txt("Layout", 21.sp, p.text, bold = true)
-        Gap(10.dp)
-        OptionCard {
-            ChoiceRow(
-                "Height", null,
-                listOf(KeyboardPrefs.HEIGHT_COMPACT to "Compact", KeyboardPrefs.HEIGHT_REGULAR to "Regular", KeyboardPrefs.HEIGHT_TALL to "Tall"),
-                k.height,
-            ) { v -> actions.updateKeyboard { it.copy(height = v) } }
-            ToggleRow("Number row", "Numbers along the top, always there.", k.numberRow) {
-                actions.updateKeyboard { it.copy(numberRow = !it.numberRow) }
-            }
-            ToggleRow("Suggestions", "Word suggestions in a strip above the keys.", k.suggestions) {
-                actions.updateKeyboard { it.copy(suggestions = !it.suggestions) }
-            }
-            ToggleRow("Dictation key", "A microphone key beside the space bar.", k.dictation) {
-                actions.updateKeyboard { it.copy(dictation = !it.dictation) }
-            }
-        }
-        Gap(28.dp)
-
-        Txt("Typing", 21.sp, p.text, bold = true)
-        Gap(10.dp)
-        OptionCard {
-            ToggleRow("Space bar cursor", "Slide along the space bar to move through your text.", k.spaceCursor) {
-                actions.updateKeyboard { it.copy(spaceCursor = !it.spaceCursor) }
-            }
-        }
-        Gap(28.dp)
-
-        Txt("Look", 21.sp, p.text, bold = true)
-        Gap(10.dp)
-        OptionCard {
-            ChoiceRow(
-                "Keyboard colour", "Ink keeps it black whatever the system theme.",
-                listOf(KeyboardPrefs.THEME_SYSTEM to "Match system", KeyboardPrefs.THEME_LIGHT to "Light", KeyboardPrefs.THEME_INK to "Ink"),
-                k.theme,
-            ) { v -> actions.updateKeyboard { it.copy(theme = v) } }
-        }
+        UpdateCard(
+            update = k.update,
+            title = { if (k.installed) "Keyboard build ${it.build} is ready" else "Continuum Keyboard" },
+            subtitle = if (k.installed) "Your words, settings and layouts stay as they are."
+            else "Build ${(k.update as? UpdateState.Available)?.release?.build ?: ""} · FUTO Keyboard, redesigned in Continuum".trim(),
+            actionLabel = if (k.installed) "Update now" else "Install",
+            installingNote = "Installing Continuum Keyboard. Android may ask you to confirm.",
+            onAction = actions::installKeyboard,
+            onAllow = actions::allowInstalls,
+            onDismiss = actions::dismissKeyboardUpdate,
+        )
         Gap(18.dp)
+
+        if (!k.selected) {
+            Txt("Set it up", 21.sp, p.text, bold = true)
+            Gap(10.dp)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+                SetupStep(1, k.installed, "Install it", "Continuum Keyboard is its own app, installed and kept up to date from here.") {
+                    PillButton("Install", actions::installKeyboard, icon = R.drawable.ic_import, primary = true, on = Surface.Card)
+                }
+                SetupStep(2, k.enabled, "Switch it on", "Turn on Continuum Keyboard in Android's keyboard list.") {
+                    PillButton("Open keyboard list", actions::enableKeyboard, on = Surface.Card)
+                }
+                SetupStep(3, k.selected, "Make it your keyboard", "Pick it as the keyboard you type with.") {
+                    PillButton("Choose keyboard", actions::chooseKeyboard, on = Surface.Card)
+                }
+            }
+            Gap(28.dp)
+        }
+
+        if (k.installed) {
+            Txt("Settings", 21.sp, p.text, bold = true)
+            Gap(10.dp)
+            val pages = listOf(
+                "themes" to "Look",
+                "languages" to "Languages",
+                "keyboard" to "Keyboard",
+                "typing" to "Typing",
+                "predictiveText" to "Predictions",
+                "swipe" to "Swipe typing",
+                "voiceInput" to "Voice typing",
+                "actions" to "Clipboard and actions",
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                pages.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { (page, label) ->
+                            PillButton(label, { actions.openKeyboardSettings(page) }, Modifier.weight(1f))
+                        }
+                        if (row.size == 1) Box(Modifier.weight(1f))
+                    }
+                }
+            }
+            Gap(28.dp)
+
+            Txt("Support FUTO", 21.sp, p.text, bold = true)
+            Gap(4.dp)
+            Txt(
+                "Continuum Keyboard is built on FUTO Keyboard. It's free to use; if you find it useful, you can pay FUTO for FUTO Keyboard.",
+                15.sp, p.sub,
+            )
+            Gap(10.dp)
+            PillButton("Pay FUTO", { actions.openKeyboardSettings("payment") })
+            Gap(20.dp)
+        }
+
         Txt(
-            "The keyboard itself comes after the current fixes. These choices are saved and apply as soon as it arrives.",
-            15.sp, p.sub,
+            "Continuum Keyboard is a modified version of FUTO Keyboard by FUTO Holdings, Inc., redesigned in Continuum. " +
+                "It's distributed free under the FUTO Source First License; Continuum FX itself is separate.",
+            13.sp, p.sub,
         )
     }
 }
 
 @Composable
-private fun OptionCard(content: @Composable ColumnScope.() -> Unit) {
+private fun SetupStep(number: Int, done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
     val p = LocalPalette.current
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun ChoiceRow(
-    title: String,
-    body: String?,
-    options: List<Pair<String, String>>,
-    selected: String,
-    onPick: (String) -> Unit,
-) {
-    val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 12.dp)) {
-        Txt(title, 17.sp, p.text, maxLines = 1)
-        if (body != null) Txt(body, 14.sp, p.sub)
-        Gap(10.dp)
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) {
+        Box(
+            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.live else p.ground),
+            contentAlignment = Alignment.Center,
         ) {
-            options.forEach { (value, label) ->
-                Chip(label, value == selected, onClick = { onPick(value) }, on = Surface.Card)
+            if (done) {
+                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.onLive))
+            } else {
+                Txt("$number", 15.sp, p.text, bold = true)
+            }
+        }
+        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+            Txt(title, 17.sp, p.text, bold = true)
+            Txt(body, 14.sp, p.sub)
+            if (!done) {
+                Gap(10.dp)
+                action()
             }
         }
     }
 }
 
 @Composable
-internal fun KeyboardDockBar() {
+internal fun KeyboardDockBar(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
+    val k = state.keyboard
     Row(
-        Modifier.fillMaxSize().padding(start = 10.dp, end = 16.dp),
+        Modifier.fillMaxSize().padding(start = 10.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(56.dp).clip(CircleShape).background(p.inkTonal), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(56.dp).clip(CircleShape).background(if (k.selected) p.onInk else p.inkTonal),
+            contentAlignment = Alignment.Center,
+        ) {
             Image(
                 painterResource(R.drawable.ic_keyboard),
                 contentDescription = null,
                 modifier = Modifier.size(26.dp),
-                colorFilter = ColorFilter.tint(p.onInk),
+                colorFilter = ColorFilter.tint(if (k.selected) p.ink else p.onInk),
             )
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt("Keyboard", 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt("Arrives after the fixes", 14.sp, p.onInkSub, maxLines = 1)
+            Txt("Continuum Keyboard", 18.sp, p.onInk, bold = true, maxLines = 1)
+            Txt(statusText(k), 14.sp, p.onInkSub, maxLines = 1)
+        }
+        if (k.installed) {
+            IconBubble(R.drawable.ic_setup, "Keyboard settings", onClick = { actions.openKeyboardSettings(null) }, on = Surface.Ink)
         }
     }
 }

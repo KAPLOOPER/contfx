@@ -1,0 +1,4 @@
+<!-- Continuum Keyboard: "frequently used" emoji tab, a flat star. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,3.2l2.55,5.36 5.85,0.72 -4.3,4.04 1.1,5.8L12,16.3l-5.2,2.82 1.1,-5.8 -4.3,-4.04 5.85,-0.72z" />
+</vector>

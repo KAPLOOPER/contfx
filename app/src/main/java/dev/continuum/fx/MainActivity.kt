@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,8 +31,9 @@ import dev.continuum.fx.island.IslandNotificationListener
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
-import dev.continuum.fx.keyboard.KeyboardPrefs
-import dev.continuum.fx.keyboard.KeyboardSettings
+import dev.continuum.fx.ui.KeyboardStatus
+import dev.continuum.fx.update.KeyboardUpdater
+import dev.continuum.fx.update.UpdateChannel
 import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.update.Updater
 import dev.continuum.fx.setup.PrivilegeState
@@ -56,6 +58,7 @@ class MainActivity : ComponentActivity(), AppActions {
     private val message = MutableStateFlow<String?>(null)
     private val setupOpen = MutableStateFlow(false)
     private val section = MutableStateFlow(Section.Sound)
+    private val keyboardStatus = MutableStateFlow(KeyboardStatus())
     private var afterShizukuPermission: (() -> Unit)? = null
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -102,6 +105,10 @@ class MainActivity : ComponentActivity(), AppActions {
         }
         if (savedInstanceState == null) handleIntent(intent)
 
+        lifecycleScope.launch {
+            KeyboardUpdater.installedTick.collect { refreshKeyboard() }
+        }
+
         // Android's installer asks for confirmation through a screen; show it from here.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -127,7 +134,8 @@ class MainActivity : ComponentActivity(), AppActions {
             val island by IslandSettings.state.collectAsState()
             val islandLive by IslandRepository.hostActive.collectAsState()
             val islandFed by IslandRepository.listenerActive.collectAsState()
-            val keyboard by KeyboardSettings.state.collectAsState()
+            val keyboard by keyboardStatus.collectAsState()
+            val keyboardUpdate by KeyboardUpdater.state.collectAsState()
             val update by Updater.state.collectAsState()
             ContinuumTheme {
                 AppScreen(
@@ -137,7 +145,7 @@ class MainActivity : ComponentActivity(), AppActions {
                         island = island,
                         islandLive = islandLive && island.enabled,
                         islandFed = islandFed,
-                        keyboard = keyboard,
+                        keyboard = keyboard.copy(update = keyboardUpdate),
                         update = update,
                         build = BuildConfig.BUILD_NUMBER,
                     ),
@@ -166,12 +174,14 @@ class MainActivity : ComponentActivity(), AppActions {
     override fun onResume() {
         super.onResume()
         refresh()
-        val update = Updater.state.value
-        if (update is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) {
-            // Back from allowing installs: carry straight on with the update.
-            Updater.start(this, update.release)
-        } else if (Updater.shouldAutoCheck(this)) {
-            lifecycleScope.launch { Updater.check(this@MainActivity, quiet = true) }
+        for (channel in listOf<UpdateChannel>(Updater, KeyboardUpdater)) {
+            val update = channel.state.value
+            if (update is UpdateState.NeedsPermission && packageManager.canRequestPackageInstalls()) {
+                // Back from allowing installs: carry straight on.
+                channel.start(this, update.release)
+            } else if (channel.shouldAutoCheck(this)) {
+                lifecycleScope.launch { channel.check(this@MainActivity, quiet = true) }
+            }
         }
     }
 
@@ -184,6 +194,23 @@ class MainActivity : ComponentActivity(), AppActions {
 
     private fun refresh() {
         privileges.value = Privileges.read(this)
+        refreshKeyboard()
+    }
+
+    private fun refreshKeyboard() {
+        val pkg = KeyboardUpdater.PACKAGE
+        val imm = getSystemService(InputMethodManager::class.java)
+        val enabled = try {
+            imm.enabledInputMethodList.any { it.packageName == pkg }
+        } catch (_: Exception) {
+            false
+        }
+        val current = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()
+        keyboardStatus.value = KeyboardStatus(
+            build = KeyboardUpdater.currentBuild(this),
+            enabled = enabled,
+            selected = current.startsWith("$pkg/"),
+        )
     }
 
     // ---- AppActions ----
@@ -292,8 +319,59 @@ class MainActivity : ComponentActivity(), AppActions {
         startSafely(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
     }
 
-    override fun updateKeyboard(transform: (KeyboardPrefs) -> KeyboardPrefs) {
-        KeyboardSettings.update(transform)
+    override fun installKeyboard() {
+        val release = when (val u = KeyboardUpdater.state.value) {
+            is UpdateState.Available -> u.release
+            is UpdateState.Failed -> u.release
+            is UpdateState.NeedsPermission -> u.release
+            else -> null
+        }
+        if (release != null) {
+            KeyboardUpdater.start(this, release)
+            return
+        }
+        lifecycleScope.launch {
+            KeyboardUpdater.check(this@MainActivity, quiet = false)
+            when (val u = KeyboardUpdater.state.value) {
+                is UpdateState.Available -> KeyboardUpdater.start(this@MainActivity, u.release)
+                is UpdateState.UpToDate -> {
+                    message.value = "Continuum Keyboard is up to date."
+                    KeyboardUpdater.dismiss()
+                }
+                is UpdateState.Failed -> if (u.release == null) {
+                    message.value = u.message
+                    KeyboardUpdater.dismiss()
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    override fun dismissKeyboardUpdate() {
+        KeyboardUpdater.dismiss()
+    }
+
+    override fun enableKeyboard() {
+        startSafely(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+    }
+
+    override fun chooseKeyboard() {
+        try {
+            getSystemService(InputMethodManager::class.java).showInputMethodPicker()
+        } catch (_: Exception) {
+            message.value = "Couldn't open the keyboard picker."
+        }
+    }
+
+    override fun openKeyboardSettings(page: String?) {
+        val intent = packageManager.getLaunchIntentForPackage(KeyboardUpdater.PACKAGE)
+        if (intent == null) {
+            message.value = "Install Continuum Keyboard first."
+            return
+        }
+        if (page != null) intent.putExtra("navDest", page)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        startSafely(intent)
     }
 
     override fun checkForUpdates() {

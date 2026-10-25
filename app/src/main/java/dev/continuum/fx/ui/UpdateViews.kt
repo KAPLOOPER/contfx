@@ -32,11 +32,21 @@ import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
+import dev.continuum.fx.update.Release
 import dev.continuum.fx.update.UpdateState
 
 /** An ink card at the top of every tab while there's a newer build to install. */
 @Composable
-internal fun UpdateCard(update: UpdateState, actions: AppActions) {
+internal fun UpdateCard(
+    update: UpdateState,
+    title: (Release) -> String,
+    subtitle: String,
+    actionLabel: String,
+    installingNote: String,
+    onAction: () -> Unit,
+    onAllow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val p = LocalPalette.current
     val release = when (update) {
         is UpdateState.Available -> update.release
@@ -66,11 +76,11 @@ internal fun UpdateCard(update: UpdateState, actions: AppActions) {
                 )
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Txt("Build ${release.build} is ready", 18.sp, p.onInk, bold = true, maxLines = 1)
-                Txt("Your settings and permissions stay as they are.", 13.sp, p.onInkSub, maxLines = 2)
+                Txt(title(release), 18.sp, p.onInk, bold = true, maxLines = 1)
+                Txt(subtitle, 13.sp, p.onInkSub, maxLines = 2)
             }
             if (update is UpdateState.Available || update is UpdateState.Failed) {
-                IconBubble(R.drawable.ic_chevron_down, "Later", onClick = actions::dismissUpdate, on = Surface.Ink)
+                IconBubble(R.drawable.ic_chevron_down, "Later", onClick = onDismiss, on = Surface.Ink)
             }
         }
         if (notes.isNotEmpty()) {
@@ -81,7 +91,7 @@ internal fun UpdateCard(update: UpdateState, actions: AppActions) {
         Column(Modifier.padding(end = 8.dp)) {
             when (update) {
                 is UpdateState.Available ->
-                    PillButton("Update now", actions::installUpdate, icon = R.drawable.ic_import, primary = true, on = Surface.Ink)
+                    PillButton(actionLabel, onAction, icon = R.drawable.ic_import, primary = true, on = Surface.Ink)
                 is UpdateState.Downloading -> {
                     val shown by animateFloatAsState(update.progress, Motion.flow(), label = "updateProgress")
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(p.inkTonal)) {
@@ -91,16 +101,16 @@ internal fun UpdateCard(update: UpdateState, actions: AppActions) {
                     Txt("Downloading · ${(update.progress * 100).toInt()}%", 14.sp, p.onInk, maxLines = 1)
                 }
                 is UpdateState.Installing ->
-                    Txt("Installing. Continuum FX closes for a moment while it updates, then it's back as it was.", 14.sp, p.onInk)
+                    Txt(installingNote, 14.sp, p.onInk)
                 is UpdateState.NeedsPermission -> {
                     Txt("Android needs your OK first: allow Continuum FX to install apps, then come back.", 14.sp, p.onInk)
                     Gap(12.dp)
-                    PillButton("Allow", actions::allowInstalls, primary = true, on = Surface.Ink)
+                    PillButton("Allow", onAllow, primary = true, on = Surface.Ink)
                 }
                 is UpdateState.Failed -> {
                     Txt(update.message, 14.sp, p.onInk)
                     Gap(12.dp)
-                    PillButton("Try again", actions::installUpdate, on = Surface.Ink)
+                    PillButton("Try again", onAction, on = Surface.Ink)
                 }
                 else -> Unit
             }

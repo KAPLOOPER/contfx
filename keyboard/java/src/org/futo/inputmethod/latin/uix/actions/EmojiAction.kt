@@ -105,6 +105,7 @@ import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.AutoFitText
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.DialogRequestItem
+import org.futo.inputmethod.latin.uix.EmojiTracker.getFrequentEmojis
 import org.futo.inputmethod.latin.uix.EmojiTracker.getRecentEmojis
 import org.futo.inputmethod.latin.uix.EmojiTracker.resetRecentEmojis
 import org.futo.inputmethod.latin.uix.EmojiTracker.useEmoji
@@ -630,6 +631,7 @@ fun EmojiNavigation(
 
 val iconMap = mapOf(
     "Recent" to R.drawable.ic_emoji_recents_activated_lxx_dark,
+    "Frequent" to R.drawable.continuum_emoji_frequent,
     "Smileys & Emotion" to R.drawable.smileys_and_emotion,
     "People & Body" to R.drawable.people_and_body,
     "Animals & Nature" to R.drawable.animals_and_nature,
@@ -644,6 +646,7 @@ val iconMap = mapOf(
 
 val localizedCategoryNameMap = mapOf(
     "Recent" to R.string.action_emoji_category_most_recently_used,
+    "Frequent" to R.string.continuum_emoji_category_frequent,
     "Smileys & Emotion" to R.string.action_emoji_category_smileys_emotion,
     "People & Body" to R.string.action_emoji_category_people_body,
     "Animals & Nature" to R.string.action_emoji_category_animals_nature,
@@ -789,6 +792,12 @@ fun EmojiGrid(
         }
     }
 
+    val frequentEmojis = remember {
+        runBlocking { context.getFrequentEmojis() }.map {
+            EmojiItem(it, description = "", category = emojiCategoryMap[it] ?: "", skinTones = false)
+        }
+    }
+
     val skinTone = useDataStoreValue(LastUsedSkinTone)
     val emojiTypeface = LocalCompatEmojiTypeface.current
     val categorizedEmojis = remember(skinTone) {
@@ -814,6 +823,10 @@ fun EmojiGrid(
         if(recentEmojis.isNotEmpty()) {
             add(CategoryItem("Recent"))
             addAll(recentEmojis.map { EmojiItemItem(it) })
+        }
+        if(frequentEmojis.isNotEmpty()) {
+            add(CategoryItem("Frequent"))
+            addAll(frequentEmojis.map { EmojiItemItem(it) })
         }
         addAll(categorizedEmojis)
     }
@@ -867,7 +880,8 @@ fun EmojiGrid(
                 onBackspace = onBackspace,
                 categories = listOf(
                     CategoryItem("Recent")
-                ) + categorizedEmojis.filterIsInstance<CategoryItem>(),
+                ) + (if(frequentEmojis.isNotEmpty()) listOf(CategoryItem("Frequent")) else emptyList()) +
+                    categorizedEmojis.filterIsInstance<CategoryItem>(),
                 activeCategoryItem = currentCategory.value,
                 goToCategory = {
                     jumpCategory.value = it

@@ -57,7 +57,6 @@ import dev.continuum.fx.dsp.EqLimits
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.FilterType
 import dev.continuum.fx.island.IslandPrefs
-import dev.continuum.fx.keyboard.KeyboardPrefs
 import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
@@ -93,7 +92,7 @@ data class UiState(
     val islandLive: Boolean = false,
     /** The island's notification listener is connected right now. */
     val islandFed: Boolean = false,
-    val keyboard: KeyboardPrefs = KeyboardPrefs(),
+    val keyboard: KeyboardStatus = KeyboardStatus(),
     val update: UpdateState = UpdateState.Idle,
     val build: Int = 1,
 )
@@ -117,7 +116,11 @@ interface AppActions {
     fun openListenerSettings()
     fun openAppInfo()
     fun copyIslandCommands()
-    fun updateKeyboard(transform: (KeyboardPrefs) -> KeyboardPrefs)
+    fun installKeyboard()
+    fun dismissKeyboardUpdate()
+    fun enableKeyboard()
+    fun chooseKeyboard()
+    fun openKeyboardSettings(page: String?)
     fun checkForUpdates()
     fun installUpdate()
     fun allowInstalls()
@@ -151,7 +154,16 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 SectionTitle("Keyboard", state.section == Section.Keyboard) { actions.setSection(Section.Keyboard) }
             }
             Gap(2.dp)
-            UpdateCard(state.update, actions)
+            UpdateCard(
+                update = state.update,
+                title = { "Build ${it.build} is ready" },
+                subtitle = "Your settings and permissions stay as they are.",
+                actionLabel = "Update now",
+                installingNote = "Installing. Continuum FX closes for a moment while it updates, then it's back as it was.",
+                onAction = actions::installUpdate,
+                onAllow = actions::allowInstalls,
+                onDismiss = actions::dismissUpdate,
+            )
             Crossfade(targetState = state.section, label = "section") { section ->
                 when (section) {
                     Section.Sound -> Column {
@@ -477,7 +489,7 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Sound -> SetupSheet(state, actions)
                 section == Section.Island -> IslandDockBar(state, actions)
-                section == Section.Keyboard -> KeyboardDockBar()
+                section == Section.Keyboard -> KeyboardDockBar(state, actions)
                 else -> DockBar(state, actions)
             }
         }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Hosts the island. An accessibility service is the one ordinary app component that
@@ -31,7 +32,12 @@ class IslandAccessibilityService : AccessibilityService() {
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = s
         s.launch {
-            IslandSettings.state.collect { prefs -> h.sync(prefs.enabled) }
+            IslandSettings.state.collect { prefs ->
+                h.sync(prefs.enabled)
+                // Android's own pop-ups step aside while the island shows notifications.
+                val hide = prefs.wantsPopupsHidden
+                withContext(Dispatchers.IO) { PopupGuard.sync(this@IslandAccessibilityService, hide) }
+            }
         }
     }
 
@@ -55,6 +61,8 @@ class IslandAccessibilityService : AccessibilityService() {
     }
 
     private fun teardown() {
+        // Without the island, Android's pop-ups come back.
+        if (scope != null) Thread { PopupGuard.sync(applicationContext, false) }.start()
         scope?.cancel()
         scope = null
         battery?.stop()

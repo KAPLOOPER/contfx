@@ -112,6 +112,7 @@ interface AppActions {
     fun toggleIsland()
     fun updateIsland(transform: (IslandPrefs) -> IslandPrefs)
     fun grantIslandWithShizuku()
+    fun grantPopupsWithShizuku()
     fun openAccessibilitySettings()
     fun openListenerSettings()
     fun openAppInfo()

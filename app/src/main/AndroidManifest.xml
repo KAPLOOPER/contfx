@@ -16,6 +16,11 @@
     <uses-permission
         android:name="android.permission.DUMP"
         tools:ignore="ProtectedPermissions" />
+    <!-- Granted once over ADB or Shizuku; lets the island switch Android's own notification
+         pop-ups off while it shows them, and back on when it stops. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
     <!-- Needed to turn the uids in the audio dump into app names. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"

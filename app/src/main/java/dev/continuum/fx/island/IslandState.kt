@@ -269,7 +269,12 @@ data class IslandPrefs(
     val alwaysBattery: Boolean = false,
     /** Where the always-on time sits: [TIME_OUTSIDE], [TIME_INSIDE] or [TIME_SPLIT]. */
     val timeSpot: String = TIME_OUTSIDE,
+    /** Switch Android's own notification pop-ups off while the island shows notifications. */
+    val hidePopups: Boolean = false,
 ) {
+    /** Whether Android's pop-ups should be off right now (with the island running). */
+    val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
+
     companion object {
         /** Left of the artwork, at the far end of the island. */
         const val TIME_OUTSIDE = "outside"
@@ -300,6 +305,7 @@ object IslandSettings {
             alwaysTime = p.getBoolean("alwaysTime", false),
             alwaysBattery = p.getBoolean("alwaysBattery", false),
             timeSpot = p.getString("timeSpot", null) ?: IslandPrefs.TIME_OUTSIDE,
+            hidePopups = p.getBoolean("hidePopups", false),
         )
     }
 
@@ -317,6 +323,7 @@ object IslandSettings {
             ?.putBoolean("alwaysTime", next.alwaysTime)
             ?.putBoolean("alwaysBattery", next.alwaysBattery)
             ?.putString("timeSpot", next.timeSpot)
+            ?.putBoolean("hidePopups", next.hidePopups)
             ?.apply()
     }
 }

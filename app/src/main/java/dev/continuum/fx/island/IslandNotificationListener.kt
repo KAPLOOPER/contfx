@@ -32,6 +32,8 @@ class IslandNotificationListener : NotificationListenerService() {
     private var controller: MediaController? = null
     private val timers = LinkedHashMap<String, TimerInfo>()
     private val calls = LinkedHashMap<String, CallInfo>()
+    /** Full-screen alerts already opened, so updates don't open them again. */
+    private val openedFullScreen = HashSet<String>()
     private val seenNotes = HashMap<String, Int>()
     private val recent = HashMap<String, NoteInfo>()
 
@@ -88,6 +90,7 @@ class IslandNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        openedFullScreen.remove(sbn.key)
         calls.remove(sbn.key)
         timers.remove(sbn.key)
         seenNotes.remove(sbn.key)
@@ -167,6 +170,17 @@ class IslandNotificationListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return
         val n = sbn.notification
         val extras = n.extras
+
+        // With Android's pop-ups off, alerts that would have popped up over what you're doing
+        // (alarms, or calls when the island isn't showing them) open full screen instead.
+        val fullScreen = n.fullScreenIntent
+        if (!initial && fullScreen != null && sbn.key !in openedFullScreen && PopupGuard.hiding(this)) {
+            val islandRings = n.category == Notification.CATEGORY_CALL && IslandSettings.state.value.calls
+            if (!islandRings) {
+                openedFullScreen += sbn.key
+                PopupGuard.openFullScreen(this, fullScreen)
+            }
+        }
 
         if (n.category == Notification.CATEGORY_CALL) {
             parseCall(sbn)?.let { calls[sbn.key] = it } ?: calls.remove(sbn.key)

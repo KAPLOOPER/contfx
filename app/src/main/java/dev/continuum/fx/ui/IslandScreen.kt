@@ -107,6 +107,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
+        PopupsSection(state, actions)
+        Gap(28.dp)
+
         Txt("Always on", 21.sp, p.text, bold = true)
         Gap(2.dp)
         Txt("Kept in the island all the time, beside music, calls and timers.", 15.sp, p.sub)
@@ -148,6 +151,52 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 "up to send it back. Nothing pops in or out: ink only separates and merges.",
             15.sp, p.sub,
         )
+    }
+}
+
+/** Android's own pop-ups: off while the island shows notifications, so you only see one. */
+@Composable
+private fun PopupsSection(state: UiState, actions: AppActions) {
+    val p = LocalPalette.current
+    val prefs = state.island
+    val priv = state.privileges
+    val context = LocalContext.current
+    Txt("Android's pop-ups", 21.sp, p.text, bold = true)
+    Gap(2.dp)
+    Txt("Stop the usual banner appearing as well as the island.", 15.sp, p.sub)
+    Gap(10.dp)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+        ToggleRow(
+            "Only the island",
+            "Android's banners stay away while the island shows notifications. Calls ring in the island, " +
+                "alarms open full screen, and everything still goes to your notification shade. " +
+                "Banners come back whenever the island is off.",
+            prefs.hidePopups,
+        ) { actions.updateIsland { it.copy(hidePopups = !it.hidePopups) } }
+        if (prefs.hidePopups && !prefs.notifications) {
+            Txt(
+                "Turn on Notifications above too, or nothing will show new messages.",
+                14.sp, p.sub, modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+            )
+        }
+        if (prefs.hidePopups && !priv.popups) {
+            Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp)) {
+                Txt(
+                    "Android needs one more permission before the island can switch its banners off. Grant it once:",
+                    14.sp, p.text,
+                )
+                Gap(10.dp)
+                val label = when (priv.shizuku) {
+                    ShizukuState.READY -> "Allow with Shizuku"
+                    ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
+                    ShizukuState.NOT_RUNNING -> "Use Shizuku"
+                }
+                PillButton(label, actions::grantPopupsWithShizuku, primary = true, on = Surface.Card)
+                Gap(10.dp)
+                Txt("Or from a computer:", 14.sp, p.sub)
+                Txt(Privileges.popupsAdbCommand(context.packageName), 13.sp, p.text, mono = true)
+            }
+        }
     }
 }
 

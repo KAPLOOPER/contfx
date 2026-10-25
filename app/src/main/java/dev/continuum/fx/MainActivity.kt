@@ -38,6 +38,7 @@ import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.update.Updater
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
+import dev.continuum.fx.island.PopupGuard
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.AppActions
 import dev.continuum.fx.ui.AppScreen
@@ -263,6 +264,38 @@ class MainActivity : ComponentActivity(), AppActions {
                 message.value = "Couldn't reach Shizuku. Use the settings buttons instead."
             }
             ShizukuState.READY -> runIslandShizukuGrant()
+        }
+    }
+
+    override fun grantPopupsWithShizuku() {
+        when (Privileges.shizukuState()) {
+            ShizukuState.NOT_RUNNING ->
+                message.value = "Shizuku isn't running. Start it in the Shizuku app, or use the command from a computer."
+            ShizukuState.NEEDS_PERMISSION -> try {
+                afterShizukuPermission = ::runPopupsShizukuGrant
+                Shizuku.requestPermission(REQUEST_SHIZUKU)
+            } catch (_: Throwable) {
+                message.value = "Couldn't reach Shizuku. Use the command from a computer instead."
+            }
+            ShizukuState.READY -> runPopupsShizukuGrant()
+        }
+    }
+
+    private fun runPopupsShizukuGrant() {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) { Privileges.grantPopupsWithShizuku(packageName) }
+            delay(300)
+            refresh()
+            if (privileges.value.popups) {
+                val prefs = IslandSettings.state.value
+                val hide = prefs.wantsPopupsHidden && IslandRepository.hostActive.value
+                withContext(Dispatchers.IO) { PopupGuard.sync(this@MainActivity, hide) }
+            }
+            message.value = when {
+                privileges.value.popups -> "Done. Only the island shows new notifications now."
+                ok -> "Nearly there. Try again in a moment."
+                else -> "Shizuku couldn't grant it. Use the command from a computer instead."
+            }
         }
     }
 

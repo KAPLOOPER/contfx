@@ -24,6 +24,8 @@ data class PrivilegeState(
     val islandOverlay: Boolean = false,
     /** The island's notification listener has access. */
     val islandListener: Boolean = false,
+    /** Allowed to switch Android's notification pop-ups off while the island runs. */
+    val popups: Boolean = false,
 ) {
     /** Everything required before processing can start. */
     val ready: Boolean get() = recordAudio && dump
@@ -38,6 +40,15 @@ object Privileges {
 
     private const val DUMP = "android.permission.DUMP"
     private const val OP_PROJECT_MEDIA = "android:project_media"
+    private const val WRITE_SECURE_SETTINGS = "android.permission.WRITE_SECURE_SETTINGS"
+
+    /** For computers: let the island switch Android's pop-ups off. */
+    fun popupsAdbCommand(packageName: String): String =
+        "adb shell pm grant $packageName $WRITE_SECURE_SETTINGS"
+
+    /** Lets the island switch Android's pop-ups off. Blocks; call it off the main thread. */
+    fun grantPopupsWithShizuku(packageName: String): Boolean =
+        shizukuExec("pm grant $packageName $WRITE_SECURE_SETTINGS")
 
     fun read(context: Context): PrivilegeState = PrivilegeState(
         recordAudio = granted(context, Manifest.permission.RECORD_AUDIO),
@@ -47,6 +58,7 @@ object Privileges {
         shizuku = shizukuState(),
         islandOverlay = accessibilityOn(context),
         islandListener = listenerOn(context),
+        popups = granted(context, WRITE_SECURE_SETTINGS),
     )
 
     private fun accessibilityOn(context: Context): Boolean = try {

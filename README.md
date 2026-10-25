@@ -4,18 +4,20 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
 - **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers and notifications.
-- **Keyboard:** **Continuum Keyboard**, a separate app built on [FUTO Keyboard](https://github.com/futo-org/android-keyboard) and redesigned in Continuum. Install it, switch it on and open its settings from the Keyboard tab.
+- **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
 ## Continuum Keyboard
 
-Continuum Keyboard keeps everything FUTO Keyboard does (on-device predictions and autocorrect that learn as you type, offline voice typing, swipe typing, many languages and layouts, clipboard history, emoji, and password-manager suggestions above the keys) and works entirely offline: it has no internet access. On top of that:
+Continuum's own keyboard, written from scratch so every part of it can follow the liquid ink rule. It lives in `keyboard/` and builds as its own app (`./gradlew -p keyboard assembleRelease`). It has no internet access: your typing, learned words and clipboard stay on the phone.
 
-- **The Continuum look:** Continuum Ink by default (pure black, flat pill keys, Libron), or Continuum Light, or one that follows the system. Keys squash when pressed and bounce back.
-- **Scan text:** take a picture, tap the lines you want, and they're typed where you were. The text is read on the phone.
-- **Clipboard:** keep clips for 1 hour, a day, 3 days, a week, a month, or until you remove them; pin the ones you reuse.
-- **Emoji:** a Frequently used row alongside Recent.
-
-It lives in `keyboard/` under the **FUTO Source First License 1.1** (see `keyboard/LICENSE.md` and `keyboard/README.md`): free to use and share, not for commercial use, and FUTO's payment options stay in place. If you find it useful, you can pay FUTO for FUTO Keyboard from its settings, or from the Keyboard tab.
+- **Ink keys:** pressed letters rise out of their key as a drop and fall back into it; a long press grows a bar of accents out of the key; keys pop in row by row; Ink (pure black) or Tint (from your wallpaper).
+- **Corrections and suggestions:** a 115,000-word English list with a touch-aware corrector (a slip onto a neighbouring key costs less than a real typo), completions, next-word predictions, and learning that picks up your words and phrases. Delete straight after a correction to undo it; long-press a suggestion to stop it coming up.
+- **Swipe typing** with an ink trail that's drawn back in when you lift.
+- **Delete swiping:** drag left from delete to select whole words, lift to delete them.
+- **Clipboard and emoji:** clipboard history kept from 1 hour to forever, with pins and a paste suggestion in the strip; every emoji your phone can draw, with Frequent and skin tones.
+- **Scan text:** take a picture, tap the lines you want, and they're typed where you were.
+- **Autofill:** passwords and addresses from your autofill service as chips in the strip.
+- Slide on space to move the cursor, number row, key height, double-space full stop.
 
 ## The island
 
@@ -116,13 +118,13 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] Liquid ink island: music, calls, timers and notifications
 - [ ] Island: navigation, charging and more sources; per-device camera fine-tuning
 - [x] In-app updates that install over the top
-- [ ] The Continuum keyboard (its options are already in the Keyboard tab)
+- [x] The Continuum keyboard
 - [ ] Liquid-ink transitions for the remaining sheets
 
 ## Credits and licences
 
 - Continuum FX is licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
-- Continuum Keyboard (`keyboard/`) is a modified version of FUTO Keyboard by FUTO Holdings, Inc., under the FUTO Source First License 1.1; it's a separate app and isn't covered by the GPL.
+- Continuum Keyboard (`keyboard/`) is original code, also under the GPL v3.0, with an additional permission to use Google's ML Kit text recognition (see `keyboard/README.md`). Its word data comes from wordfreq (CC BY-SA 4.0), SCOWL and the Google Books Ngram data via SymSpell (CC BY 3.0); emoji data from Emojibase (MIT).
 - The rootless approach (capture, then silence the originals through a per-session effect) follows [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP) by Tim Schneeberger.
 - Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*.
 - [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open Font License 1.1 (see `fonts/LIBRON-OFL.txt`).

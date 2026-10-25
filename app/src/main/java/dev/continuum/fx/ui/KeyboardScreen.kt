@@ -60,7 +60,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
             update = k.update,
             title = { if (k.installed) "Keyboard build ${it.build} is ready" else "Continuum Keyboard" },
             subtitle = if (k.installed) "Your words, settings and layouts stay as they are."
-            else "Build ${(k.update as? UpdateState.Available)?.release?.build ?: ""} · FUTO Keyboard, redesigned in Continuum".trim(),
+            else "Build ${(k.update as? UpdateState.Available)?.release?.build ?: ""} · Continuum's own keyboard".trim(),
             actionLabel = if (k.installed) "Update now" else "Install",
             installingNote = "Installing Continuum Keyboard. Android may ask you to confirm.",
             onAction = actions::installKeyboard,
@@ -90,14 +90,12 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
             Txt("Settings", 21.sp, p.text, bold = true)
             Gap(10.dp)
             val pages = listOf(
-                "themes" to "Look",
-                "languages" to "Languages",
-                "keyboard" to "Keyboard",
+                "look" to "Look",
                 "typing" to "Typing",
-                "predictiveText" to "Predictions",
-                "swipe" to "Swipe typing",
-                "voiceInput" to "Voice typing",
-                "actions" to "Clipboard and actions",
+                "swipe" to "Swiping",
+                "clipboard" to "Clipboard",
+                "words" to "Learned words",
+                "about" to "About",
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 pages.chunked(2).forEach { row ->
@@ -109,22 +107,11 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                     }
                 }
             }
-            Gap(28.dp)
-
-            Txt("Support FUTO", 21.sp, p.text, bold = true)
-            Gap(4.dp)
-            Txt(
-                "Continuum Keyboard is built on FUTO Keyboard. It's free to use; if you find it useful, you can pay FUTO for FUTO Keyboard.",
-                15.sp, p.sub,
-            )
-            Gap(10.dp)
-            PillButton("Pay FUTO", { actions.openKeyboardSettings("payment") })
-            Gap(20.dp)
+            Gap(24.dp)
         }
 
         Txt(
-            "Continuum Keyboard is a modified version of FUTO Keyboard by FUTO Holdings, Inc., redesigned in Continuum. " +
-                "It's distributed free under the FUTO Source First License; Continuum FX itself is separate.",
+            "Continuum Keyboard is its own app, kept up to date from here. Swipe typing, corrections, clipboard history and scan text all work on your phone; the keyboard has no internet access.",
             13.sp, p.sub,
         )
     }

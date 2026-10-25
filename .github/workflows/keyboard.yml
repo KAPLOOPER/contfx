@@ -6,7 +6,6 @@ on:
     paths:
       - 'keyboard/**'
       - '.github/workflows/keyboard.yml'
-      - '.gitmodules'
   workflow_dispatch:
 
 permissions:
@@ -18,24 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
-          lfs: true
-
-      # Models in the submodules are stored with Git LFS.
-      - name: Fetch large files
-        shell: bash
-        run: |
-          set +e +o pipefail
-          git lfs install
-          git submodule foreach --recursive 'git lfs pull' || echo "::warning title=LFS::git lfs pull reported a problem"
-          status=$(git submodule status --recursive 2>&1 | sed ':a;N;$!ba;s/\n/%0A/g')
-          echo "::notice title=Submodules::$status"
-          for d in keyboard/libs keyboard/voiceinput-shared/src/main/ml keyboard/java/assets/futo-swipe; do
-            listing=$(ls -la "$d" 2>&1 | head -30 | sed ':a;N;$!ba;s/\n/%0A/g')
-            echo "::notice title=Contents of $d::$listing"
-          done
-          lfs=$(cd keyboard/libs && git lfs ls-files 2>&1 | head -20 | sed ':a;N;$!ba;s/\n/%0A/g')
-          echo "::notice title=LFS files in libs::$lfs"
+          fetch-depth: 1
 
       - uses: actions/setup-java@v4
         with:
@@ -44,48 +26,44 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Same key as Continuum FX, so the two apps trust each other and updates install in place.
-      - name: Signing
+      # The run number is the build number, so each build installs over the last one.
+      # Signed with the same key as Continuum FX.
+      - name: Test and build
         shell: bash
         env:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           if [ -z "$SIGNING_PASSWORD" ]; then echo "::error title=Signing password missing::Add the SIGNING_PASSWORD secret."; exit 1; fi
-          {
-            echo "storePassword=$SIGNING_PASSWORD"
-            echo "keyPassword=$SIGNING_PASSWORD"
-            echo "keyAlias=continuum"
-            echo "storeFile=../keystore/continuum.p12"
-          } > keyboard/keystore.properties
-
-      - name: Build
-        shell: bash
-        working-directory: keyboard
-        env:
-          VERSION_CODE: ${{ github.run_number }}
-          VERSION_NAME: continuum-${{ github.run_number }}
-          BRANCH_NAME: main
-        run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace assembleStableRelease 2>&1 | tee ../build.log
+          ./gradlew -p keyboard --no-daemon --stacktrace testDebugUnitTest assembleRelease 2>&1 | tee build.log
 
       - name: Report build errors
         if: failure()
         shell: bash
         run: |
-          { grep -E '^e: |^ERROR|error:|FAILED' build.log || true; grep -A8 'What went wrong' build.log || true; } \
+          { grep -E '^e: |^ERROR|error:|FAILED|AssertionError|Test.*FAILED' build.log || true; grep -A8 'What went wrong' build.log || true; } \
             | sed "s#file://$GITHUB_WORKSPACE/##" | head -80 > errors.txt
+          for r in keyboard/build/test-results/testDebugUnitTest/*.xml; do
+            [ -f "$r" ] && grep -A3 '<failure' "$r" | head -12 >> errors.txt
+          done
           split -l 8 errors.txt chunk_
           for f in chunk_*; do
             msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$f")
             echo "::error title=Build error::$msg"
           done
 
+      - name: Report test results
+        if: always()
+        shell: bash
+        run: |
+          out=$(grep -h -o 'words [0-9-]*:.*\|swipe [0-9-]*:[^;]*' keyboard/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -8 | sed ':a;N;$!ba;s/\n/%0A/g')
+          [ -n "$out" ] && echo "::notice title=Word engine::$out" || true
+
       - name: Collect the APK
         shell: bash
         run: |
           mkdir -p dist
-          apk=$(ls keyboard/build/outputs/apk/stable/release/*.apk | head -1)
+          apk=$(ls keyboard/build/outputs/apk/release/*.apk | head -1)
           cp "$apk" "dist/ContinuumKeyboard-${{ github.run_number }}.apk"
           git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
 

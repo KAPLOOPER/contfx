@@ -45,3 +45,19 @@ Font License 1.1. See `fonts/LIBRON-OFL.txt`.
 ## Shizuku
 
 [Shizuku](https://github.com/RikkaApps/Shizuku) API by RikkaApps, Apache License 2.0.
+
+## Continuum Keyboard data
+
+- **Word frequencies:** [wordfreq](https://github.com/rspeer/wordfreq) by Robyn Speer and contributors. Its data is
+  licensed under CC BY-SA 4.0; the frequencies in `keyboard/src/main/assets/words/en_words.txt` are derived from it
+  and shared under the same licence.
+- **Spellings:** SCOWL by Kevin Atkinson (via the `@cspell/dict-en_us` and `wordlist-english` packages), under the
+  SCOWL licence (copyright notice and permission notice included with those packages; permission to use, copy,
+  modify, distribute and sell granted provided the notice is kept).
+- **Word pairs:** `frequency_bigramdictionary_en_243_342.txt` from [SymSpell](https://github.com/wolfgarbe/SymSpell)
+  by Wolf Garbe (MIT), built from the Google Books Ngram data (CC BY 3.0). `keyboard/src/main/assets/words/en_next.txt`
+  is derived from it.
+- **Emoji:** [Emojibase](https://github.com/milesj/emojibase) data by Miles Johnson, MIT licence.
+- **Text recognition:** Google ML Kit, under the ML Kit terms.
+
+`keyboard/tools/` has the scripts that build these files.

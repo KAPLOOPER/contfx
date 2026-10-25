@@ -369,7 +369,7 @@ class MainActivity : ComponentActivity(), AppActions {
             message.value = "Install Continuum Keyboard first."
             return
         }
-        if (page != null) intent.putExtra("navDest", page)
+        if (page != null) intent.putExtra("section", page)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         startSafely(intent)
     }

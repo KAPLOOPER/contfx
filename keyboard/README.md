@@ -1,15 +1,30 @@
 # Continuum Keyboard
 
-**Continuum Keyboard is a modified version of [FUTO Keyboard](https://github.com/futo-org/android-keyboard)** by FUTO Holdings, Inc., redesigned in the Continuum design language (flat surfaces, pure black ink, Libron type, Flow springs) to sit alongside Continuum FX.
+Continuum's own keyboard: one sheet of ink that keys rise out of and fall back into. Written from scratch for Continuum;
+it shares no code with other keyboards.
 
-- Upstream: `futo-org/android-keyboard`, commit `70a5d390c505a6bbcc4e14966e5628e43ca3f1fc` (see `UPSTREAM.md`).
-- Licence: the **FUTO Source First License 1.1-kb** in `LICENSE.md` applies to everything in this `keyboard/` folder, including our changes. The original AOSP keyboard code it builds on is Apache 2.0 (see `NOTICE`). The rest of this repository (Continuum FX) is GPL-3.0 and is a separate app.
-- It is distributed free of charge, for non-commercial use. FUTO's payment options (Settings → Payment) are kept as they are: if you find it useful, you can pay FUTO for FUTO Keyboard there.
+## Layout
 
-## What we changed
+- `src/main/java/dev/continuum/keyboard/engine/` — the word engine, plain Kotlin with no Android in it: the word list as
+  a packed trie (`Words`), the touch-aware corrector (`Corrector`), next words (`NextWords`), learning (`Learned`), the
+  swipe decoder (`Swipe`) and text rules (`TextRules`). Tested in `src/test/`.
+- `layout/` — the sheets of keys and where they sit.
+- `ui/KeyboardView.kt` — draws the keys, drops, accent bar, trail and delete tongue, and handles touch.
+- `ui/Panels.kt` — clipboard and emoji, in Compose.
+- `ContinuumIME.kt` — the input method: the word in progress, corrections and undo, spacing, swipes, panels, autofill.
+- `scan/` — Scan text (CameraX and ML Kit, on the phone).
+- `settings/` — settings and setup.
+- `tools/` — scripts that build the word and emoji data in `src/main/assets/`.
 
-- App id `dev.continuum.keyboard` and the name Continuum Keyboard, so it installs beside FUTO Keyboard, plus a Continuum icon.
-- New Continuum themes (Ink, the default; Light; and one that follows the system) with pill-shaped flat keys and Libron on the keys and in settings.
-- Built and signed by this repository's CI, and updated through the Continuum FX app instead of FUTO's update checker.
+Build: `./gradlew -p keyboard testDebugUnitTest assembleRelease`.
 
-FUTO's original README is kept as `FUTO-README.md`.
+## Licence
+
+Copyright © 2026 the Continuum authors. Licensed under the GNU General Public License v3.0 (see `../LICENSE`).
+
+Additional permission under GNU GPL version 3 section 7: if you modify this program, or any covered work, by linking
+or combining it with Google ML Kit or Google Play services libraries (or a modified version of those libraries),
+containing parts covered by the terms of their own licences, the licensors of this program grant you additional
+permission to convey the resulting work.
+
+Data files keep their own licences; see `../THIRD_PARTY_NOTICES.md`.

@@ -25,8 +25,11 @@ jobs:
       - name: Fetch large files
         shell: bash
         run: |
+          set +e +o pipefail
           git lfs install
           git submodule foreach --recursive 'git lfs pull' || echo "::warning title=LFS::git lfs pull reported a problem"
+          status=$(git submodule status --recursive 2>&1 | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::notice title=Submodules::$status"
           for d in keyboard/libs keyboard/voiceinput-shared/src/main/ml keyboard/java/assets/futo-swipe; do
             listing=$(ls -la "$d" 2>&1 | head -30 | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::notice title=Contents of $d::$listing"

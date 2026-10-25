@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'keyboard/**'
+      - '!keyboard/**.md'
       - '.github/workflows/keyboard.yml'
   workflow_dispatch:
 

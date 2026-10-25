@@ -31,7 +31,13 @@ class CalendarWatcher(private val context: Context) {
     @Volatile
     private var started = false
 
-    private val readSoon = Runnable { io.execute { read() } }
+    private val readSoon = Runnable {
+        try {
+            io.execute { read() }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Stopped in the meantime.
+        }
+    }
 
     private val observer = object : ContentObserver(main) {
         // A sync can change many rows at once: read once it settles.
@@ -63,6 +69,7 @@ class CalendarWatcher(private val context: Context) {
         } catch (_: Exception) {
         }
         unobserve()
+        io.shutdownNow()
         IslandRepository.event.value = null
     }
 
@@ -77,10 +84,13 @@ class CalendarWatcher(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
     private fun read() {
+        if (!started) return
         val wanted = IslandSettings.state.value.let { it.enabled && it.events }
         if (!wanted || !allowed()) {
             main.post { unobserve() }
             IslandRepository.event.value = null
+            // Access can be given later from the system's settings: look again in a while.
+            if (wanted) poke(delayMs = REFRESH_MS)
             return
         }
         main.post { observe() }
@@ -91,6 +101,7 @@ class CalendarWatcher(private val context: Context) {
             emptyList()
         }
         val next = Upcoming.pick(events, now)
+        if (!started) return
         IslandRepository.event.value = next
         // Come back when the island's view of it changes, or in a while to look further ahead.
         val at = next?.let { Upcoming.nextChange(it, now) } ?: (now + REFRESH_MS)

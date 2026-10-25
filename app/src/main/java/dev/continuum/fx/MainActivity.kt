@@ -25,6 +25,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.continuum.fx.audio.CaptureService
+import dev.continuum.fx.audio.DirectService
+import dev.continuum.fx.audio.EngineMode
+import dev.continuum.fx.audio.EngineSettings
+import dev.continuum.fx.audio.Processing
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.dsp.EqImport
@@ -242,17 +246,37 @@ class MainActivity : ComponentActivity(), AppActions {
 
     override fun togglePower() {
         if (EngineStatus.running.value) {
-            CaptureService.stop(this)
+            Processing.stop(this)
             return
         }
         refresh()
-        if (!privileges.value.ready) {
+        val direct = EngineSettings.mode.value == EngineMode.Direct
+        // Direct mode needs only to find apps' sound; capturing also needs to hear it.
+        if (!(if (direct) privileges.value.dump else privileges.value.ready)) {
             setupOpen.value = true
             return
         }
         EngineStatus.error.value = null
+        if (direct) {
+            DirectService.start(this)
+            return
+        }
         val manager = getSystemService(MediaProjectionManager::class.java)
         projectionLauncher.launch(manager.createScreenCaptureIntent())
+    }
+
+    override fun setEngineMode(mode: EngineMode) {
+        if (mode == EngineSettings.mode.value) return
+        val wasRunning = EngineStatus.running.value
+        EngineSettings.setMode(mode)
+        if (!wasRunning) return
+        // Running: carry straight on the new way (capture asks Android first, as always).
+        Processing.stop(this)
+        lifecycleScope.launch {
+            // Let the old way let go of apps' sound before the new one takes hold.
+            delay(350)
+            togglePower()
+        }
     }
 
     override fun requestRecord() {

@@ -10,7 +10,7 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import dev.continuum.fx.ContinuumApp
 import dev.continuum.fx.MainActivity
-import dev.continuum.fx.audio.CaptureService
+import dev.continuum.fx.audio.Processing
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
@@ -97,7 +97,7 @@ class EqTile : ContinuumTile() {
     override fun onClick() {
         super.onClick()
         if (EngineStatus.running.value) {
-            CaptureService.stop(this)
+            Processing.stop(this)
         } else {
             openApp(MainActivity.ACTION_START_PROCESSING)
         }

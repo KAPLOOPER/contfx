@@ -78,12 +78,13 @@ fun EqGraph(
     val levels = remember { FloatArray(BANDS) }
     var spectrumFrame by remember { mutableIntStateOf(0) }
     DisposableEffect(live) {
-        LiveAudio.listening = live
-        onDispose { LiveAudio.listening = false }
+        LiveAudio.listening.value = live
+        onDispose { LiveAudio.listening.value = false }
     }
     LaunchedEffect(live) {
-        val analyzer = SpectrumAnalyzer(bands = BANDS)
-        val samples = FloatArray(4096)
+        var size = LiveAudio.fftSize
+        var analyzer = SpectrumAnalyzer(fftSize = size, bands = BANDS)
+        var samples = FloatArray(size)
         var last = 0L
         var odd = false
         while (true) {
@@ -94,6 +95,12 @@ fun EqGraph(
                 val dt = if (last == 0L) 1f / 30f else ((t - last) / 1e9f).coerceIn(0.005f, 0.1f)
                 last = t
                 if (live) {
+                    // The mode can change under a running graph (capture and Direct read differently).
+                    if (LiveAudio.fftSize != size) {
+                        size = LiveAudio.fftSize
+                        analyzer = SpectrumAnalyzer(fftSize = size, bands = BANDS)
+                        samples = FloatArray(size)
+                    }
                     LiveAudio.tap.latest(samples)
                     analyzer.analyze(samples, levels, dt)
                 } else {

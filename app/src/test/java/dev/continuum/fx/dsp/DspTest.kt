@@ -185,3 +185,57 @@ class LoudnessTest {
         assertTrue("matched loudness $l", l < 0.0 && l > -6.0)
     }
 }
+
+class BandPlanTest {
+    /** The largest gap, in dB, between the true curve and the banded one, across 30 Hz to 16 kHz. */
+    private fun worstError(profile: EqProfile): Double {
+        val gains = BandPlan.gains(profile)
+        var worst = 0.0
+        var f = 30.0
+        while (f < 16000.0) {
+            val truth = EqResponse.gainAt(profile, f)
+            val banded = gains[BandPlan.bandAt(f)].toDouble()
+            worst = max(worst, abs(truth - banded))
+            f *= 1.01
+        }
+        return worst
+    }
+
+    @Test
+    fun bandsRiseAndEndAtTwentyKilohertz() {
+        val c = BandPlan.cutoffs
+        assertEquals(BandPlan.BANDS, c.size)
+        for (i in 1 until c.size) assertTrue(c[i] > c[i - 1])
+        assertEquals(20000.0, c.last().toDouble(), 1.0)
+    }
+
+    @Test
+    fun aFlatEqIsFlat() {
+        assertTrue(BandPlan.gains(EqProfile.flat()).all { it == 0f })
+    }
+
+    @Test
+    fun aTypicalHeadphoneEqIsFollowedClosely() {
+        // An AutoEQ-style correction: shelves and a handful of peaks up to Q 2.
+        val eq = EqProfile(
+            name = "Harman",
+            bands = listOf(
+                EqBand(FilterType.LOW_SHELF, 105.0, 5.5, 0.7),
+                EqBand(FilterType.PEAK, 180.0, -2.4, 0.9),
+                EqBand(FilterType.PEAK, 1300.0, 1.8, 1.4),
+                EqBand(FilterType.PEAK, 3100.0, -3.2, 2.0),
+                EqBand(FilterType.PEAK, 6200.0, 2.6, 1.8),
+                EqBand(FilterType.HIGH_SHELF, 10000.0, -1.5, 0.7),
+            ),
+        )
+        val worst = worstError(eq)
+        assertTrue("worst gap $worst dB", worst < 1.0)
+    }
+
+    @Test
+    fun evenANarrowPeakStaysClose() {
+        val eq = EqProfile(name = "Narrow", bands = listOf(EqBand(FilterType.PEAK, 4000.0, -6.0, 4.0)))
+        val worst = worstError(eq)
+        assertTrue("worst gap $worst dB", worst < 2.0)
+    }
+}

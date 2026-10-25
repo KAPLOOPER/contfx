@@ -3,6 +3,7 @@ package dev.continuum.fx
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.island.IslandRepository
@@ -29,6 +30,7 @@ class ContinuumApp : Application() {
         super.onCreate()
         store = ProfileStore(this)
         IslandSettings.init(this)
+        EngineSettings.init(this)
         VolumeSettings.init(this)
         VolumeModel.start(this)
         followOutputs()

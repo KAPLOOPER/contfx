@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Direct mode's service: keeps the EQ on apps' sound, with nothing captured. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- A light tick on each volume step. -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -86,6 +88,15 @@
             android:name=".audio.CaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <service
+            android:name=".audio.DirectService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a user-chosen equalizer applied to other apps' audio sessions (DynamicsProcessing), without capturing audio." />
+        </service>
 
         <!-- The island: drawn by an accessibility service, fed by a notification listener. -->
         <service

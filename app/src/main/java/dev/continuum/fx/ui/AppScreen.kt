@@ -69,6 +69,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.audio.EngineMode
+import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.audio.OutputDevice
 import dev.continuum.fx.audio.OutputWatcher
@@ -122,6 +124,8 @@ data class UiState(
 
 interface AppActions {
     fun togglePower()
+    /** Capture what apps play, or put the EQ on their own sound. */
+    fun setEngineMode(mode: dev.continuum.fx.audio.EngineMode)
     fun requestRecord()
     fun requestNotifications()
     fun grantWithShizuku()
@@ -281,6 +285,8 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     when (state.section) {
                         Section.Sound -> Column {
                             StatusLine(state)
+                            Gap(14.dp)
+                            ModeRow(actions)
                             Gap(20.dp)
                             SoundContent(state, store, actions)
                         }
@@ -443,15 +449,37 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
     }
 }
 
+/** How the EQ reaches other apps: by capturing what they play, or directly on their sound. */
+@Composable
+private fun ModeRow(actions: AppActions) {
+    val p = LocalPalette.current
+    val mode by EngineSettings.mode.collectAsState()
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) })
+        Chip("Direct · no capture", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) })
+    }
+    Gap(6.dp)
+    Txt(
+        when (mode) {
+            EngineMode.Capture ->
+                "Records what apps play and plays it back through the EQ: exact filters, but Android shows its screen-capture prompt and icon, and apps that block capture play as they are."
+            EngineMode.Direct ->
+                "Puts the EQ on each app's own sound: no capture prompt or icon, less battery and delay, and apps that block capture are included. Filters are matched by 96 fine bands, to within a fraction of a decibel."
+        },
+        14.sp, p.sub,
+    )
+}
+
 @Composable
 private fun StatusLine(state: UiState) {
     val p = LocalPalette.current
     val error = state.error
+    val mode by EngineSettings.mode.collectAsState()
     val text: String = when {
         error != null -> error
         state.running && state.processing.isNotEmpty() -> "On · ${state.processing.joinToString()}"
         state.running -> "On · waiting for something to play"
-        !state.privileges.ready -> "Off · finish setup to start"
+        !readyFor(mode, state.privileges) -> "Off · finish setup to start"
         else -> "Off"
     }
     val color = when {
@@ -701,8 +729,9 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
 private fun DockBar(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val library = state.library
+    val mode by EngineSettings.mode.collectAsState()
     val subtitle = when {
-        !state.privileges.ready && !state.running -> "Tap to set up"
+        !readyFor(mode, state.privileges) && !state.running -> "Tap to set up"
         !library.eqEnabled -> "${library.active.name} · EQ off"
         else -> library.active.name
     }
@@ -724,6 +753,8 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val priv = state.privileges
     val packageName = LocalContext.current.packageName
+    val mode by EngineSettings.mode.collectAsState()
+    val direct = mode == EngineMode.Direct
     var step = 0
     Column(
         Modifier
@@ -732,18 +763,24 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             .padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt("Set up capture", 24.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
+            Txt(if (direct) "Set up the EQ" else "Set up capture", 24.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_chevron_down, "Close setup", onClick = { actions.setSetupOpen(false) }, on = Surface.Ink)
         }
         Gap(4.dp)
         Txt(
-            "Continuum FX works without root: it captures what other apps play, processes it and plays it back.",
+            if (direct) "Direct mode works without root or screen capture: the EQ goes on each app's own sound."
+            else "Continuum FX works without root: it captures what other apps play, processes it and plays it back.",
             15.sp, p.onInkSub,
         )
         Gap(8.dp)
 
-        StepRow(++step, priv.recordAudio, "Hear other apps", "Lets the app capture the sound other apps play.") {
-            PillButton("Allow", actions::requestRecord, primary = true, on = Surface.Ink)
+        StepRow(
+            ++step, priv.recordAudio,
+            if (direct) "The live spectrum" else "Hear other apps",
+            if (direct) "Lets the graph show the music moving. The EQ works without it." else "Lets the app capture the sound other apps play.",
+            optional = direct,
+        ) {
+            PillButton("Allow", actions::requestRecord, primary = !direct, on = Surface.Ink)
         }
         if (Build.VERSION.SDK_INT >= 33) {
             StepRow(++step, priv.notifications, "Notifications", "Shows when processing is on, with a stop button.", optional = true) {
@@ -751,8 +788,10 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             }
         }
         StepRow(
-            ++step, priv.dump, "Silence the originals",
-            "Mutes each app's own sound so you only hear the processed version. Grant this once with Shizuku or from a computer.",
+            ++step, priv.dump,
+            if (direct) "Find each app's sound" else "Silence the originals",
+            if (direct) "Lets the EQ find what each app is playing, to put itself on it. Grant this once with Shizuku or from a computer."
+            else "Mutes each app's own sound so you only hear the processed version. Grant this once with Shizuku or from a computer.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val label = when (priv.shizuku) {
@@ -778,13 +817,15 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
                 PillButton("Copy commands", actions::copyAdbCommands, icon = R.drawable.ic_copy, on = Surface.Ink)
             }
         }
-        StepRow(
-            ++step, priv.projectMedia, "Skip the capture prompt",
-            "Granted along with the step above, so processing starts without a system dialog each time.",
-            optional = true,
-        )
+        if (!direct) {
+            StepRow(
+                ++step, priv.projectMedia, "Skip the capture prompt",
+                "Granted along with the step above, so processing starts without a system dialog each time.",
+                optional = true,
+            )
+        }
         Gap(14.dp)
-        if (priv.ready) {
+        if (readyFor(mode, priv)) {
             PillButton(
                 if (state.running) "Stop processing" else "Start processing",
                 {
@@ -835,3 +876,7 @@ internal fun StepRow(
 
 /** Fling speed, in pixels a second, that turns the pivot without dragging it halfway. */
 private const val FLING = 650f
+
+/** Whether processing can start the [mode] way: Direct needs only to find apps' sound. */
+private fun readyFor(mode: EngineMode, priv: PrivilegeState): Boolean =
+    if (mode == EngineMode.Direct) priv.dump else priv.ready

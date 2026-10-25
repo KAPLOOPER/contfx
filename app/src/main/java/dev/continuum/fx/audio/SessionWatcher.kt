@@ -14,18 +14,45 @@ import android.os.Process
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ConcurrentHashMap
 
+/** What the watcher puts on each app's sound. */
+interface SessionEffects {
+    /** An effect on session [sid], or null when it can't be had. */
+    fun attach(sid: Int): AudioEffect?
+
+    /** Whether apps that forbid capture are left alone (true when capturing). */
+    val respectsCaptureBlock: Boolean
+
+    /** Called after each check, with every effect in place, on the watcher's thread. */
+    fun synced(effects: Collection<AudioEffect>) = Unit
+}
+
+/** Capture mode: each app's own sound is silenced, so only the processed copy is heard. */
+object MuteEffects : SessionEffects {
+    override val respectsCaptureBlock = true
+
+    override fun attach(sid: Int): AudioEffect? = try {
+        DynamicsProcessing(Int.MAX_VALUE, sid, null).apply {
+            setInputGainAllChannelsTo(-200f)
+            setEnabled(true)
+        }
+    } catch (_: Throwable) {
+        null
+    }
+}
+
 /**
- * Finds other apps' playback sessions and silences their original output, so the
- * person only hears the processed copy that [AudioEngine] plays.
+ * Finds other apps' playback sessions and puts [effects] on each: in capture mode, silencing
+ * the original (the person hears the processed copy [AudioEngine] plays); in Direct mode, the
+ * EQ itself ([DirectEq]).
  *
  * Sessions come from the audio policy service dump (needs the DUMP permission),
- * plus the effect-control broadcasts that many music players send. Apps that
+ * plus the effect-control broadcasts that many music players send. When capturing, apps that
  * forbid capture are never silenced, otherwise they would go quiet entirely.
  *
  * Android says the moment any app starts or stops playing, so a new session is found
- * and silenced straight away; a slower regular check catches anything else.
+ * straight away; a slower regular check catches anything else.
  */
-class SessionWatcher(private val context: Context) {
+class SessionWatcher(private val context: Context, private val effects: SessionEffects = MuteEffects) {
 
     private val myUid = Process.myUid()
     private val pm = context.packageManager
@@ -150,26 +177,21 @@ class SessionWatcher(private val context: Context) {
             gone.forEach { sid -> muted.remove(sid)?.let { runCatching { it.release() } } }
             for ((sid, pkg) in candidates) {
                 val label = labelOf(pkg)
-                if (!canBeCaptured(pkg, allowLog)) {
+                if (effects.respectsCaptureBlock && !canBeCaptured(pkg, allowLog)) {
                     blocked += label
                     muted.remove(sid)?.let { runCatching { it.release() } }
                     continue
                 }
-                if (!muted.containsKey(sid)) mute(sid)?.let { muted[sid] = it }
+                if (!muted.containsKey(sid)) effects.attach(sid)?.let { muted[sid] = it }
                 processing += label
+            }
+            try {
+                effects.synced(muted.values.toList())
+            } catch (_: Throwable) {
             }
         }
         EngineStatus.processing.value = processing.toList()
         EngineStatus.blocked.value = blocked.toList()
-    }
-
-    private fun mute(sid: Int): AudioEffect? = try {
-        DynamicsProcessing(Int.MAX_VALUE, sid, null).apply {
-            setInputGainAllChannelsTo(-200f)
-            setEnabled(true)
-        }
-    } catch (_: Throwable) {
-        null
     }
 
     private fun canBeCaptured(pkg: String, allowLog: Map<String, Boolean>): Boolean {
@@ -189,6 +211,9 @@ class SessionWatcher(private val context: Context) {
             pkg
         }
     }
+
+    /** Every effect in place now, for [SessionEffects] to bring up to date between checks. */
+    fun attached(): List<AudioEffect> = synchronized(lock) { muted.values.toList() }
 
     private fun isCapturedUsage(usage: String): Boolean {
         val u = usage.uppercase()

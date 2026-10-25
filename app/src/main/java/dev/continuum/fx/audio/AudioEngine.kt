@@ -129,7 +129,7 @@ class AudioEngine(
             eq.process(buffer, frames)
             boost(buffer, frames)
             limiter.process(buffer, frames)
-            if (LiveAudio.listening) LiveAudio.tap.push(buffer, frames, 2)
+            if (LiveAudio.listening.value) LiveAudio.tap.push(buffer, frames, 2)
             out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
         }
     }

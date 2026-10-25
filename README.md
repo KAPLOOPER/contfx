@@ -71,6 +71,7 @@ then switch on *Continuum island* in accessibility settings. The **Try it** butt
 
 ## Sound
 
+- **Two ways to run:** *Capture* records what apps play and plays it back through the EQ's exact filters. *Direct* puts the EQ on each app's own sound instead, with no screen-capture prompt or icon, less battery and delay, and apps that block capture included; the filters are matched by 96 fine bands (about a third of a decibel off on a typical headphone EQ).
 - **Parametric EQ** with a response graph you drag: sideways for frequency, up and down for gain.
 - **Live spectrum:** while processing, the music itself moves behind the curve as a soft liquid outline.
 - **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.

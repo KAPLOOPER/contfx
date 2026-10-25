@@ -5,4 +5,6 @@
     <string name="island_listener_label">Continuum island</string>
     <string name="island_accessibility_summary">Draws the liquid ink island around your camera.</string>
     <string name="island_accessibility_description">Continuum uses this only to draw the island over other apps, around the front camera: playing music, calls, timers and new notifications. It doesn\'t read or collect anything on your screen.</string>
+    <string name="tile_eq">Continuum EQ</string>
+    <string name="tile_island">Island</string>
 </resources>

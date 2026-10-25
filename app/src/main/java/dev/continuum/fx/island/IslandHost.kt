@@ -1,10 +1,14 @@
 package dev.continuum.fx.island
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -15,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -45,6 +50,17 @@ class IslandHost(private val context: Context) {
     private val density get() = context.resources.displayMetrics.density
     private val pad get() = (6 * density).toInt()
 
+    // With the screen off nothing can see the island, so it stops drawing altogether.
+    private var screenWatching = false
+    private val screen = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> owner?.sleep()
+                Intent.ACTION_SCREEN_ON -> owner?.wake()
+            }
+        }
+    }
+
     /** Shows, moves or removes the island to match the switch and the current screen. */
     fun sync(enabled: Boolean) {
         val located = CameraLocator.locate(context, wm)
@@ -58,6 +74,13 @@ class IslandHost(private val context: Context) {
     }
 
     fun detach() {
+        if (screenWatching) {
+            try {
+                context.unregisterReceiver(screen)
+            } catch (_: Exception) {
+            }
+            screenWatching = false
+        }
         removeTouch()
         frame?.let {
             try {
@@ -95,6 +118,13 @@ class IslandHost(private val context: Context) {
             compose = view
             owner = lifecycle
             drawParams = lp
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }
+            ContextCompat.registerReceiver(context, screen, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            screenWatching = true
+            if (context.getSystemService(PowerManager::class.java)?.isInteractive == false) lifecycle.sleep()
         } catch (e: Exception) {
             Log.e(TAG, "Couldn't add the island window", e)
             lifecycle.onDestroy()

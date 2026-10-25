@@ -56,6 +56,10 @@
                 <data android:scheme="content" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- Long-pressing a Continuum tile in Quick Settings opens the app there. -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
             <!-- "Share" of EQ text or files -->
             <intent-filter android:label="@string/import_eq">
                 <action android:name="android.intent.action.SEND" />
@@ -101,6 +105,34 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+        </service>
+
+        <!-- Quick Settings tiles. -->
+        <service
+            android:name=".tiles.EqTile"
+            android:exported="true"
+            android:icon="@drawable/ic_wave"
+            android:label="@string/tile_eq"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+        <service
+            android:name=".tiles.IslandTile"
+            android:exported="true"
+            android:icon="@drawable/ic_island"
+            android:label="@string/tile_island"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
         </service>
 
         <receiver

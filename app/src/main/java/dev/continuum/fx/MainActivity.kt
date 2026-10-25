@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.service.quicksettings.TileService
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -110,6 +111,13 @@ class MainActivity : ComponentActivity(), AppActions {
             KeyboardUpdater.installedTick.collect { refreshKeyboard() }
         }
 
+        // When the EQ follows your headphones, say so.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                dev.continuum.fx.audio.OutputWatcher.switched.collect { message.value = "Now using $it" }
+            }
+        }
+
         // Android's installer asks for confirmation through a screen; show it from here.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -169,6 +177,7 @@ class MainActivity : ComponentActivity(), AppActions {
 
     override fun onStop() {
         Updater.screenVisible = false
+        store.flush()
         super.onStop()
     }
 
@@ -512,6 +521,25 @@ class MainActivity : ComponentActivity(), AppActions {
 
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
+            ACTION_START_PROCESSING -> {
+                setSection(Section.Sound)
+                // After the screen is up, so Android's capture prompt has something to sit on.
+                window.decorView.post { if (!EngineStatus.running.value) togglePower() }
+            }
+            ACTION_OPEN_ISLAND -> {
+                setSection(Section.Island)
+                refresh()
+                if (!privileges.value.islandReady) setupOpen.value = true
+            }
+            TileService.ACTION_QS_TILE_PREFERENCES -> {
+                val tile: ComponentName? = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME, ComponentName::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_COMPONENT_NAME)
+                }
+                setSection(if (tile?.className?.endsWith("IslandTile") == true) Section.Island else Section.Sound)
+            }
             Intent.ACTION_VIEW -> intent.data?.let { importUri(it) }
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
@@ -532,9 +560,16 @@ class MainActivity : ComponentActivity(), AppActions {
     private fun importUri(uri: Uri) {
         try {
             val name = displayName(uri) ?: "Imported EQ"
+            // Read at most a little past the limit, so a huge file can't fill memory.
             val text = contentResolver.openInputStream(uri)?.use { stream ->
-                val bytes = stream.readBytes()
-                if (bytes.size > MAX_IMPORT_BYTES) null else String(bytes, Charsets.UTF_8)
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(16 * 1024)
+                while (out.size() <= MAX_IMPORT_BYTES) {
+                    val n = stream.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                }
+                if (out.size() > MAX_IMPORT_BYTES) null else out.toString(Charsets.UTF_8.name())
             }
             if (text == null) {
                 message.value = "That file is too large to be an EQ preset."
@@ -566,8 +601,12 @@ class MainActivity : ComponentActivity(), AppActions {
         null
     }
 
-    private companion object {
-        const val REQUEST_SHIZUKU = 42
-        const val MAX_IMPORT_BYTES = 256 * 1024
+    companion object {
+        /** From the EQ tile: open and start processing. */
+        const val ACTION_START_PROCESSING = "dev.continuum.fx.action.START_PROCESSING"
+        /** From the island tile, when the island still needs setting up. */
+        const val ACTION_OPEN_ISLAND = "dev.continuum.fx.action.OPEN_ISLAND"
+        private const val REQUEST_SHIZUKU = 42
+        private const val MAX_IMPORT_BYTES = 256 * 1024
     }
 }

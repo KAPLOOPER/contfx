@@ -54,6 +54,8 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import dev.continuum.fx.R
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.audio.OutputDevice
+import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.island.AlarmRing
 import dev.continuum.fx.island.CallInfo
 import dev.continuum.fx.island.CameraSpot
@@ -69,7 +71,7 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-enum class Kind { Call, Media, Timer, Battery, Alarm, Live, Sound }
+enum class Kind { Call, Media, Timer, Battery, Alarm, Live, Sound, Output }
 
 private data class Mode(val kind: Kind?, val expanded: Boolean, val time: Boolean, val battery: Boolean)
 
@@ -139,6 +141,7 @@ fun IslandRoot(
     val alarmRingRaw by IslandRepository.alarmRing.collectAsState()
     val liveRaw by IslandRepository.live.collectAsState()
     val soundRaw by IslandRepository.sound.collectAsState()
+    val output by OutputWatcher.current.collectAsState()
     val bounds by rememberUpdatedState(onBounds)
 
     // ---- What to show ----
@@ -224,9 +227,26 @@ fun IslandRoot(
         }
     }
 
+    // Headphones, a speaker or the car connecting says so for a moment (not at start-up).
+    val lastOutputKey = remember { Last<String>() }
+    var outputShowing by remember { mutableStateOf<OutputDevice?>(null) }
+    LaunchedEffect(output?.key) {
+        val o = output
+        val before = lastOutputKey.value
+        lastOutputKey.value = o?.key ?: ""
+        if (prefs.headphones && o != null && before != null && before != o.key && o.kind != OutputDevice.Kind.Speaker) {
+            outputShowing = o
+            delay(3_000)
+            outputShowing = null
+        } else if (o?.kind == OutputDevice.Kind.Speaker) {
+            outputShowing = null
+        }
+    }
+
     val ongoing = call?.takeIf { !it.ringing }
     val ringing = call?.takeIf { it.ringing }
     val kinds = buildList {
+        if (outputShowing != null) add(Kind.Output)
         if (soundRaw != null && soundShowing) add(Kind.Sound)
         if (batteryData != null && ((battery != null && batteryShowing) || expanded == Kind.Battery)) add(Kind.Battery)
         if (ongoing != null) add(Kind.Call)
@@ -246,6 +266,7 @@ fun IslandRoot(
     val lastAlarm = rememberLast(nextAlarm)
     val lastLive = rememberLast(live)
     val lastSound = rememberLast(soundRaw)
+    val lastOutput = rememberLast(outputShowing)
 
     // Always-on extras share the pill with whatever is live.
     val ambientBattery = if (prefs.alwaysBattery && primary != Kind.Battery) batteryData else null
@@ -365,6 +386,7 @@ fun IslandRoot(
         Kind.Alarm -> listOf(PillItem.Icon(R.drawable.ic_alarm, InkColors.on))
         Kind.Live -> listOf(PillItem.AppIcon(lastLive?.smallIcon, InkColors.on))
         Kind.Sound -> listOf(PillItem.Icon(soundIcon(soundMode), soundColor(soundMode)))
+        Kind.Output -> listOf(PillItem.Icon(R.drawable.ic_headphones, InkColors.live))
     }
     fun rightOf(k: Kind): List<PillItem> = when (k) {
         Kind.Media -> listOf(PillItem.Pulse)
@@ -380,6 +402,7 @@ fun IslandRoot(
             bits
         }
         Kind.Sound -> listOf(PillItem.Label(soundLabel(soundMode), 14f, soundColor(soundMode), true))
+        Kind.Output -> listOf(PillItem.Label(outputLabel(lastOutput?.name.orEmpty()), 14f, InkColors.on, true))
     }
     /** What sits on each side of the camera, for a live [k] (or none) plus the always-on extras. */
     fun pillLayout(k: Kind?, time: Boolean, batt: Boolean): PillLayout {
@@ -442,6 +465,7 @@ fun IslandRoot(
         Kind.Alarm -> px(20f + 14f + 6f) + textW(PillItem.Label(alarmLabel, 13f, InkColors.on, true))
         Kind.Live -> px(20f + 16f) + (liveLabel?.let { px(6f) + textW(PillItem.Label(it, 13f, InkColors.on, true)) } ?: 0f)
         Kind.Sound -> px(20f + 16f)
+        Kind.Output -> px(20f + 16f)
     }
     fun expandedHeight(k: Kind): Float = band + px(
         when (k) {
@@ -451,7 +475,7 @@ fun IslandRoot(
             Kind.Battery -> 112f
             Kind.Alarm -> 140f
             Kind.Live -> if (lastLive?.progress != null) 150f else 130f
-            Kind.Sound -> 0f
+            Kind.Sound, Kind.Output -> 0f
         },
     )
     fun centerFor(w: Float): Float {
@@ -581,7 +605,7 @@ fun IslandRoot(
 
     val canPull = prefs.pull && drip == null && open == null
     val canPullNow by rememberUpdatedState(canPull)
-    val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null) Kind.Battery else null)?.takeIf { it != Kind.Sound })
+    val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null) Kind.Battery else null)?.takeIf { it != Kind.Sound && it != Kind.Output })
 
     fun haptic(strong: Boolean) {
         val kind = when {
@@ -750,7 +774,7 @@ fun IslandRoot(
                             Kind.Battery -> lastBattery?.let { ExpandedBattery(it, toDp(band)) }
                             Kind.Alarm -> lastAlarm?.let { ExpandedAlarm(it, System.currentTimeMillis(), toDp(band)) }
                             Kind.Live -> lastLive?.let { ExpandedLive(it, toDp(band)) }
-                            Kind.Sound -> Unit
+                            Kind.Sound, Kind.Output -> Unit
                         }
                     } else {
                         PillContent(

@@ -11,8 +11,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -25,7 +31,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.continuum.fx.audio.LiveAudio
 import dev.continuum.fx.dsp.EqLimits
+import dev.continuum.fx.dsp.SpectrumAnalyzer
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -40,9 +48,12 @@ import kotlin.math.roundToInt
 
 private const val POINTS = 220
 
+private const val BANDS = 56
+
 /**
  * Frequency response of the active profile. Each filter is a dot you can drag:
- * sideways changes its frequency, up and down changes its gain.
+ * sideways changes its frequency, up and down changes its gain. While processing, the
+ * music itself moves behind the curve as a soft liquid spectrum.
  */
 @Composable
 fun EqGraph(
@@ -51,9 +62,42 @@ fun EqGraph(
     onSelect: (Int) -> Unit,
     onMove: (index: Int, frequency: Double, gainDb: Double) -> Unit,
     modifier: Modifier = Modifier,
+    live: Boolean = false,
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
+
+    // The live spectrum: analysed every other frame while sound is flowing, then let sink.
+    val levels = remember { FloatArray(BANDS) }
+    var spectrumFrame by remember { mutableIntStateOf(0) }
+    DisposableEffect(live) {
+        LiveAudio.listening = live
+        onDispose { LiveAudio.listening = false }
+    }
+    LaunchedEffect(live) {
+        val analyzer = SpectrumAnalyzer(bands = BANDS)
+        val samples = FloatArray(4096)
+        var last = 0L
+        var odd = false
+        while (true) {
+            var resting = false
+            withFrameNanos { t ->
+                odd = !odd
+                if (!odd) return@withFrameNanos
+                val dt = if (last == 0L) 1f / 30f else ((t - last) / 1e9f).coerceIn(0.005f, 0.1f)
+                last = t
+                if (live) {
+                    LiveAudio.tap.latest(samples)
+                    analyzer.analyze(samples, levels, dt)
+                } else {
+                    analyzer.settle(levels, dt)
+                    resting = levels.all { it < 0.002f }
+                }
+                spectrumFrame++
+            }
+            if (resting) break
+        }
+    }
     val curve = remember(profile) { EqResponse.curve(profile, POINTS) }
     val range = remember(curve) {
         val peak = curve.maxOfOrNull { abs(it) } ?: 0.0
@@ -127,6 +171,28 @@ fun EqGraph(
                     detectTapGestures { pos -> latestSelect.value(nearest(pos)) }
                 },
         ) {
+            // The music, behind everything: a smooth liquid outline over the band levels.
+            val tick = spectrumFrame
+            if (tick >= 0 && levels.any { it > 0.003f }) {
+                val floor = top + plotH
+                val shape = Path()
+                shape.moveTo(padX, floor)
+                var px0 = padX
+                var py0 = floor - levels[0] * plotH * 0.85f
+                shape.lineTo(px0, py0)
+                for (b in 1 until BANDS) {
+                    val x = xOf(SpectrumAnalyzer.centre(b, BANDS))
+                    val y = floor - levels[b] * plotH * 0.85f
+                    shape.quadraticTo(px0, py0, (px0 + x) / 2f, (py0 + y) / 2f)
+                    px0 = x
+                    py0 = y
+                }
+                shape.lineTo(padX + plotW, py0)
+                shape.lineTo(padX + plotW, floor)
+                shape.close()
+                drawPath(shape, p.line)
+            }
+
             val grid = with(density) { 1.dp.toPx() }
             listOf(100.0, 1000.0, 10000.0).forEach { f ->
                 val x = xOf(f)

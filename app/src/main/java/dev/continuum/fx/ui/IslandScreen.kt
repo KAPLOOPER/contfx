@@ -126,6 +126,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             ToggleRow("Sound mode", "Ring, vibrate or silent, for a moment when you switch.", prefs.sound) {
                 actions.updateIsland { it.copy(sound = !it.sound) }
             }
+            ToggleRow("Headphones", "Headphones, speakers and the car as they connect.", prefs.headphones) {
+                actions.updateIsland { it.copy(headphones = !it.headphones) }
+            }
             ToggleRow("Charging and battery", "Plugging in, wireless charging, running low and fully charged.", prefs.battery) {
                 actions.updateIsland { it.copy(battery = !it.battery) }
             }

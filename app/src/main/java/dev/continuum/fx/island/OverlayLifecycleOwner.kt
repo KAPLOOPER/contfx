@@ -30,6 +30,20 @@ class OverlayLifecycleOwner : LifecycleOwner, SavedStateRegistryOwner, ViewModel
         registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
+    /** Screen off: pauses Compose's frame clock, so animations stop drawing. */
+    fun sleep() {
+        if (!registry.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        registry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        registry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+    }
+
+    /** Screen on: picks up where it left off. */
+    fun wake() {
+        if (registry.currentState != Lifecycle.State.CREATED) return
+        registry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
     fun onDestroy() {
         val state = registry.currentState
         if (state == Lifecycle.State.DESTROYED || state == Lifecycle.State.INITIALIZED) return

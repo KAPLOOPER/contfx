@@ -1,6 +1,8 @@
 package dev.continuum.fx.data
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import dev.continuum.fx.dsp.EqBand
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.FilterType
@@ -15,27 +17,46 @@ data class Library(
     val profiles: List<EqProfile>,
     val activeId: String,
     val eqEnabled: Boolean = true,
+    /** Which profile each output device uses, by [dev.continuum.fx.audio.OutputDevice.key]. */
+    val devices: Map<String, String> = emptyMap(),
 ) {
     val active: EqProfile
         get() = profiles.firstOrNull { it.id == activeId } ?: profiles.first()
+
+    /** The profile linked to the output with [key], if it still exists. */
+    fun profileFor(key: String): EqProfile? = devices[key]?.let { id -> profiles.firstOrNull { it.id == id } }
 }
 
 /**
  * Keeps the [Library] in memory as a StateFlow (so the UI and the audio engine
  * both react instantly) and persists it as JSON in SharedPreferences.
+ *
+ * Dragging a band changes the library many times a second; it's written to disk once
+ * you pause, not on every move.
  */
 class ProfileStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(load())
     val state: StateFlow<Library> = _state.asStateFlow()
+    private val main = Handler(Looper.getMainLooper())
+    private val saveLater = Runnable { save(_state.value) }
 
     val library: Library get() = _state.value
 
+    @Synchronized
     fun update(transform: (Library) -> Library) {
         val next = transform(_state.value)
+        if (next == _state.value) return
         _state.value = next
-        save(next)
+        main.removeCallbacks(saveLater)
+        main.postDelayed(saveLater, SAVE_DELAY_MS)
+    }
+
+    /** Writes any pending change now (when the app goes to the background). */
+    fun flush() {
+        main.removeCallbacks(saveLater)
+        save(_state.value)
     }
 
     fun updateActive(transform: (EqProfile) -> EqProfile) = update { lib ->
@@ -48,7 +69,16 @@ class ProfileStore(context: Context) {
 
     fun delete(id: String) = update { lib ->
         val rest = lib.profiles.filterNot { it.id == id }.ifEmpty { listOf(EqProfile.flat()) }
-        lib.copy(profiles = rest, activeId = if (lib.activeId == id) rest.first().id else lib.activeId)
+        lib.copy(
+            profiles = rest,
+            activeId = if (lib.activeId == id) rest.first().id else lib.activeId,
+            devices = lib.devices.filterValues { it != id },
+        )
+    }
+
+    /** Links the output with [deviceKey] to [profileId], or unlinks it when null. */
+    fun link(deviceKey: String, profileId: String?) = update { lib ->
+        lib.copy(devices = if (profileId == null) lib.devices - deviceKey else lib.devices + (deviceKey to profileId))
     }
 
     fun setEqEnabled(enabled: Boolean) = update { it.copy(eqEnabled = enabled) }
@@ -59,10 +89,13 @@ class ProfileStore(context: Context) {
             val o = JSONObject(raw)
             val arr = o.getJSONArray("profiles")
             val profiles = (0 until arr.length()).map { profileFromJson(arr.getJSONObject(it)) }
+            val links = HashMap<String, String>()
+            o.optJSONObject("devices")?.let { d -> d.keys().forEach { k -> links[k] = d.getString(k) } }
             if (profiles.isEmpty()) defaultLibrary() else Library(
                 profiles = profiles,
                 activeId = o.optString("activeId", profiles.first().id),
                 eqEnabled = o.optBoolean("eqEnabled", true),
+                devices = links,
             )
         } catch (e: Exception) {
             defaultLibrary()
@@ -76,6 +109,9 @@ class ProfileStore(context: Context) {
         val arr = JSONArray()
         lib.profiles.forEach { arr.put(profileToJson(it)) }
         o.put("profiles", arr)
+        val links = JSONObject()
+        lib.devices.forEach { (k, v) -> links.put(k, v) }
+        o.put("devices", links)
         prefs.edit().putString(KEY, o.toString()).apply()
     }
 
@@ -133,5 +169,6 @@ class ProfileStore(context: Context) {
 
     private companion object {
         const val KEY = "library_v1"
+        const val SAVE_DELAY_MS = 400L
     }
 }

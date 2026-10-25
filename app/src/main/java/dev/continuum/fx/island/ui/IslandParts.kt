@@ -394,6 +394,7 @@ internal fun BudContent(
                 liveShort(live)?.let { Txt(it, 13.sp, InkColors.on, bold = true, maxLines = 1) }
             }
             Kind.Sound -> if (sound != null) Glyph(soundIcon(sound.mode), soundColor(sound.mode), 16.dp)
+            Kind.Output -> Glyph(R.drawable.ic_headphones, InkColors.live, 16.dp)
         }
     }
 }
@@ -1007,6 +1008,9 @@ internal fun soundLabel(mode: Int): String = when (mode) {
 }
 
 internal fun soundColor(mode: Int): Color = if (mode == 0) InkColors.end else InkColors.on
+
+/** A device's name, short enough for the pill. */
+internal fun outputLabel(name: String): String = if (name.length > 18) name.take(17).trimEnd() + "…" else name
 
 // ---- Alarms ----
 

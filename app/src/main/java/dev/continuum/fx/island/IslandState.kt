@@ -475,6 +475,8 @@ data class IslandPrefs(
     val live: Boolean = true,
     /** Ring, vibrate or silent, for a moment when you switch. */
     val sound: Boolean = true,
+    /** Headphones, a speaker or the car connecting, for a moment. */
+    val headphones: Boolean = true,
 ) {
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
@@ -514,6 +516,7 @@ object IslandSettings {
             alarmAlways = p.getBoolean("alarmAlways", false),
             live = p.getBoolean("live", true),
             sound = p.getBoolean("sound", true),
+            headphones = p.getBoolean("headphones", true),
         )
     }
 
@@ -536,6 +539,7 @@ object IslandSettings {
             ?.putBoolean("alarmAlways", next.alarmAlways)
             ?.putBoolean("live", next.live)
             ?.putBoolean("sound", next.sound)
+            ?.putBoolean("headphones", next.headphones)
             ?.apply()
     }
 }

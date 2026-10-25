@@ -3,8 +3,19 @@ package dev.continuum.fx
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import dev.continuum.fx.audio.EngineStatus
+import dev.continuum.fx.audio.OutputWatcher
+import dev.continuum.fx.island.IslandRepository
+import dev.continuum.fx.tiles.ContinuumTile
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.island.IslandSettings
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 
 class ContinuumApp : Application() {
 
@@ -15,6 +26,8 @@ class ContinuumApp : Application() {
         super.onCreate()
         store = ProfileStore(this)
         IslandSettings.init(this)
+        followOutputs()
+        keepTilesCurrent()
         val channel = NotificationChannel(
             CHANNEL_PROCESSING,
             "Audio processing",
@@ -32,6 +45,35 @@ class ContinuumApp : Application() {
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(channel, updates))
+    }
+
+    /** Switches to the EQ linked to whatever the sound is now playing through. */
+    private fun followOutputs() {
+        OutputWatcher.start(this)
+        MainScope().launch {
+            OutputWatcher.current.filterNotNull().distinctUntilChangedBy { it.key }.collect { device ->
+                val lib = store.library
+                val linked = lib.profileFor(device.key) ?: return@collect
+                if (linked.id != lib.activeId) {
+                    store.select(linked.id)
+                    OutputWatcher.switched.tryEmit("${linked.name} for ${device.name}")
+                }
+            }
+        }
+    }
+
+    /** Quick Settings tiles redraw whenever what they show changes. */
+    private fun keepTilesCurrent() {
+        MainScope().launch {
+            combine(
+                EngineStatus.running,
+                store.state.map { it.active.name to it.eqEnabled },
+                IslandSettings.state.map { it.enabled },
+                IslandRepository.hostActive,
+            ) { a, b, c, d -> listOf(a, b, c, d) }
+                .distinctUntilChanged()
+                .collect { ContinuumTile.refresh(this@ContinuumApp) }
+        }
     }
 
     companion object {

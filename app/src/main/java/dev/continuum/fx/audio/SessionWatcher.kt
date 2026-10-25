@@ -4,7 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.audiofx.AudioEffect
+import android.os.Handler
+import android.os.Looper
 import android.media.audiofx.DynamicsProcessing
 import android.os.Process
 import androidx.core.content.ContextCompat
@@ -17,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Sessions come from the audio policy service dump (needs the DUMP permission),
  * plus the effect-control broadcasts that many music players send. Apps that
  * forbid capture are never silenced, otherwise they would go quiet entirely.
+ *
+ * Android says the moment any app starts or stops playing, so a new session is found
+ * and silenced straight away; a slower regular check catches anything else.
  */
 class SessionWatcher(private val context: Context) {
 
@@ -30,6 +37,23 @@ class SessionWatcher(private val context: Context) {
     @Volatile
     private var running = false
     private var thread: Thread? = null
+    private val wake = Object()
+    @Volatile
+    private var nudged = false
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private val main = Handler(Looper.getMainLooper())
+
+    private val playback = object : AudioManager.AudioPlaybackCallback() {
+        override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) = nudge()
+    }
+
+    /** Checks again now rather than at the next regular check. */
+    private fun nudge() {
+        synchronized(wake) {
+            nudged = true
+            wake.notifyAll()
+        }
+    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, intent: Intent) {
@@ -40,6 +64,7 @@ class SessionWatcher(private val context: Context) {
                 AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> announced[sid] = pkg
                 AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> announced.remove(sid)
             }
+            nudge()
         }
     }
 
@@ -49,6 +74,10 @@ class SessionWatcher(private val context: Context) {
             addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        try {
+            audio?.registerAudioPlaybackCallback(playback, main)
+        } catch (_: Exception) {
+        }
         running = true
         thread = Thread({
             while (running) {
@@ -57,7 +86,12 @@ class SessionWatcher(private val context: Context) {
                 } catch (_: Throwable) {
                 }
                 try {
-                    Thread.sleep(POLL_MS)
+                    synchronized(wake) {
+                        if (!nudged) wake.wait(POLL_MS)
+                        nudged = false
+                    }
+                    // Let a burst of changes (a player opening several streams) settle first.
+                    Thread.sleep(SETTLE_MS)
                 } catch (_: InterruptedException) {
                     break
                 }
@@ -70,6 +104,10 @@ class SessionWatcher(private val context: Context) {
 
     fun stop() {
         running = false
+        try {
+            audio?.unregisterAudioPlaybackCallback(playback)
+        } catch (_: Exception) {
+        }
         thread?.interrupt()
         thread = null
         try {
@@ -158,7 +196,9 @@ class SessionWatcher(private val context: Context) {
     }
 
     private companion object {
-        const val POLL_MS = 1000L
+        /** The regular check, for anything Android didn't announce. */
+        const val POLL_MS = 2500L
+        const val SETTLE_MS = 60L
 
         // Android 10–12: "Session Id: 41 UID: 10123 ..." / Android 13+: "Session ID: 41; uid 10123; ..."
         val SESSION_REGEX = Regex("""Session I[dD]:\s*(\d+);?\s*(?:UID:|uid)\s*(\d+)[\s\S]*?Usage:\s*(\w+)""")

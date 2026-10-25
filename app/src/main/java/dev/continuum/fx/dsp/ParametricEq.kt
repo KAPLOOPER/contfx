@@ -24,6 +24,7 @@ class ParametricEq(
     private var stage = Stage(emptyArray(), 1.0, true)
     private var z1 = DoubleArray(0)
     private var z2 = DoubleArray(0)
+    private var scratch = FloatArray(0)
 
     /** Pass null to bypass the EQ entirely. */
     fun setProfile(profile: EqProfile?) {
@@ -38,21 +39,49 @@ class ParametricEq(
         pending.set(Stage(coeffs, 10.0.pow(profile.preampDb / 20.0), false))
     }
 
+    /**
+     * Filters [frames] frames in place. When the settings have changed, this chunk runs
+     * through both the old and the new filters and fades from one to the other, so
+     * dragging a band or switching profiles never clicks.
+     */
     fun process(buffer: FloatArray, frames: Int) {
-        pending.getAndSet(null)?.let { next ->
-            if (next.coeffs.size != stage.coeffs.size) {
-                z1 = DoubleArray(next.coeffs.size * channels)
-                z2 = DoubleArray(next.coeffs.size * channels)
-            }
-            stage = next
+        val next = pending.getAndSet(null)
+        if (next == null) {
+            run(stage, buffer, frames, z1, z2)
+            return
         }
-        val s = stage
+        val old = stage
+        if (old.bypass && next.bypass) return
+        val fade = minOf(frames, FADE_FRAMES)
+        val faded = fade * channels
+        if (scratch.size < faded) scratch = FloatArray(faded)
+        System.arraycopy(buffer, 0, scratch, 0, faded)
+
+        // The new filters start from where the old ones were, when they line up one to one.
+        val same = next.coeffs.size == old.coeffs.size
+        val n1 = if (same) z1.copyOf() else DoubleArray(next.coeffs.size * channels)
+        val n2 = if (same) z2.copyOf() else DoubleArray(next.coeffs.size * channels)
+        run(old, scratch, fade, z1, z2)
+        run(next, buffer, frames, n1, n2)
+        val inv = 1f / fade
+        for (frame in 0 until fade) {
+            val t = (frame + 1) * inv
+            val base = frame * channels
+            for (ch in 0 until channels) {
+                val i = base + ch
+                buffer[i] = scratch[i] + (buffer[i] - scratch[i]) * t
+            }
+        }
+        z1 = n1
+        z2 = n2
+        stage = next
+    }
+
+    private fun run(s: Stage, buffer: FloatArray, frames: Int, st1: DoubleArray, st2: DoubleArray) {
         if (s.bypass) return
         val coeffs = s.coeffs
         val n = coeffs.size
         val pre = s.preamp
-        val st1 = z1
-        val st2 = z2
         for (frame in 0 until frames) {
             val base = frame * channels
             for (ch in 0 until channels) {
@@ -74,6 +103,11 @@ class ParametricEq(
     fun reset() {
         z1.fill(0.0)
         z2.fill(0.0)
+    }
+
+    private companion object {
+        /** 10 ms at 48 kHz: long enough to hide a change, short enough to feel instant. */
+        const val FADE_FRAMES = 480
     }
 }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +51,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.audio.OutputDevice
+import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.data.Library
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.dsp.EqBand
@@ -218,10 +221,16 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
             PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
         }
+        val output by OutputWatcher.current.collectAsState()
+        output?.let { device ->
+            Gap(12.dp)
+            OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
+        }
         Gap(16.dp)
 
         EqGraph(
             profile = profile,
+            live = state.running,
             selected = selected,
             onSelect = { selected = it },
             onMove = { i, f, g ->
@@ -289,6 +298,42 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 15.sp, p.sub,
             )
         }
+    }
+}
+
+/** Where sound is going, and whether this EQ comes on by itself there. */
+@Composable
+private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) -> Unit) {
+    val p = LocalPalette.current
+    val profile = library.active
+    val linked = library.devices[device.key] == profile.id
+    val other = library.profileFor(device.key)?.takeIf { it.id != profile.id }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(p.surface)
+            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painterResource(if (device.kind == OutputDevice.Kind.Speaker) R.drawable.ic_speaker else R.drawable.ic_headphones),
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            colorFilter = ColorFilter.tint(p.text),
+        )
+        Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+            Txt(device.name, 16.sp, p.text, bold = true, maxLines = 1)
+            Txt(
+                when {
+                    linked -> "${profile.name} comes on by itself here"
+                    other != null -> "${other.name} comes on by itself here"
+                    else -> "Link this EQ to come on whenever you use it"
+                },
+                13.sp, p.sub, maxLines = 2,
+            )
+        }
+        Chip(if (linked) "Linked" else "Link", linked, onClick = { onLink(!linked) }, on = Surface.Card)
     }
 }
 

@@ -5,8 +5,11 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.AudioRouting
 import android.media.AudioTrack
 import android.media.projection.MediaProjection
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import dev.continuum.fx.data.Library
 import dev.continuum.fx.dsp.EqResponse
@@ -85,8 +88,14 @@ class AudioEngine(
 
         record = rec
         track = out
+        // Exactly where processed sound goes, so the right EQ can follow the headphones.
+        out.addOnRoutingChangedListener(
+            AudioRouting.OnRoutingChangedListener { router -> OutputWatcher.routedTo(router.routedDevice) },
+            Handler(Looper.getMainLooper()),
+        )
         rec.startRecording()
         out.play()
+        OutputWatcher.routedTo(out.routedDevice)
         running = true
         thread = Thread({ loop(rec, out) }, "ContinuumAudio").apply {
             priority = Thread.MAX_PRIORITY
@@ -107,6 +116,7 @@ class AudioEngine(
             val frames = read / 2
             eq.process(buffer, frames)
             limiter.process(buffer, frames)
+            if (LiveAudio.listening) LiveAudio.tap.push(buffer, frames, 2)
             out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
         }
     }
@@ -128,5 +138,6 @@ class AudioEngine(
         track?.release()
         record = null
         track = null
+        OutputWatcher.routedTo(null)
     }
 }

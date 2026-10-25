@@ -241,9 +241,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     fun setSheet(sheet: Sheet, rows: List<Row>, letters: List<Row>, animate: Boolean) {
         val changed = sheet != this.sheet || this.rows.size != rows.size
+        val taller = letters.size != lettersRows.size
         this.sheet = sheet
         this.rows = rows
         this.lettersRows = letters
+        // The keyboard's height follows the letters (with or without a number row).
+        if (taller) requestLayout()
         relayout()
         if (animate && changed) popIn(quick = true)
         invalidate()
@@ -695,14 +698,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             if (t < 0.2f) return@let
             popupRect(pop, t.coerceIn(0f, 1f), rect)
             val alpha = (255 * ((t - 0.2f) / 0.8f).coerceIn(0f, 1f)).toInt()
+            // Items spread with the bar as it grows out of the key.
+            val itemW = rect.width() / pop.items.size
             for ((i, item) in pop.items.withIndex()) {
-                val cx = rect.left + pop.itemWidth * (i + 0.5f)
+                val cx = rect.left + itemW * (i + 0.5f)
                 val cy = rect.centerY()
                 if (i == pop.selected) {
                     fill.color = p.bright
                     fill.alpha = alpha
-                    val half = min(pop.itemWidth, rect.height()) / 2f - 3f * v
-                    canvas.drawRoundRect(cx - pop.itemWidth / 2f + 3f * v, cy - half, cx + pop.itemWidth / 2f - 3f * v, cy + half, half, half, fill)
+                    val half = min(itemW, rect.height()) / 2f - 3f * v
+                    canvas.drawRoundRect(cx - itemW / 2f + 3f * v, cy - half, cx + itemW / 2f - 3f * v, cy + half, half, half, fill)
                 }
                 val color = if (i == pop.selected) p.onBright else p.label
                 if (item == Layouts.EMOJI) {
@@ -711,7 +716,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     Icons.draw(canvas, Icons.EMOJI, cx, cy, 24f * v, icon)
                 } else {
                     val shown = if (shift > 0 && item.length == 1 && item[0].isLetter()) item.uppercase() else item
-                    drawText(canvas, shown, cx, cy, if (item.length > 1) 17f * v else 24f * v, color, alpha, pop.itemWidth)
+                    drawText(canvas, shown, cx, cy, if (item.length > 1) 17f * v else 24f * v, color, alpha, itemW)
                 }
             }
         }

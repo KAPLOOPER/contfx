@@ -433,7 +433,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         composing.append(text)
         touchX[i] = x
         touchY[i] = y
-        ic.setComposingText(composing, 1)
+        ic.setComposingText(composing.toString(), 1)
     }
 
     private fun typeSymbol(ic: InputConnection, text: String) {
@@ -520,7 +520,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
                 ic.deleteSurroundingText(len, 0)
                 composing.append(undo.typed)
                 forgetTouches(composing.length)
-                ic.setComposingText(composing, 1)
+                ic.setComposingText(composing.toString(), 1)
                 ic.endBatchEdit()
                 noCorrect = true
                 if (learningOn) engine.later { engine.learned.insist(undo.typed) }
@@ -538,7 +538,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
                 if (composing.isEmpty()) {
                     ic.setComposingText("", 1)
                     resetComposing()
-                } else ic.setComposingText(composing, 1)
+                } else ic.setComposingText(composing.toString(), 1)
             }
             afterEdit()
             return

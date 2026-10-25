@@ -35,17 +35,18 @@ class Learned {
         return Words.build(list, freqs).also { learnedWords = it }
     }
 
-    /** You used [word]. [known] says whether it's already in the main list. */
+    /** You used [word], after [previous] (null at the start of a sentence). */
     @Synchronized
     fun use(word: String, previous: String?) {
         if (word.isEmpty() || word.length > 40) return
-        uses[word] = (uses[word] ?: 0) + 1
+        val n = (uses[word] ?: 0) + 1
+        uses[word] = n
         if (previous != null && previous.isNotEmpty()) {
             val key = previous.lowercase() + SEP + word.lowercase()
             pairs[key] = (pairs[key] ?: 0) + 1
         }
-        blocked.remove(Words.keyOf(word))
-        learnedWords = null
+        // The learned list only changes when a word first counts as learned (or comes back).
+        if (blocked.remove(Words.keyOf(word)) || n == LEARN_AFTER) learnedWords = null
         changed = true
         trim()
     }

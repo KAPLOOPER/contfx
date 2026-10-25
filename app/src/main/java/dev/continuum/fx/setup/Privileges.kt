@@ -26,6 +26,8 @@ data class PrivilegeState(
     val islandListener: Boolean = false,
     /** Allowed to switch Android's notification pop-ups off while the island runs. */
     val popups: Boolean = false,
+    /** Allowed to read the calendar, for the island's next event. */
+    val calendar: Boolean = false,
 ) {
     /** Everything required before processing can start. */
     val ready: Boolean get() = recordAudio && dump
@@ -59,6 +61,7 @@ object Privileges {
         islandOverlay = accessibilityOn(context),
         islandListener = listenerOn(context),
         popups = granted(context, WRITE_SECURE_SETTINGS),
+        calendar = granted(context, Manifest.permission.READ_CALENDAR),
     )
 
     private fun accessibilityOn(context: Context): Boolean = try {

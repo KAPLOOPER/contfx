@@ -62,6 +62,7 @@ import dev.continuum.fx.island.CameraSpot
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.island.NoteInfo
+import dev.continuum.fx.island.Upcoming
 import dev.continuum.fx.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -71,7 +72,7 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-enum class Kind { Call, Media, Timer, Battery, Alarm, Live, Sound, Output }
+enum class Kind { Call, Media, Timer, Battery, Alarm, Event, Live, Sound, Output }
 
 private data class Mode(val kind: Kind?, val expanded: Boolean, val time: Boolean, val battery: Boolean)
 
@@ -139,6 +140,8 @@ fun IslandRoot(
     val alarmReal by IslandRepository.alarm.collectAsState()
     val alarmDemo by IslandRepository.alarmDemo.collectAsState()
     val alarmRingRaw by IslandRepository.alarmRing.collectAsState()
+    val eventReal by IslandRepository.event.collectAsState()
+    val eventDemo by IslandRepository.eventDemo.collectAsState()
     val liveRaw by IslandRepository.live.collectAsState()
     val soundRaw by IslandRepository.sound.collectAsState()
     val output by OutputWatcher.current.collectAsState()
@@ -154,6 +157,7 @@ fun IslandRoot(
     val battery = batteryData?.takeIf { prefs.battery }
     val nextAlarm = (alarmDemo ?: alarmReal)?.takeIf { prefs.alarms }
     val alarmRinging = alarmRingRaw?.takeIf { prefs.alarms }
+    val nextEvent = eventDemo ?: eventReal?.takeIf { prefs.events }
     val live = liveRaw?.takeIf { prefs.live }
 
     // The always-on clock: checked every second, but only changes once a minute, so it
@@ -216,6 +220,30 @@ fun IslandRoot(
         }
     }
 
+    // The next event sits in the island from a quarter of an hour before it, counting down
+    // by the minute; the clock here moves only when what it says would change.
+    val eventState by produceState<Pair<Boolean, String>?>(null, nextEvent) {
+        while (true) {
+            val e = nextEvent
+            if (e == null) {
+                value = null
+                break
+            }
+            val t = System.currentTimeMillis()
+            val shown = Upcoming.shows(e, t)
+            val next = shown to Upcoming.label(e, t)
+            if (next != value) value = next
+            // While it's showing, the countdown turns over on each minute before the start.
+            val change = Upcoming.nextChange(e, t)
+            val minute = e.begin - ((e.begin - t) / 60_000L) * 60_000L
+            val tick = if (minute > t) minute else minute + 60_000L
+            val wake = if (shown) minOf(change, tick) else change
+            delay((wake - t).coerceIn(250L, 60_000L))
+        }
+    }
+    val eventShown = eventState?.first == true
+    val eventLabel = eventState?.second
+
     // Ring, vibrate or silent speaks up for a moment when you switch.
     var soundShowing by remember { mutableStateOf(false) }
     val soundAt = soundRaw?.at ?: 0L
@@ -253,6 +281,7 @@ fun IslandRoot(
         if (mediaShown) add(Kind.Media)
         if (timer != null) add(Kind.Timer)
         if (live != null) add(Kind.Live)
+        if (nextEvent != null && (eventShown || expanded == Kind.Event)) add(Kind.Event)
         if (nextAlarm != null && (alarmShown || expanded == Kind.Alarm)) add(Kind.Alarm)
     }
     val open = expanded?.takeIf { it in kinds }
@@ -264,6 +293,8 @@ fun IslandRoot(
     val lastTimer = rememberLast(timer)
     val lastBattery = rememberLast(batteryData)
     val lastAlarm = rememberLast(nextAlarm)
+    val lastEvent = rememberLast(nextEvent)
+    val lastEventLabel = rememberLast(eventLabel).orEmpty()
     val lastLive = rememberLast(live)
     val lastSound = rememberLast(soundRaw)
     val lastOutput = rememberLast(outputShowing)
@@ -384,6 +415,7 @@ fun IslandRoot(
         Kind.Timer -> listOf(PillItem.Icon(R.drawable.ic_timer, InkColors.on))
         Kind.Battery -> listOf(PillItem.Cell)
         Kind.Alarm -> listOf(PillItem.Icon(R.drawable.ic_alarm, InkColors.on))
+        Kind.Event -> listOf(PillItem.Icon(R.drawable.ic_event, InkColors.on))
         Kind.Live -> listOf(PillItem.AppIcon(lastLive?.smallIcon, InkColors.on))
         Kind.Sound -> listOf(PillItem.Icon(soundIcon(soundMode), soundColor(soundMode)))
         Kind.Output -> listOf(PillItem.Icon(R.drawable.ic_headphones, InkColors.live))
@@ -394,6 +426,7 @@ fun IslandRoot(
         Kind.Timer -> listOf(PillItem.Label(timerLabel, 14f, InkColors.on, true))
         Kind.Battery -> listOfNotNull(batteryStatus)
         Kind.Alarm -> listOf(PillItem.Label(alarmLabel, 14f, InkColors.on, true))
+        Kind.Event -> listOf(PillItem.Label(lastEventLabel, 14f, eventColor(lastEventLabel), true))
         Kind.Live -> {
             val l = lastLive
             val bits = mutableListOf<PillItem>()
@@ -463,6 +496,7 @@ fun IslandRoot(
         Kind.Timer -> px(20f) + textW(PillItem.Label(timerLabel, 13f, InkColors.on, true))
         Kind.Battery -> px(BATTERY_W + 20f)
         Kind.Alarm -> px(20f + 14f + 6f) + textW(PillItem.Label(alarmLabel, 13f, InkColors.on, true))
+        Kind.Event -> px(20f + 14f + 6f) + textW(PillItem.Label(lastEventLabel, 13f, InkColors.on, true))
         Kind.Live -> px(20f + 16f) + (liveLabel?.let { px(6f) + textW(PillItem.Label(it, 13f, InkColors.on, true)) } ?: 0f)
         Kind.Sound -> px(20f + 16f)
         Kind.Output -> px(20f + 16f)
@@ -474,6 +508,7 @@ fun IslandRoot(
             Kind.Timer -> 132f
             Kind.Battery -> 112f
             Kind.Alarm -> 140f
+            Kind.Event -> 140f
             Kind.Live -> if (lastLive?.progress != null) 150f else 130f
             Kind.Sound, Kind.Output -> 0f
         },
@@ -773,6 +808,7 @@ fun IslandRoot(
                             Kind.Timer -> lastTimer?.let { ExpandedTimer(it, now, toDp(band)) }
                             Kind.Battery -> lastBattery?.let { ExpandedBattery(it, toDp(band)) }
                             Kind.Alarm -> lastAlarm?.let { ExpandedAlarm(it, System.currentTimeMillis(), toDp(band)) }
+                            Kind.Event -> lastEvent?.let { ExpandedEvent(it, lastEventLabel, toDp(band)) }
                             Kind.Live -> lastLive?.let { ExpandedLive(it, toDp(band)) }
                             Kind.Sound, Kind.Output -> Unit
                         }
@@ -844,7 +880,7 @@ fun IslandRoot(
                         }
                         .pointerInput(budKind) { detectTapGestures { expanded = budKind } },
                 ) {
-                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now, lastAlarm, lastLive, lastSound)
+                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now, lastAlarm, lastLive, lastSound, lastEventLabel)
                 }
             }
         }

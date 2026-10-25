@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -22,6 +24,7 @@ class IslandAccessibilityService : AccessibilityService() {
     private var scope: CoroutineScope? = null
     private var battery: BatteryWatcher? = null
     private var clock: ClockWatcher? = null
+    private var calendar: CalendarWatcher? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -31,8 +34,14 @@ class IslandAccessibilityService : AccessibilityService() {
         IslandRepository.hostActive.value = true
         battery = BatteryWatcher(this).also { it.start() }
         clock = ClockWatcher(this).also { it.start() }
+        val cal = CalendarWatcher(this).also { it.start() }
+        calendar = cal
         val s = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = s
+        s.launch {
+            // The calendar is read again whenever the island or its Calendar events switch changes.
+            IslandSettings.state.map { it.enabled && it.events }.distinctUntilChanged().collect { cal.poke() }
+        }
         s.launch {
             IslandSettings.state.collect { prefs ->
                 h.sync(prefs.enabled)
@@ -71,6 +80,8 @@ class IslandAccessibilityService : AccessibilityService() {
         battery = null
         clock?.stop()
         clock = null
+        calendar?.stop()
+        calendar = null
         host?.detach()
         host = null
         IslandRepository.hostActive.value = false

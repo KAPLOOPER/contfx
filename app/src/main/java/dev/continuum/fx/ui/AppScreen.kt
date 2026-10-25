@@ -126,6 +126,8 @@ interface AppActions {
     fun updateIsland(transform: (IslandPrefs) -> IslandPrefs)
     fun grantIslandWithShizuku()
     fun grantPopupsWithShizuku()
+    /** Asks for calendar access, then turns the island's Calendar events on. */
+    fun requestCalendar()
     fun openAccessibilitySettings()
     fun openListenerSettings()
     fun openAppInfo()

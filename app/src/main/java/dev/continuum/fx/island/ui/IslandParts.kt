@@ -85,6 +85,7 @@ import dev.continuum.fx.island.AlarmInfo
 import dev.continuum.fx.island.AlarmRing
 import dev.continuum.fx.island.BatteryInfo
 import dev.continuum.fx.island.CallInfo
+import dev.continuum.fx.island.EventInfo
 import dev.continuum.fx.island.LiveInfo
 import dev.continuum.fx.island.NoteAction
 import dev.continuum.fx.island.SoundMode
@@ -371,6 +372,7 @@ internal fun BudContent(
     alarm: AlarmInfo? = null,
     live: LiveInfo? = null,
     sound: SoundMode? = null,
+    eventLabel: String = "",
 ) {
     Row(
         Modifier.fillMaxSize().padding(horizontal = 10.dp),
@@ -388,6 +390,10 @@ internal fun BudContent(
             Kind.Alarm -> if (alarm != null) {
                 Glyph(R.drawable.ic_alarm, InkColors.on, 14.dp)
                 Txt(clockText(LocalContext.current, alarm.at), 13.sp, InkColors.on, bold = true, maxLines = 1)
+            }
+            Kind.Event -> {
+                Glyph(R.drawable.ic_event, InkColors.on, 14.dp)
+                Txt(eventLabel, 13.sp, eventColor(eventLabel), bold = true, maxLines = 1)
             }
             Kind.Live -> if (live != null) {
                 if (live.progress != null) InkRing(live.progress, liveColor(live), 16.dp) else AppGlyph(live.smallIcon, InkColors.on, 14.dp)
@@ -1051,6 +1057,51 @@ internal fun ExpandedAlarm(a: AlarmInfo, now: Long, band: Dp) {
         }
         Spacer(Modifier.height(14.dp))
         InkPill("Open clock", InkColors.tonal, InkColors.on, Modifier.fillMaxWidth(), icon = R.drawable.ic_alarm) { IslandRepository.openAlarm() }
+    }
+}
+
+// ---- Calendar ----
+
+/** The countdown reads in the live green once the event is starting. */
+internal fun eventColor(label: String): Color = if (label == "Now") InkColors.live else InkColors.on
+
+/** The next event, opened: what and where, its time, and Join when it has a video call. */
+@Composable
+internal fun ExpandedEvent(e: EventInfo, label: String, band: Dp) {
+    val context = LocalContext.current
+    val starting = label == "Now"
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        Row(Modifier.fillMaxWidth().height(band), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Next event", 12.sp, InkColors.sub, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Txt("${alarmTime(context, e.begin)} – ${alarmTime(context, e.end)}", 12.sp, InkColors.sub, maxLines = 1)
+        }
+        Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(46.dp).clip(CircleShape).background(InkColors.tonal), contentAlignment = Alignment.Center) {
+                Glyph(R.drawable.ic_event, if (starting) InkColors.live else InkColors.on, 24.dp)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Txt(e.title, 18.sp, InkColors.on, bold = true, maxLines = 1)
+                val status = if (starting) "Starting now" else "Starts $label"
+                Txt(listOfNotNull(status, e.location).joinToString(" · "), 14.sp, if (starting) InkColors.live else InkColors.sub, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (e.joinUrl != null) {
+                InkPill("Join", InkColors.on, InkColors.ink, Modifier.weight(1f), icon = R.drawable.ic_video) {
+                    IslandRepository.joinEvent(context, e)
+                }
+                InkPill("Calendar", InkColors.tonal, InkColors.on, Modifier.weight(1f), icon = R.drawable.ic_event) {
+                    IslandRepository.openEvent(context, e)
+                }
+            } else {
+                InkPill("Open calendar", InkColors.tonal, InkColors.on, Modifier.fillMaxWidth(), icon = R.drawable.ic_event) {
+                    IslandRepository.openEvent(context, e)
+                }
+            }
+        }
     }
 }
 

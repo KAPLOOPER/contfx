@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Only with the island's Calendar events switched on: the next event, read on the phone. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- In-app updates: checks and downloads new builds from the GitHub releases, then installs them. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

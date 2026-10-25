@@ -76,6 +76,15 @@ class MainActivity : ComponentActivity(), AppActions {
         refresh()
     }
 
+    private val calendarPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            IslandSettings.update { it.copy(events = true) }
+        } else {
+            message.value = "Calendar access wasn't allowed. You can allow it in Continuum FX's app info."
+        }
+        refresh()
+    }
+
     private val openDocument = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importUri(uri)
     }
@@ -336,6 +345,10 @@ class MainActivity : ComponentActivity(), AppActions {
             return
         }
         IslandSettings.update { it.copy(enabled = !it.enabled) }
+    }
+
+    override fun requestCalendar() {
+        calendarPermission.launch(Manifest.permission.READ_CALENDAR)
     }
 
     override fun updateIsland(transform: (IslandPrefs) -> IslandPrefs) {

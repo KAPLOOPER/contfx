@@ -1,13 +1,18 @@
 package dev.continuum.fx.island
 
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.app.RemoteInput
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.graphics.drawable.Icon
 import android.media.session.MediaController
+import android.net.Uri
+import android.provider.CalendarContract
 import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -160,6 +165,10 @@ object IslandRepository {
 
     /** An alarm or finished timer ringing right now. */
     val alarmRing = MutableStateFlow<AlarmRing?>(null)
+
+    /** The next calendar event worth following, from the calendar. */
+    val event = MutableStateFlow<EventInfo?>(null)
+    val eventDemo = MutableStateFlow<EventInfo?>(null)
 
     /** The most recent thing under way: a download, directions, a delivery. */
     val live = MutableStateFlow<LiveInfo?>(null)
@@ -350,6 +359,37 @@ object IslandRepository {
         if (!a.demo) send(a.show)
     }
 
+    // ---- Calendar ----
+
+    /** Opens the event in the calendar app. */
+    fun openEvent(context: Context, e: EventInfo) {
+        if (e.demo) {
+            eventDemo.value = null
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id))
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.begin)
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, e.end)
+        start(context, intent)
+    }
+
+    /** Opens the event's video call (Meet, Zoom, Teams…) in whichever app handles it. */
+    fun joinEvent(context: Context, e: EventInfo) {
+        val link = e.joinUrl ?: return openEvent(context, e)
+        if (e.demo) {
+            eventDemo.value = null
+            return
+        }
+        start(context, Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+    }
+
+    private fun start(context: Context, intent: Intent) {
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+        }
+    }
+
     // ---- Live activity actions ----
 
     fun liveAction(l: LiveInfo, action: NoteAction) {
@@ -371,9 +411,22 @@ object IslandRepository {
     private fun clockLabel(at: Long): String =
         java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(at))
 
+    /**
+     * Sends a notification's, media session's or clock's intent. From Android 14 a sender has
+     * to say it lends its own right to open apps (the island has it, as a running
+     * accessibility service); without that, tapping something from a background app
+     * would quietly open nothing.
+     */
     fun send(intent: PendingIntent?) {
+        if (intent == null) return
         try {
-            intent?.send()
+            if (Build.VERSION.SDK_INT >= 34) {
+                val options = ActivityOptions.makeBasic()
+                options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                intent.send(null, 0, null, null, null, null, options.toBundle())
+            } else {
+                intent.send()
+            }
         } catch (_: Exception) {
         }
     }
@@ -415,6 +468,10 @@ object IslandRepository {
                     actions = listOf(NoteAction("Snooze", null), NoteAction("Stop", null)), open = null, demo = true,
                 )
             }
+            "event" -> eventDemo.value = EventInfo(
+                id = -1, title = "Design review", begin = now + 9 * 60_000L + 30_000L, end = now + 54 * 60_000L,
+                location = "Studio 2", joinUrl = "https://meet.google.com/demo", demo = true,
+            )
             "download" -> live.value = LiveInfo(
                 key = "demo-live", appName = "Files", title = "Holiday photos.zip", text = "Downloading · 148 MB of 240 MB",
                 short = null, progress = 0.62f, smallIcon = null, accent = null, open = null,
@@ -442,6 +499,7 @@ object IslandRepository {
                 recent.value = recent.value.filterNot { it.demo }
                 batteryDemo.value = null
                 alarmDemo.value = null
+                eventDemo.value = null
                 if (alarmRing.value?.demo == true) alarmRing.value = null
                 if (live.value?.demo == true) live.value = null
             }
@@ -471,6 +529,8 @@ data class IslandPrefs(
     val alarms: Boolean = true,
     /** Show the next alarm whatever the time, not just in the last 12 hours before it. */
     val alarmAlways: Boolean = false,
+    /** The next calendar event, from 15 minutes before it starts (needs the calendar permission). */
+    val events: Boolean = false,
     /** Downloads, directions, deliveries and other things under way. */
     val live: Boolean = true,
     /** Ring, vibrate or silent, for a moment when you switch. */
@@ -514,6 +574,7 @@ object IslandSettings {
             hidePopups = p.getBoolean("hidePopups", false),
             alarms = p.getBoolean("alarms", true),
             alarmAlways = p.getBoolean("alarmAlways", false),
+            events = p.getBoolean("events", false),
             live = p.getBoolean("live", true),
             sound = p.getBoolean("sound", true),
             headphones = p.getBoolean("headphones", true),
@@ -537,6 +598,7 @@ object IslandSettings {
             ?.putBoolean("hidePopups", next.hidePopups)
             ?.putBoolean("alarms", next.alarms)
             ?.putBoolean("alarmAlways", next.alarmAlways)
+            ?.putBoolean("events", next.events)
             ?.putBoolean("live", next.live)
             ?.putBoolean("sound", next.sound)
             ?.putBoolean("headphones", next.headphones)

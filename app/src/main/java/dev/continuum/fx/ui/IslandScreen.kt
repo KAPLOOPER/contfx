@@ -79,6 +79,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
             PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
             PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm, height = 38.dp)
+            PillButton("Event", { IslandRepository.demo("event") }, icon = R.drawable.ic_event, height = 38.dp)
             PillButton("Download", { IslandRepository.demo("download") }, height = 38.dp)
             PillButton("Sound mode", { IslandRepository.demo("sound") }, icon = R.drawable.ic_bell, height = 38.dp)
             PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
@@ -118,6 +119,19 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 ) {
                     Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } }, on = Surface.Card)
                     Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } }, on = Surface.Card)
+                }
+            }
+            val eventsOn = prefs.events && state.privileges.calendar
+            ToggleRow(
+                "Calendar events",
+                if (prefs.events && !state.privileges.calendar) "Needs calendar access. Tap to allow it."
+                else "Your next event from 15 minutes before, counting down, with Join for video calls.",
+                eventsOn,
+            ) {
+                when {
+                    eventsOn -> actions.updateIsland { it.copy(events = false) }
+                    state.privileges.calendar -> actions.updateIsland { it.copy(events = true) }
+                    else -> actions.requestCalendar()
                 }
             }
             ToggleRow("Downloads and live updates", "Progress, directions, deliveries and rides while they're happening.", prefs.live) {

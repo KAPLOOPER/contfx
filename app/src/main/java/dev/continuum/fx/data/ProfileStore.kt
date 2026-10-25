@@ -19,12 +19,31 @@ data class Library(
     val eqEnabled: Boolean = true,
     /** Which profile each output device uses, by [dev.continuum.fx.audio.OutputDevice.key]. */
     val devices: Map<String, String> = emptyMap(),
+    /** Which profile each app uses, by package name. */
+    val apps: Map<String, String> = emptyMap(),
 ) {
     val active: EqProfile
         get() = profiles.firstOrNull { it.id == activeId } ?: profiles.first()
 
     /** The profile linked to the output with [key], if it still exists. */
     fun profileFor(key: String): EqProfile? = devices[key]?.let { id -> profiles.firstOrNull { it.id == id } }
+
+    /** The profile linked to the app [pkg], if it still exists. */
+    fun appProfile(pkg: String): EqProfile? = apps[pkg]?.let { id -> profiles.firstOrNull { it.id == id } }
+
+    /** Apps linked to [profileId]. */
+    fun appsFor(profileId: String): List<String> = apps.filterValues { it == profileId }.keys.sorted()
+
+    /**
+     * The EQ for everything playing together, when it's all mixed into one (Capture mode): an
+     * app's own EQ when everything playing is linked to that one, otherwise the active EQ.
+     */
+    fun profileForPlaying(pkgs: Collection<String>): EqProfile {
+        if (pkgs.isEmpty()) return active
+        val linked = pkgs.map { appProfile(it) }
+        val first = linked.first() ?: return active
+        return if (linked.all { it?.id == first.id }) first else active
+    }
 }
 
 /**
@@ -73,7 +92,13 @@ class ProfileStore(context: Context) {
             profiles = rest,
             activeId = if (lib.activeId == id) rest.first().id else lib.activeId,
             devices = lib.devices.filterValues { it != id },
+            apps = lib.apps.filterValues { it != id },
         )
+    }
+
+    /** Links the app [pkg] to [profileId], or unlinks it when null. */
+    fun linkApp(pkg: String, profileId: String?) = update { lib ->
+        lib.copy(apps = if (profileId == null) lib.apps - pkg else lib.apps + (pkg to profileId))
     }
 
     /** Links the output with [deviceKey] to [profileId], or unlinks it when null. */
@@ -91,11 +116,14 @@ class ProfileStore(context: Context) {
             val profiles = (0 until arr.length()).map { profileFromJson(arr.getJSONObject(it)) }
             val links = HashMap<String, String>()
             o.optJSONObject("devices")?.let { d -> d.keys().forEach { k -> links[k] = d.getString(k) } }
+            val apps = HashMap<String, String>()
+            o.optJSONObject("apps")?.let { d -> d.keys().forEach { k -> apps[k] = d.getString(k) } }
             if (profiles.isEmpty()) defaultLibrary() else Library(
                 profiles = profiles,
                 activeId = o.optString("activeId", profiles.first().id),
                 eqEnabled = o.optBoolean("eqEnabled", true),
                 devices = links,
+                apps = apps,
             )
         } catch (e: Exception) {
             defaultLibrary()
@@ -112,6 +140,9 @@ class ProfileStore(context: Context) {
         val links = JSONObject()
         lib.devices.forEach { (k, v) -> links.put(k, v) }
         o.put("devices", links)
+        val apps = JSONObject()
+        lib.apps.forEach { (k, v) -> apps.put(k, v) }
+        o.put("apps", apps)
         prefs.edit().putString(KEY, o.toString()).apply()
     }
 

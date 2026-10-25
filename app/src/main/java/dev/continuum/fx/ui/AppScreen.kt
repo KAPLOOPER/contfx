@@ -72,6 +72,8 @@ import dev.continuum.fx.R
 import dev.continuum.fx.audio.EngineMode
 import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.EngineStatus
+import dev.continuum.fx.audio.FxStore
+import dev.continuum.fx.audio.onNames
 import dev.continuum.fx.audio.OutputDevice
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.data.Library
@@ -100,7 +102,7 @@ import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-enum class Section { Sound, Island, Volume, Keyboard }
+enum class Section { Sound, Effects, Island, Volume, Keyboard }
 
 data class UiState(
     val library: Library,
@@ -120,6 +122,8 @@ data class UiState(
     val keyboard: KeyboardStatus = KeyboardStatus(),
     val update: UpdateState = UpdateState.Idle,
     val build: Int = 1,
+    /** The app whose equalizer button opened Continuum, until it's linked or put aside. */
+    val openedFrom: String? = null,
 )
 
 interface AppActions {
@@ -161,6 +165,11 @@ interface AppActions {
     fun installUpdate()
     fun allowInstalls()
     fun dismissUpdate()
+    /** Gives the app [pkg] the EQ [profileId], or takes its own EQ away when null. */
+    fun linkApp(pkg: String, profileId: String?)
+    fun dismissOpenedFrom()
+    fun saveBackup()
+    fun restoreBackup()
 }
 
 @Composable
@@ -290,6 +299,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             Gap(20.dp)
                             SoundContent(state, store, actions)
                         }
+                        Section.Effects -> EffectsContent(state, actions)
                         Section.Island -> IslandContent(state, actions)
                         Section.Volume -> VolumeContent(state, actions)
                         Section.Keyboard -> KeyboardContent(state, actions)
@@ -330,11 +340,17 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
             PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
         }
+        state.openedFrom?.let { pkg ->
+            Gap(12.dp)
+            OpenedFromRow(pkg, library, actions)
+        }
         val output by OutputWatcher.current.collectAsState()
         output?.let { device ->
             Gap(12.dp)
             OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
         }
+        Gap(8.dp)
+        AppsRow(library, actions)
         Gap(16.dp)
 
         val comparing by EngineStatus.comparing.collectAsState()
@@ -530,7 +546,7 @@ private fun PreampSection(
  * sound, not volume (the louder of two otherwise tends to sound better).
  */
 @Composable
-private fun ComparePill() {
+internal fun ComparePill() {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val view = LocalView.current
@@ -645,7 +661,7 @@ private fun BandCard(
 }
 
 @Composable
-private fun SliderField(label: String, valueText: String, value: Float, onChange: (Float) -> Unit) {
+internal fun SliderField(label: String, valueText: String, value: Float, onChange: (Float) -> Unit) {
     val p = LocalPalette.current
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(Modifier.fillMaxWidth()) {
@@ -715,7 +731,7 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
             when {
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Volume -> VolumeSetupSheet(state, actions)
-                open && section == Section.Sound -> SetupSheet(state, actions)
+                open && (section == Section.Sound || section == Section.Effects) -> SetupSheet(state, actions)
                 section == Section.Island -> IslandDockBar(state, actions)
                 section == Section.Volume -> VolumeDockBar(state, actions)
                 section == Section.Keyboard -> KeyboardDockBar(state, actions)
@@ -730,10 +746,13 @@ private fun DockBar(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val library = state.library
     val mode by EngineSettings.mode.collectAsState()
+    val fx by FxStore.state.collectAsState()
+    val effects = fx.onNames().size
+    val withFx = if (effects == 0) "" else " · $effects ${if (effects == 1) "effect" else "effects"}"
     val subtitle = when {
         !readyFor(mode, state.privileges) && !state.running -> "Tap to set up"
-        !library.eqEnabled -> "${library.active.name} · EQ off"
-        else -> library.active.name
+        !library.eqEnabled -> "${library.active.name} · EQ off$withFx"
+        else -> library.active.name + withFx
     }
     Row(
         Modifier.fillMaxSize().padding(start = 10.dp, end = 8.dp),

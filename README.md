@@ -2,7 +2,8 @@
 
 The **Continuum** toolkit for Android, built in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
 
-- **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ. ViPER-style effects are planned next.
+- **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ, an EQ of its own for any app, and backup of everything.
+- **Effects:** analog bass, punch, speaker bass, tube warmth, an exciter, hi-res detail, stage, crossfeed, dynamics, loudness and Bluetooth care, on top of the EQ.
 - **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
@@ -76,8 +77,29 @@ then switch on *Continuum island* in accessibility settings. The **Try it** butt
 - **Live spectrum:** while processing, the music itself moves behind the curve as a soft liquid outline.
 - **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.
 - **EQ per device:** link an EQ to your headphones, speaker, car or USB DAC, and it comes on by itself whenever they connect.
+- **EQ per app:** give an app its own EQ (a podcast app a voice EQ, say). In Direct mode each app plays through its own, side by side; in Capture mode, where everything is mixed first, an app's own EQ is used while it's what's playing. A music player's **Equalizer** button opens Continuum FX and offers that app one.
+- **Backup:** everything you've set up (EQs and their links, effects, island, volume panel, each app's volume) in one file, to keep or move to a new phone.
 - **Quick Settings tiles:** *Continuum EQ* (on or off, showing which EQ is playing) and *Island*.
 - Changes glide in over 10 ms, so dragging a band never clicks, and apps that start playing are picked up within moments.
+
+## Effects
+
+The effects sit on top of the EQ, on their own page. Each says in a line what it's doing, opens to explain itself, and says when it's resting (speaker bass on headphones, say) or works more simply in Direct mode. Hold to compare takes them away too, at matched loudness.
+
+- **Analog bass:** the Pultec trick (lift and cut at once, so the bass swells while the mud just above it dips away) at 20, 30, 60 or 100 Hz, with drive (harmonics that thicken the low end), warmth (from edgy odd harmonics to round even ones) and drift (old gear's slight wander).
+- **Punch:** bass notes are lifted at their start, by how fast they rise, and left alone while held: kicks hit, held notes don't boom.
+- **Speaker bass:** for the phone's own speaker, the missing fundamental: deep notes it can't play are taken out and their harmonics put in where it can, and hearing fills the notes back in.
+- **Tube warmth:** a low-end bloom, a softer top, second-order-led harmonics and a slow glue whose level is made up, so it's never quieter.
+- **Exciter:** harmonics of the upper mids, added back above them: presence without a treble boost's hiss.
+- **Hi-res detail:** the air above 5 kHz is lifted while there's music in it, not when there's only hiss, and a top octave cut off by lossy coding is rebuilt faintly from the octave below.
+- **Stage:** Natural, Front or Wide, by mid and side, so only what differs between your ears is widened and voices stay exactly centred.
+- **Crossfeed:** for headphones, each ear hears a little of the other, low-passed and slightly late, as from speakers; anything in the middle comes out exactly as it went in.
+- **Dynamics:** *Pure* rounds peaks with a soft 2:1 shoulder instead of a wall and lets nothing else squeeze the music; *Restore* lets quiet passages of loud, flattened masters back down and opens their top.
+- **Loudness:** follows your volume and puts back the bass and treble hearing loses as it comes down, by the ISO 226:2003 equal-loudness contours. At full volume it does nothing.
+- **Bluetooth care:** eases off the top octave so Bluetooth's basic SBC codec has more of its fixed budget of bits for the music.
+- **Listening on:** say whether each output is in-ear, on-ear, over-ear or a speaker, and bass and treble effects ask no more than that kind of driver can give.
+
+In **Capture** mode every effect is real signal processing on the captured sound. Harmonics come from Chebyshev polynomials of band-limited signals, so they're exact and nothing aliases, with no oversampling. **Direct** mode runs inside Android's own DynamicsProcessing effect, which has a band EQ, a seven-band compressor and a limiter and can't make harmonics or mix the ears. There, plain tone joins the EQ's 96 bands, what moves with the music is done with the compressor (slow-attack compression for punch, a gated lift for hi-res detail), Stage widens by lifting and lowering alternate stretches of each ear's treble, and crossfeed waits for Capture.
 
 ## Sound: how it works without root
 
@@ -143,7 +165,9 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] Rootless capture pipeline, with Shizuku or ADB setup
 - [x] Global parametric EQ with draggable response graph
 - [x] squig.link / AutoEQ / Equalizer APO import and export
-- [ ] ViPER effects from the open-source reverse-engineered engine (bass, clarity, surround, convolver, compressor and more)
+- [x] Effects: analog bass, punch, speaker bass, tube, exciter, hi-res detail, stage, crossfeed, dynamics, loudness, Bluetooth care
+- [x] An EQ per app, the players' Equalizer button, and backup
+- [ ] Convolver and room effects
 - [x] EQ per output device, live spectrum, hold to compare, Quick Settings tiles
 - [x] A volume panel in liquid ink: per-app volume, play alongside, boost, silent without Do Not Disturb
 - [ ] Per-app exclusions
@@ -160,7 +184,8 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - Continuum Keyboard (`keyboard/`) is original code, also under the GPL v3.0, with an additional permission to use Google's ML Kit text recognition (see `keyboard/README.md`). Its word data comes from wordfreq (CC BY-SA 4.0), SCOWL and the Google Books Ngram data via SymSpell (CC BY 3.0); emoji data from Emojibase (MIT).
 - The volume panel's key handling, Shizuku helper, per-app volume sessions and boost scale are adapted from [Volume++](https://github.com/noel-digital-fan/volume_plus_plus) by noel-digital-fan (MIT). See `THIRD_PARTY_NOTICES.md`.
 - The rootless approach (capture, then silence the originals through a per-session effect) follows [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP) by Tim Schneeberger.
-- Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*.
+- Filters follow Robert Bristow-Johnson's *Audio EQ Cookbook*. Loudness uses the equal-loudness model and table of ISO 226:2003.
+- The effects' line-up follows [JadOO DSP](https://github.com/rudrakshchatterjee3-creator/Jadoo-DSP) by rudrakshchatterjee3-creator. Its code is proprietary, so none of it is used: Continuum's effects are written from scratch, from the published descriptions of what each one does.
 - [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open Font License 1.1 (see `fonts/LIBRON-OFL.txt`).
 - [Shizuku](https://github.com/RikkaApps/Shizuku) by RikkaApps.
 - The island's overlay approach is adapted from [Essentials](https://github.com/sameerasw/essentials) by Sameera Sandakelum (MIT). See `THIRD_PARTY_NOTICES.md`.

@@ -125,20 +125,38 @@ class Limiter(
     private val release = exp(-1.0 / (sampleRate * releaseMs / 1000.0))
     private var gain = 1.0
 
+    /**
+     * Pure dynamics: rather than a brick wall at the ceiling, peaks meet a soft 2:1 shoulder from
+     * 2 dB below it (so they're bent, not flattened), with the ceiling still the last word.
+     */
+    @Volatile
+    var soft = false
+
     /** Current gain reduction in dB (0 when not limiting). */
     val reductionDb: Double get() = if (gain >= 1.0) 0.0 else 20.0 * kotlin.math.log10(gain)
 
     fun process(buffer: FloatArray, frames: Int) {
+        val shoulder = if (soft) ceiling * SHOULDER else Double.MAX_VALUE
         for (frame in 0 until frames) {
             val base = frame * channels
             var peak = 0.0
             for (ch in 0 until channels) peak = max(peak, abs(buffer[base + ch].toDouble()))
-            val needed = if (peak > ceiling) ceiling / peak else 1.0
+            val needed = when {
+                // 2:1 above the shoulder, in dB: out = s * sqrt(peak / s), capped at the ceiling.
+                peak > shoulder -> kotlin.math.min(shoulder * kotlin.math.sqrt(peak / shoulder), ceiling) / peak
+                peak > ceiling -> ceiling / peak
+                else -> 1.0
+            }
             gain = if (needed < gain) needed else needed + (gain - needed) * release
             for (ch in 0 until channels) {
                 val v = (buffer[base + ch] * gain).toFloat()
                 buffer[base + ch] = v.coerceIn(-1f, 1f)
             }
         }
+    }
+
+    private companion object {
+        /** 2 dB below the ceiling. */
+        const val SHOULDER = 0.7943282347242815
     }
 }

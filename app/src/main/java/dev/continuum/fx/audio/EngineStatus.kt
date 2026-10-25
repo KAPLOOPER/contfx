@@ -13,6 +13,9 @@ object EngineStatus {
     /** Labels of apps whose audio is currently being processed. */
     val processing = MutableStateFlow<List<String>>(emptyList())
 
+    /** Package names of the same apps, for each app's own EQ. */
+    val processingPackages = MutableStateFlow<List<String>>(emptyList())
+
     /** Labels of apps that block audio capture, so they play unprocessed. */
     val blocked = MutableStateFlow<List<String>>(emptyList())
 

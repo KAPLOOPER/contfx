@@ -12,8 +12,13 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import dev.continuum.fx.data.Library
+import dev.continuum.fx.dsp.DynamicsMode
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.EqResponse
+import dev.continuum.fx.dsp.FxChain
+import dev.continuum.fx.dsp.FxContext
+import dev.continuum.fx.dsp.FxSettings
+import dev.continuum.fx.dsp.FxTone
 import dev.continuum.fx.dsp.Limiter
 import dev.continuum.fx.dsp.ParametricEq
 import kotlin.math.max
@@ -31,6 +36,7 @@ class AudioEngine(
     private val framesPerChunk = 480 // 10 ms at 48 kHz
 
     private val eq = ParametricEq(channels = 2, sampleRate = sampleRate.toDouble())
+    private val chain = FxChain(sampleRate.toDouble())
     private val limiter = Limiter(sampleRate.toDouble())
 
     @Volatile
@@ -40,17 +46,29 @@ class AudioEngine(
     private var track: AudioTrack? = null
 
     /**
-     * Uses the active EQ, or none when it's switched off. While [compare] is held the EQ
-     * steps aside but its overall loudness stays, so the two can be judged on sound alone:
-     * otherwise whichever is louder tends to win.
+     * Uses the EQ for what's [playing] (an app's own, when everything playing is linked to the same
+     * one, else the active EQ), or none when it's switched off, with the effects on top. While
+     * [compare] is held the EQ and effects step aside but their overall loudness stays, so the two
+     * can be judged on sound alone: otherwise whichever is louder tends to win.
      */
-    fun applyLibrary(library: Library, compare: Boolean = false) {
-        val profile = when {
-            !library.eqEnabled -> null
-            compare -> EqProfile(name = "Original", preampDb = EqResponse.loudnessDb(library.active))
-            else -> library.active
+    fun setSound(library: Library, fx: FxSettings, ctx: FxContext, compare: Boolean, playing: List<String>) {
+        val c = ctx.copy(direct = false)
+        val tone = FxTone.bands(fx, c)
+        val profile = if (library.eqEnabled) library.profileForPlaying(playing) else null
+        val both = when {
+            profile != null -> FxTone.withTone(profile, tone)
+            tone.isNotEmpty() -> EqProfile(name = "Effects", bands = tone)
+            else -> null
         }
-        eq.setProfile(profile)
+        if (compare) {
+            eq.setProfile(both?.let { EqProfile(name = "Original", preampDb = EqResponse.loudnessDb(it)) })
+            chain.set(FxChain.Params())
+            limiter.soft = false
+        } else {
+            eq.setProfile(both)
+            chain.set(fx, c)
+            limiter.soft = fx.enabled && fx.dynamics == DynamicsMode.Pure
+        }
     }
 
     // RECORD_AUDIO is checked before the service is started.
@@ -127,6 +145,7 @@ class AudioEngine(
             if (read == 0) continue
             val frames = read / 2
             eq.process(buffer, frames)
+            chain.process(buffer, frames)
             boost(buffer, frames)
             limiter.process(buffer, frames)
             if (LiveAudio.listening.value) LiveAudio.tap.push(buffer, frames, 2)

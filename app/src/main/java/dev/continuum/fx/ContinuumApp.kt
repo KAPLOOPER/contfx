@@ -5,6 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.EngineStatus
+import dev.continuum.fx.audio.FxEnvironment
+import dev.continuum.fx.audio.FxStore
+import dev.continuum.fx.audio.HeardApps
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.tiles.ContinuumTile
@@ -31,9 +34,12 @@ class ContinuumApp : Application() {
         store = ProfileStore(this)
         IslandSettings.init(this)
         EngineSettings.init(this)
+        FxStore.init(this)
+        HeardApps.init(this)
         VolumeSettings.init(this)
         VolumeModel.start(this)
         followOutputs()
+        FxEnvironment.start(this)
         keepTilesCurrent()
         val channel = NotificationChannel(
             CHANNEL_PROCESSING,

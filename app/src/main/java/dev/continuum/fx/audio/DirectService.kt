@@ -58,12 +58,13 @@ class DirectService : Service() {
             val w = SessionWatcher(this, direct)
             direct.source = { w.attached() }
             watcher = w
-            direct.update(app.store.library, EngineStatus.comparing.value, EngineStatus.boostDb.value)
+            direct.update(app.store.library, FxStore.state.value, FxEnvironment.context.value, EngineStatus.comparing.value, EngineStatus.boostDb.value)
             w.start()
 
             scope.launch {
-                combine(app.store.state, EngineStatus.comparing, EngineStatus.boostDb) { lib, compare, boost -> Triple(lib, compare, boost) }
-                    .collect { (lib, compare, boost) -> direct.update(lib, compare, boost) }
+                combine(app.store.state, FxStore.state, FxEnvironment.context, EngineStatus.comparing, EngineStatus.boostDb) { lib, fx, ctx, compare, boost ->
+                    { direct.update(lib, fx, ctx, compare, boost) }
+                }.collect { it() }
             }
             scope.launch {
                 app.store.state.map { it.active.name }.distinctUntilChanged().collect { name -> main.post { updateNotification(name) } }

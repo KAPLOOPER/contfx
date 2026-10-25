@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.audiofx.AudioEffect
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -30,6 +31,7 @@ import dev.continuum.fx.audio.EngineMode
 import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.Processing
 import dev.continuum.fx.audio.EngineStatus
+import dev.continuum.fx.data.Backup
 import dev.continuum.fx.data.ProfileStore
 import dev.continuum.fx.dsp.EqImport
 import dev.continuum.fx.island.IslandNotificationListener
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity(), AppActions {
     private val message = MutableStateFlow<String?>(null)
     private val setupOpen = MutableStateFlow(false)
     private val section = MutableStateFlow(Section.Sound)
+    private val openedFrom = MutableStateFlow<String?>(null)
     private val keyboardStatus = MutableStateFlow(KeyboardStatus())
     private var afterShizukuPermission: (() -> Unit)? = null
 
@@ -97,6 +100,14 @@ class MainActivity : ComponentActivity(), AppActions {
 
     private val openDocument = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importUri(uri)
+    }
+
+    private val saveBackupFile = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) writeBackup(uri)
+    }
+
+    private val openBackupFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) readBackup(uri)
     }
 
     private val binderReceived = Shizuku.OnBinderReceivedListener { runOnUiThread { refresh() } }
@@ -165,6 +176,7 @@ class MainActivity : ComponentActivity(), AppActions {
             val keyboard by keyboardStatus.collectAsState()
             val keyboardUpdate by KeyboardUpdater.state.collectAsState()
             val update by Updater.state.collectAsState()
+            val from by openedFrom.collectAsState()
             ContinuumTheme {
                 AppScreen(
                     state = UiState(
@@ -176,6 +188,7 @@ class MainActivity : ComponentActivity(), AppActions {
                         keyboard = keyboard.copy(update = keyboardUpdate),
                         update = update,
                         build = BuildConfig.BUILD_NUMBER,
+                        openedFrom = from,
                     ),
                     store = store,
                     actions = this,
@@ -640,10 +653,102 @@ class MainActivity : ComponentActivity(), AppActions {
         message.value = null
     }
 
+    // ---- Apps' own EQs ----
+
+    override fun linkApp(pkg: String, profileId: String?) {
+        store.linkApp(pkg, profileId)
+        val name = try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) {
+            pkg
+        }
+        val profile = profileId?.let { id -> store.library.profiles.firstOrNull { it.id == id } }
+        message.value = if (profile != null) "$name uses ${profile.name} now" else "$name uses whichever EQ is on"
+        if (profile != null && openedFrom.value == pkg) openedFrom.value = null
+    }
+
+    override fun dismissOpenedFrom() {
+        openedFrom.value = null
+    }
+
+    // ---- Backup ----
+
+    override fun saveBackup() {
+        store.flush()
+        val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date())
+        try {
+            saveBackupFile.launch("Continuum FX backup $date.json")
+        } catch (_: Exception) {
+            message.value = "Couldn't open a place to save it."
+        }
+    }
+
+    override fun restoreBackup() {
+        try {
+            openBackupFile.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
+        } catch (_: Exception) {
+            message.value = "Couldn't open the file picker."
+        }
+    }
+
+    private fun writeBackup(uri: Uri) {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    val text = Backup.export(this@MainActivity, BuildConfig.BUILD_NUMBER)
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            message.value = if (ok) "Backup saved." else "Couldn't save the backup there."
+        }
+    }
+
+    private fun readBackup(uri: Uri) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val text = contentResolver.openInputStream(uri)?.use { stream ->
+                        val bytes = stream.readBytes()
+                        if (bytes.size > MAX_BACKUP_BYTES) null else bytes.toString(Charsets.UTF_8)
+                    } ?: return@withContext Result.failure<Backup.Contents>(IllegalArgumentException("That file is too large to be a backup."))
+                    Backup.read(text)
+                } catch (_: Exception) {
+                    Result.failure<Backup.Contents>(IllegalArgumentException("Couldn't open that file."))
+                }
+            }
+            val contents = result.getOrElse {
+                message.value = it.message ?: "That file isn't a Continuum FX backup."
+                return@launch
+            }
+            // Processing lets go first, so nothing is left running on the old settings.
+            Processing.stop(this@MainActivity)
+            withContext(Dispatchers.IO) { Backup.restore(this@MainActivity, contents) }
+            message.value = "Restored. Restarting…"
+            delay(700)
+            restartApp()
+        }
+    }
+
+    /** Starts afresh, so every setting is read again from what was just restored. */
+    private fun restartApp() {
+        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        startActivity(Intent.makeRestartActivityTask(launch.component))
+        Runtime.getRuntime().exit(0)
+    }
+
     // ---- Import ----
 
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
+            AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL -> {
+                // A player's Equalizer button: open the EQ, and offer that app an EQ of its own.
+                setSection(Section.Sound)
+                openedFrom.value = intent.getStringExtra(AudioEffect.EXTRA_PACKAGE_NAME)
+                    ?.takeIf { it.isNotBlank() && it != packageName }
+                    ?: callingActivity?.packageName?.takeIf { it != packageName }
+            }
             ACTION_START_PROCESSING -> {
                 setSection(Section.Sound)
                 // After the screen is up, so Android's capture prompt has something to sit on.
@@ -744,5 +849,6 @@ class MainActivity : ComponentActivity(), AppActions {
         const val ACTION_OPEN_VOLUME = "dev.continuum.fx.action.OPEN_VOLUME"
         private const val REQUEST_SHIZUKU = 42
         private const val MAX_IMPORT_BYTES = 256 * 1024
+        private const val MAX_BACKUP_BYTES = 4 * 1024 * 1024
     }
 }

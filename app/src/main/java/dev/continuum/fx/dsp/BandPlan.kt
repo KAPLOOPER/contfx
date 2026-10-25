@@ -21,9 +21,15 @@ object BandPlan {
         sqrt(lo * cutoffs[i])
     }
 
+    /** Band [i]'s middle, on a log scale, in Hz. */
+    fun centre(i: Int): Double = centres[i]
+
     /** Each band's gain in dB for [profile], without its preamp (that's the effect's input gain). */
-    fun gains(profile: EqProfile): FloatArray {
-        val coeffs = profile.bands.filter { it.enabled }.map { BiquadCoefficients.design(it, EqResponse.SAMPLE_RATE) }
+    fun gains(profile: EqProfile): FloatArray = gains(profile.bands)
+
+    /** Each band's gain in dB for these filters together. */
+    fun gains(bands: List<EqBand>): FloatArray {
+        val coeffs = bands.filter { it.enabled }.map { BiquadCoefficients.design(it, EqResponse.SAMPLE_RATE) }
         return FloatArray(BANDS) { i ->
             var db = 0.0
             for (c in coeffs) db += c.magnitudeDb(centres[i], EqResponse.SAMPLE_RATE)

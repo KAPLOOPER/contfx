@@ -220,7 +220,11 @@ object AppVolumes {
             val it = sessions.entries.iterator()
             while (sessions.size > MAX_SESSIONS && it.hasNext()) if (it.next().key !in playing) it.remove()
         }
-        val list = playing.map { (pkg, piids) -> AppAudio(pkg, label(pkg), sessions[pkg]?.volume ?: FULL, piids) }
+        // Rows keep their places: Android lists players in no lasting order (and an app like
+        // YouTube opens new ones all the time), so apps already shown stay put and newcomers
+        // join at the end.
+        val order = AppOrder.stable(_playing.value.map { it.pkg }, playing.keys) { label(it) }
+        val list = order.map { pkg -> AppAudio(pkg, label(pkg), sessions[pkg]?.volume ?: FULL, playing.getValue(pkg)) }
         if (list != _playing.value) _playing.value = list
         return when {
             playing.isNotEmpty() -> POLL_ACTIVE_MS

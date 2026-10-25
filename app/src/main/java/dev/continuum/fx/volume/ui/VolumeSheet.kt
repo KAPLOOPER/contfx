@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -155,7 +156,8 @@ internal fun VolumeSheet(
             Txt("Apps", 13.sp, InkColors.sub, maxLines = 1)
             Spacer(Modifier.height(4.dp))
             val iconPx = with(LocalDensity.current) { 22.dp.roundToPx() }
-            apps.forEach { a ->
+            // Each row belongs to its app, not to its place in the list.
+            apps.forEach { a -> key(a.pkg) {
                 val bmp = remember(a.pkg) { AppVolumes.icon(a.pkg, iconPx) }
                 LevelRow(
                     label = a.label,
@@ -169,7 +171,7 @@ internal fun VolumeSheet(
                     haptics = haptics,
                     onTouch = onTouch,
                 ) { f -> AppVolumes.setVolume(a.pkg, f) }
-            }
+            } }
         }
         problem?.let {
             Spacer(Modifier.height(8.dp))

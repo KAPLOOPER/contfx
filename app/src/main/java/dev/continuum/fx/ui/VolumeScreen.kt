@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -149,8 +150,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         if (helper && apps.isNotEmpty()) {
             Gap(10.dp)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 8.dp)) {
+                // Each row belongs to its app, not to its place in the list.
                 apps.forEach { a ->
-                    AppControl(a.pkg, a.label, a.volume) { v -> AppVolumes.setVolume(a.pkg, v) }
+                    key(a.pkg) { AppControl(a.pkg, a.label, a.volume) { v -> AppVolumes.setVolume(a.pkg, v) } }
                 }
             }
         }

@@ -12,6 +12,7 @@ import androidx.core.graphics.PathParser
  */
 object Icons {
     const val SHIFT = "M12 4l7.5 8H15v7H9v-7H4.5z"
+    const val CAPS_LOCK = "M12 3l7.5 7.5H15V15H9v-4.5H4.5z M9 19.5h6"
     const val DELETE = "M9 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-6-6z M12 10l4 4 M16 10l-4 4"
     const val RETURN = "M19 6v5a3 3 0 0 1-3 3H6 M10 10l-4 4 4 4"
     const val CLIPBOARD = "M9 4h6v3H9z M8 5.5H6.5A1.5 1.5 0 0 0 5 7v11.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H16"
@@ -27,6 +28,19 @@ object Icons {
     const val PASTE = "M9 4h6v3H9z M8 5.5H6.5A1.5 1.5 0 0 0 5 7v11.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H16 M9 13h6"
     const val LEFT = "M15 6l-6 6 6 6"
     const val RIGHT = "M9 6l6 6-6 6"
+    const val UP = "M6 15l6-6 6 6"
+    const val DOWN = "M6 9l6 6 6-6"
+
+    // Editing.
+    const val EDIT = "M10 5h4 M10 19h4 M12 5v14 M6.5 9l-3 3 3 3 M17.5 9l3 3-3 3"
+    const val WORD_LEFT = "M12 6l-6 6 6 6 M18 6l-6 6 6 6"
+    const val WORD_RIGHT = "M6 6l6 6-6 6 M12 6l6 6-6 6"
+    const val LINE_START = "M5 5v14 M16 6l-6 6 6 6"
+    const val LINE_END = "M19 5v14 M8 6l6 6-6 6"
+    const val UNDO = "M9 14l-4-4 4-4 M5 10h9.5a4.5 4.5 0 0 1 0 9H12"
+    const val REDO = "M15 14l4-4-4-4 M19 10H9.5a4.5 4.5 0 0 0 0 9H12"
+    const val COPY = "M9.5 8h8A1.5 1.5 0 0 1 19 9.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 8 18.5v-9A1.5 1.5 0 0 1 9.5 8z M5 15.5v-10A1.5 1.5 0 0 1 6.5 4H15"
+    const val CUT = "M6.5 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M17.5 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M8.3 15.6L18 3.5 M15.7 15.6L6 3.5"
 
     // Emoji groups.
     const val RECENT = "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2"

@@ -48,7 +48,7 @@ sealed class Strip {
     object Blank : Strip()
 }
 
-enum class Tool { Clipboard, Emoji, Scan, Settings, Hide }
+enum class Tool { Clipboard, Emoji, Edit, Scan, Settings, Hide }
 
 /**
  * Continuum Keyboard's keys, drawn as one sheet of ink. Pressed letters rise out of their
@@ -140,6 +140,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val hubRect = RectF()
     private val slotRects = Array(3) { RectF() }
     private val toolRects = Tool.values().associateWith { RectF() }
+    private var toolGap = 10f
     private val pasteRect = RectF()
 
     // ---- Paint. ----
@@ -339,13 +340,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             slotRects[i].set(l, stripTop, l + slotW, stripTop + d)
         }
         pasteRect.set(stripArea)
-        // Tools follow the hub; hide (or close) is at the far end.
-        var x = hubRect.right + 10f * u
-        for (t in listOf(Tool.Clipboard, Tool.Emoji, Tool.Scan, Tool.Settings)) {
-            toolRects[t]!!.set(x, stripTop, x + d, stripTop + d)
-            x += d + 10f * u
+        // Tools follow the hub; hide (or close) is at the far end. On a narrow screen the
+        // gaps tighten first, then the tools shrink a touch, so they never crowd the hide button.
+        val hideLeft = w - side - d
+        val room = hideLeft - hubRect.right
+        val n = STRIP_TOOLS.size
+        var gap = 10f * u
+        var td = d
+        if (n * td + (n + 1) * gap > room) {
+            gap = max(6f * u, (room - n * td) / (n + 1))
+            if (n * td + (n + 1) * gap > room) td = max(d * 0.7f, (room - (n + 1) * gap) / n)
         }
-        toolRects[Tool.Hide]!!.set(w - side - d, stripTop, w - side, stripTop + d)
+        toolGap = gap
+        var x = hubRect.right + gap
+        val inset = (d - td) / 2f
+        for (t in STRIP_TOOLS) {
+            toolRects[t]!!.set(x, stripTop + inset, x + td, stripTop + inset + td)
+            x += td + gap
+        }
+        toolRects[Tool.Hide]!!.set(hideLeft, stripTop, w - side, stripTop + d)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -465,7 +478,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         icon.color = color
         icon.alpha = alpha
         when (key.type) {
-            KeyType.Shift -> Icons.draw(canvas, Icons.SHIFT, k.cx, k.cy, 22f * v, icon, fill = shift > 0)
+            // Locked caps keeps a bar under the arrow, so it never reads as a one-letter shift.
+            KeyType.Shift -> Icons.draw(canvas, if (shift == 2) Icons.CAPS_LOCK else Icons.SHIFT, k.cx, k.cy, 22f * v, icon, fill = shift > 0)
             KeyType.Delete -> if (tongueKey == null) Icons.draw(canvas, Icons.DELETE, k.cx, k.cy, 24f * v, icon)
             KeyType.Enter -> if (enterLabel.isEmpty()) Icons.draw(canvas, Icons.RETURN, k.cx, k.cy, 22f * v, icon)
             else drawText(canvas, enterLabel, k.cx, k.cy, 17f * v, if (enterBright) color else p.sub, alpha, k.w - 8f * u)
@@ -552,11 +566,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val d = when (t) {
                     Tool.Clipboard -> Icons.CLIPBOARD
                     Tool.Emoji -> Icons.EMOJI
+                    Tool.Edit -> Icons.EDIT
                     Tool.Scan -> Icons.SCAN
                     Tool.Settings -> Icons.SETTINGS
                     Tool.Hide -> if (activeTool != null) Icons.CLOSE else Icons.HIDE
                 }
-                Icons.draw(canvas, d, r.centerX(), r.centerY(), 22f * v, icon)
+                Icons.draw(canvas, d, r.centerX(), r.centerY(), 22f * v * min(1f, r.height() / stripH), icon)
                 canvas.restore()
             }
             return
@@ -1188,7 +1203,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val pad = 5f * u
         if (x <= hubRect.right + pad) return STRIP_HUB
         if (strip is Strip.Tools || activeTool != null) {
-            for ((t, r) in toolRects) if (x >= r.left - pad && x <= r.right + pad) return STRIP_TOOL + t.ordinal
+            val reach = min(pad, toolGap / 2f)
+            for ((t, r) in toolRects) if (x >= r.left - reach && x <= r.right + reach) return STRIP_TOOL + t.ordinal
             return -1
         }
         return when (val s = strip) {
@@ -1238,5 +1254,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val STRIP_HUB = 10
         private const val STRIP_PASTE = 11
         private const val STRIP_TOOL = 20
+        /** The tools in the strip, in order after the hub. */
+        private val STRIP_TOOLS = listOf(Tool.Clipboard, Tool.Emoji, Tool.Edit, Tool.Scan, Tool.Settings)
     }
 }

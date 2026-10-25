@@ -46,6 +46,8 @@ jobs:
         run: |
           { grep -E '^e: |^ERROR|error:' build.log || true; grep -A6 'What went wrong' build.log || true; } \
             | sed "s#file://$GITHUB_WORKSPACE/##" | head -80 > errors.txt
+          # R8 names any classes it couldn't find, with the rules that would quiet them.
+          [ -f app/build/outputs/mapping/release/missing_rules.txt ] && grep -v '^#' app/build/outputs/mapping/release/missing_rules.txt | head -24 >> errors.txt || true
           split -l 8 errors.txt chunk_
           for f in chunk_*; do
             msg=$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$f")

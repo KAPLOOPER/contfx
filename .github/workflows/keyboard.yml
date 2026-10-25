@@ -43,6 +43,8 @@ jobs:
         run: |
           { grep -E '^e: |^ERROR|error:|FAILED|AssertionError|Test.*FAILED' build.log || true; grep -A8 'What went wrong' build.log || true; } \
             | sed "s#file://$GITHUB_WORKSPACE/##" | head -80 > errors.txt
+          # R8 names any classes it couldn't find, with the rules that would quiet them.
+          [ -f keyboard/build/outputs/mapping/release/missing_rules.txt ] && grep -v '^#' keyboard/build/outputs/mapping/release/missing_rules.txt | head -24 >> errors.txt || true
           for r in keyboard/build/test-results/testDebugUnitTest/*.xml; do
             [ -f "$r" ] && grep -A3 '<failure' "$r" | head -12 >> errors.txt
           done

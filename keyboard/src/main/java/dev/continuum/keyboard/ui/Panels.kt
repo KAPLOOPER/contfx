@@ -65,7 +65,15 @@ class PanelState {
     var frequent by mutableStateOf<List<String>>(emptyList())
     /** Bumped when a skin tone changes, so cells redraw. */
     var variantsVersion by mutableStateOf(0)
+    /** The edit panel's Select is on: arrows grow the selection instead of moving the cursor. */
+    var selecting by mutableStateOf(false)
+    /** Something is selected in the field, so Copy and Cut have something to work on. */
+    var hasSelection by mutableStateOf(false)
+    var vibrate by mutableStateOf(true)
 }
+
+/** What the edit panel can do to the field. */
+enum class EditAction { Left, Right, Up, Down, WordLeft, WordRight, LineStart, LineEnd, SelectAll, Copy, Cut, Paste, Undo, Redo }
 
 interface PanelActions {
     fun typeEmoji(emoji: String, base: String)
@@ -77,8 +85,10 @@ interface PanelActions {
     fun clearClips()
     fun clipFile(clip: Clip): File?
     fun backToKeys()
-    fun delete()
+    /** Deletes back one character; [repeat] while delete is held. */
+    fun delete(repeat: Boolean)
     fun openSettings()
+    fun edit(action: EditAction)
 }
 
 @Composable
@@ -102,6 +112,7 @@ fun Panels(state: PanelState, actions: PanelActions) {
         when (panel) {
             Tool.Emoji -> EmojiPanel(state, actions)
             Tool.Clipboard -> ClipboardPanel(state, actions)
+            Tool.Edit -> EditPanel(state, actions)
             else -> Unit
         }
     }
@@ -244,7 +255,7 @@ private fun EmojiPanel(state: PanelState, actions: PanelActions) {
                 }
             }
             Spacer(Modifier.width(6.dp))
-            IconBubble(Icons.DELETE, p.fn.toColor(), label, onClick = actions::delete)
+            RepeatBubble(Icons.DELETE, p.fn.toColor(), label, state, repeat = true) { again -> actions.delete(again) }
         }
     }
 }

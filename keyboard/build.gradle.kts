@@ -36,7 +36,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 drops the library code the app never calls (most of Compose, CameraX and the
+            // rest) and keeps every name as written, so crash reports read like the source.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName(if (signingPassword != null) "continuum" else "debug")
         }
     }

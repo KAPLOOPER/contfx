@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Size
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -67,6 +68,7 @@ import dev.continuum.keyboard.layout.Sheet
 import dev.continuum.keyboard.scan.ScanResult
 import dev.continuum.keyboard.scan.ScanTextActivity
 import dev.continuum.keyboard.settings.SettingsActivity
+import dev.continuum.keyboard.ui.EditAction
 import dev.continuum.keyboard.ui.KeyPalette
 import dev.continuum.keyboard.ui.KeyboardView
 import dev.continuum.keyboard.ui.PanelActions
@@ -244,6 +246,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         kv.numberHints = prefs.numberHints
         kv.vibrate = prefs.vibrate
         panelState.historyOn = prefs.clipboardHistory
+        panelState.vibrate = prefs.vibrate
         window.window?.let { w ->
             WindowCompat.setDecorFitsSystemWindows(w, false)
             @Suppress("DEPRECATION")
@@ -553,7 +556,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
                 sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
             } else {
                 ic.deleteSurroundingText(lastGrapheme(before), 0)
-                if (!repeat && suggestionsOn) recomposeAfterDelete = true
+                if (!repeat && suggestionsOn && panel == null) recomposeAfterDelete = true
             }
         }
         afterEdit()
@@ -751,7 +754,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
 
     override fun onTool(tool: Tool) {
         when (tool) {
-            Tool.Clipboard, Tool.Emoji -> if (panel == tool) closePanel(animate = true) else openPanel(tool)
+            Tool.Clipboard, Tool.Emoji, Tool.Edit -> if (panel == tool) closePanel(animate = true) else openPanel(tool)
             Tool.Scan -> {
                 closePanel(animate = false)
                 startSafely(Intent(this, ScanTextActivity::class.java))
@@ -947,6 +950,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         selStart = newSelStart
         selEnd = newSelEnd
+        panelState.hasSelection = newSelStart != newSelEnd
         val ic = currentInputConnection ?: return
         if (deleteAnchor >= 0) return
         if (composing.isNotEmpty() && (candidatesStart == -1 || newSelStart != newSelEnd || newSelEnd != candidatesEnd)) {
@@ -994,6 +998,11 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             }
         }
         if (tool == Tool.Clipboard) panelState.clips = clips.clips
+        if (tool == Tool.Edit) {
+            // Opened over a selection, the arrows carry on growing it.
+            panelState.hasSelection = selStart >= 0 && selStart != selEnd
+            panelState.selecting = panelState.hasSelection
+        }
         keyboard?.setPanel(tool)
         keyboard?.setStrip(Strip.Tools)
         positionOverlays()
@@ -1059,7 +1068,66 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     override fun clearClips() = clips.clearUnpinned()
     override fun clipFile(clip: Clip): File? = clips.fileFor(clip)
     override fun backToKeys() = closePanel(animate = true)
-    override fun delete() = onDelete(false)
+    override fun delete(repeat: Boolean) = onDelete(repeat)
+
+    override fun edit(action: EditAction) {
+        val ic = currentInputConnection ?: return
+        if (composing.isNotEmpty()) {
+            ic.finishComposingText()
+            resetComposing()
+        }
+        lastCorrection = null
+        phantomSpace = false
+        autoSpaced = false
+        val grow = panelState.selecting
+        when (action) {
+            EditAction.Left -> sendKey(KeyEvent.KEYCODE_DPAD_LEFT, shift = grow)
+            EditAction.Right -> sendKey(KeyEvent.KEYCODE_DPAD_RIGHT, shift = grow)
+            EditAction.Up -> sendKey(KeyEvent.KEYCODE_DPAD_UP, shift = grow)
+            EditAction.Down -> sendKey(KeyEvent.KEYCODE_DPAD_DOWN, shift = grow)
+            EditAction.WordLeft -> sendKey(KeyEvent.KEYCODE_DPAD_LEFT, shift = grow, ctrl = true)
+            EditAction.WordRight -> sendKey(KeyEvent.KEYCODE_DPAD_RIGHT, shift = grow, ctrl = true)
+            EditAction.LineStart -> sendKey(KeyEvent.KEYCODE_MOVE_HOME, shift = grow)
+            EditAction.LineEnd -> sendKey(KeyEvent.KEYCODE_MOVE_END, shift = grow)
+            EditAction.SelectAll -> {
+                ic.performContextMenuAction(android.R.id.selectAll)
+                panelState.selecting = true
+            }
+            EditAction.Copy -> ic.performContextMenuAction(android.R.id.copy)
+            EditAction.Cut -> ic.performContextMenuAction(android.R.id.cut)
+            EditAction.Paste -> ic.performContextMenuAction(android.R.id.paste)
+            // Ctrl+Z is what text fields everywhere (Android's own, Compose, the web) understand.
+            EditAction.Undo -> sendKey(KeyEvent.KEYCODE_Z, ctrl = true)
+            EditAction.Redo -> sendKey(KeyEvent.KEYCODE_Z, shift = true, ctrl = true)
+        }
+    }
+
+    /**
+     * Presses [code] the way a hardware keyboard would, holding Shift and Ctrl around it when
+     * asked: Android's text fields only grow a selection while a Shift key is actually down.
+     */
+    private fun sendKey(code: Int, shift: Boolean = false, ctrl: Boolean = false) {
+        val ic = currentInputConnection ?: return
+        val shiftMeta = KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        val ctrlMeta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
+        val meta = (if (shift) shiftMeta else 0) or (if (ctrl) ctrlMeta else 0)
+        val downTime = SystemClock.uptimeMillis()
+        fun send(action: Int, key: Int, state: Int) {
+            ic.sendKeyEvent(
+                KeyEvent(
+                    downTime, SystemClock.uptimeMillis(), action, key, 0, state,
+                    KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                    KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE,
+                ),
+            )
+        }
+        if (ctrl) send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, ctrlMeta)
+        if (shift) send(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, meta)
+        send(KeyEvent.ACTION_DOWN, code, meta)
+        send(KeyEvent.ACTION_UP, code, meta)
+        if (shift) send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, if (ctrl) ctrlMeta else 0)
+        if (ctrl) send(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0)
+    }
 
     override fun openSettings() {
         closePanel(animate = false)

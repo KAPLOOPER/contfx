@@ -88,6 +88,7 @@ internal fun VolumeSheet(
     openApp: () -> Unit,
 ) {
     val context = LocalContext.current
+    val open by rememberUpdatedState(openApp)
     val output by OutputWatcher.current.collectAsState()
     val problem by VolumeModel.problem.collectAsState()
     Column(
@@ -112,7 +113,7 @@ internal fun VolumeSheet(
                     .clip(CircleShape)
                     .background(InkColors.tonal)
                     .semantics { contentDescription = "Volume settings" }
-                    .pointerInput(Unit) { detectTapGestures { openApp() } },
+                    .pointerInput(Unit) { detectTapGestures { open() } },
                 contentAlignment = Alignment.Center,
             ) { Glyph(R.drawable.ic_setup, InkColors.on, 20.dp) }
         }
@@ -232,6 +233,8 @@ private fun LiquidSlider(
     val shown by animateFloatAsState(dragged ?: fraction, Motion.flow(), label = "level")
     val change by rememberUpdatedState(onChange)
     val touched by rememberUpdatedState(onTouch)
+    val level by rememberUpdatedState(fraction)
+    val feel by rememberUpdatedState(haptics)
     val measurer = rememberTextMeasurer()
     val style = TextStyle(fontSize = 13.sp, fontFamily = Libron)
     val layout = remember(label) { measurer.measure(label, style, maxLines = 1) }
@@ -240,11 +243,11 @@ private fun LiquidSlider(
 
     fun move(x: Float, width: Float) {
         val f = snapped(x / width)
-        val before = dragged ?: fraction
+        val before = dragged ?: level
         if (f != before) {
             dragged = f
             change(f)
-            if (haptics && steps != null) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            if (feel && steps != null) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
     }
 
@@ -258,7 +261,7 @@ private fun LiquidSlider(
                         detectHorizontalDragGestures(
                             onDragStart = { pos ->
                                 touched()
-                                dragged = fraction
+                                dragged = level
                                 move(pos.x, size.width.toFloat())
                             },
                             onDragEnd = { dragged = null },

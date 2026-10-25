@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -172,25 +173,32 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     // Each page keeps its own place, as pivot pages do.
     val scrolls = remember { sections.associateWith { ScrollState(0) } }
 
-    // Wherever the page changed from (a swipe, a title, a tile or a notification), the pivot
-    // springs to it, carrying on with any fling.
-    LaunchedEffect(state.section) {
+    // The page on screen, always current: the swipe handler is made once and must not hold on
+    // to the page that was open when it was.
+    val shown by rememberUpdatedState(state.section)
+
+    // The titles always settle on the page that's showing. A swipe or a tap sets both at once;
+    // a page opened from elsewhere (a tile, a notification) brings the titles to it by the
+    // shortest way round. Should they ever disagree for longer than a page change takes, the
+    // page on screen wins.
+    val lastSection = remember { arrayOf(state.section) }
+    LaunchedEffect(state.section, pivot.contentSlot) {
+        val opened = state.section != lastSection[0]
+        lastSection[0] = state.section
         if (pivot.indexOf(pivot.contentSlot) != state.section.ordinal) {
+            // A swipe or tap moved the titles and the page is on its way: give it a moment.
+            // A page opened from elsewhere is followed straight away.
+            if (!opened) delay(250)
             pivot.contentSlot = pivot.nearest(state.section.ordinal, pivot.contentSlot)
         }
-        val v = pivot.fling
-        pivot.fling = 0f
-        pivot.slot.animateTo(pivot.contentSlot.toFloat(), Motion.flow(), initialVelocity = v)
+        // Carries on with whatever speed a fling left it.
+        pivot.slot.animateTo(pivot.contentSlot.toFloat(), Motion.flow())
     }
     fun go(slot: Int, velocity: Float = 0f) {
         val section = sections[pivot.indexOf(slot)]
         pivot.contentSlot = slot
-        if (section == state.section) {
-            scope.launch { pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) }
-        } else {
-            pivot.fling = velocity
-            actions.setSection(section)
-        }
+        if (section != shown) actions.setSection(section)
+        scope.launch { pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) }
     }
 
     Box(Modifier.fillMaxSize().background(p.ground)) {
@@ -201,7 +209,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 onSelect = { slot ->
                     if (slot == pivot.contentSlot) {
                         // The current title takes its page back to the top.
-                        scope.launch { scrolls.getValue(state.section).animateScrollTo(0) }
+                        scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
                     } else {
                         go(slot)
                     }
@@ -247,7 +255,12 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         .fillMaxSize()
                         .graphicsLayer {
                             // The page slides with the titles and gives way to the next one halfway.
-                            val shift = pivot.contentSlot - pivot.slot.value
+                            // Measured from this page's own slot, so in the frame between a swipe
+                            // and the page changing, the old page doesn't jump.
+                            val cs = pivot.contentSlot
+                            val own = if (pivot.indexOf(cs) == state.section.ordinal) cs
+                            else pivot.nearest(state.section.ordinal, pivot.slot.value.roundToInt())
+                            val shift = own - pivot.slot.value
                             translationX = shift * size.width * 0.55f
                             alpha = (1f - abs(shift) * 1.3f).coerceIn(0f, 1f)
                         }

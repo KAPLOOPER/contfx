@@ -333,6 +333,7 @@ fun VolumePanel(
 
         // ---- Touch, collapsed: drag or tap the capsule, tap the buds. ----
         if (visible && !expanded) {
+            val hapticsNow by rememberUpdatedState(prefs.haptics)
             val haptics = prefs.haptics
             val levelNow by rememberUpdatedState(level)
             val streamNow by rememberUpdatedState(stream)
@@ -343,7 +344,7 @@ fun VolumePanel(
                 val before = lv.indexAt(dragFraction ?: lv.fraction)
                 dragFraction = (index - lv.min).toFloat() / lv.steps
                 if (index != lv.index) VolumeModel.set(streamNow, index)
-                if (index != before && haptics) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                if (index != before && hapticsNow) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             }
             Box(
                 Modifier

@@ -66,18 +66,22 @@ class PivotState(initial: Int, val count: Int) {
     /** The slot of the page on screen. */
     var contentSlot by mutableIntStateOf(initial)
 
-    /** Speed to carry into the spring after a fling, in slots a second. */
-    var fling = 0f
-
-    fun indexOf(s: Int): Int = Math.floorMod(s, count)
+    fun indexOf(s: Int): Int = PivotMath.indexOf(s, count)
 
     /** The slot nearest [from] that shows page [index] (forward when it's a tie). */
-    fun nearest(index: Int, from: Int): Int {
+    fun nearest(index: Int, from: Int): Int = PivotMath.nearest(index, from, count)
+}
+
+/** The pivot's arithmetic: slots run on forever, pages repeat every [count] slots. */
+internal object PivotMath {
+    fun indexOf(slot: Int, count: Int): Int = Math.floorMod(slot, count)
+
+    fun nearest(index: Int, from: Int, count: Int): Int {
         var best = from
         var bestD = Int.MAX_VALUE
         for (k in -count..count) {
             val s = from + k
-            if (indexOf(s) == index && (abs(k) < bestD || (abs(k) == bestD && k > 0))) {
+            if (indexOf(s, count) == index && (abs(k) < bestD || (abs(k) == bestD && k > 0))) {
                 best = s
                 bestD = abs(k)
             }

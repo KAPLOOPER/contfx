@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "ContinuumFX"
 include(":app")
+// Compile-time stand-ins for system APIs (see stubs/build.gradle.kts).
+include(":stubs")

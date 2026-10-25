@@ -20,3 +20,11 @@
 -keep class dev.continuum.fx.volume.VolumeHelperService { *; }
 -keep class dev.continuum.fx.volume.IVolumeHelper { *; }
 -keep class dev.continuum.fx.volume.IVolumeHelper$* { *; }
+
+# Playing alongside: the helper registers as the audio focus policy. Its listener extends a
+# system API class the app only compiles against (stubs/), so R8 can't see that Android calls
+# its methods; keep them, and don't flag the system classes as missing.
+-keep class dev.continuum.fx.volume.FocusPolicy { *; }
+-keep class dev.continuum.fx.volume.FocusPolicy$* { *; }
+-dontwarn android.media.audiopolicy.**
+-dontwarn android.media.AudioFocusInfo

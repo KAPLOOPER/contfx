@@ -76,6 +76,8 @@ android {
 }
 
 dependencies {
+    // System APIs the volume helper uses, to compile against; the phone supplies the real ones.
+    compileOnly(project(":stubs"))
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

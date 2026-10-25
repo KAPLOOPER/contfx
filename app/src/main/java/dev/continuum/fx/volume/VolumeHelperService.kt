@@ -6,6 +6,7 @@ package dev.continuum.fx.volume
 
 import android.content.Context
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.audiofx.LoudnessEnhancer
 import java.io.File
 import kotlin.system.exitProcess
@@ -29,10 +30,76 @@ class VolumeHelperService() : IVolumeHelper.Stub() {
 
     private var enhancer: LoudnessEnhancer? = null
 
+    // ---- Each player's own volume, and ducking on top of it. ----
+    private val lock = Any()
+    /** The volume the app gave each player (piid), so a duck can be lifted back to it. */
+    private val levels = HashMap<Int, Float>()
+    private val duckedUids = HashSet<Int>()
+    private var watching: AudioManager.AudioPlaybackCallback? = null
+    /** Its own thread, rather than relying on how the process that hosts the helper loops. */
+    private val callbacks by lazy { android.os.HandlerThread("ContinuumDuck").apply { start() } }
+    private var focus: FocusPolicy? = null
+
     override fun destroy() {
-        // The boost lives in the audio system, so it goes before we do.
+        // The boost lives in the audio system, so it goes before we do; focus goes back to Android.
         releaseEnhancer()
+        focus?.shutdown()
         exitProcess(0)
+    }
+
+    override fun setAlongside(packages: List<String>): String {
+        val ctx = context ?: return "ERROR: no context"
+        val set = packages.filter { PACKAGE.matches(it) }.toSet()
+        if (set.isEmpty() && focus == null) return ""
+        val f = focus ?: FocusPolicy(ctx) { uid, on -> duck(uid, on) }.also { focus = it }
+        return f.setAlongside(set)
+    }
+
+    /** Lowers everything [uid] plays to a fifth (Android's own duck level), or puts it back. */
+    private fun duck(uid: Int, on: Boolean) {
+        val ctx = context ?: return
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        synchronized(lock) {
+            if (on) duckedUids += uid else duckedUids -= uid
+            for (cfg in am.activePlaybackConfigurations) {
+                if (cfg.invokeInt("getClientUid") != uid) continue
+                val piid = cfg.invokeInt("getPlayerInterfaceId") ?: continue
+                push(cfg, (levels[piid] ?: 1f) * (if (on) DUCK else 1f))
+            }
+            // Players started while ducked are ducked too.
+            if (duckedUids.isNotEmpty() && watching == null) {
+                val cb = object : AudioManager.AudioPlaybackCallback() {
+                    override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                        synchronized(lock) {
+                            for (c in configs.orEmpty()) {
+                                val u = c.invokeInt("getClientUid") ?: continue
+                                if (u !in duckedUids) continue
+                                val piid = c.invokeInt("getPlayerInterfaceId") ?: continue
+                                push(c, (levels[piid] ?: 1f) * DUCK)
+                            }
+                        }
+                    }
+                }
+                try {
+                    am.registerAudioPlaybackCallback(cb, android.os.Handler(callbacks.looper))
+                    watching = cb
+                } catch (_: Throwable) {
+                }
+            } else if (duckedUids.isEmpty()) {
+                watching?.let { runCatching { am.unregisterAudioPlaybackCallback(it) } }
+                watching = null
+            }
+        }
+    }
+
+    private fun push(cfg: AudioPlaybackConfiguration, volume: Float): Boolean = try {
+        val proxy = cfg.javaClass.getMethod("getPlayerProxy").invoke(cfg)
+        if (proxy == null) false else {
+            proxy.javaClass.getMethod("setVolume", Float::class.javaPrimitiveType).invoke(proxy, volume.coerceIn(0f, 1f))
+            true
+        }
+    } catch (_: Throwable) {
+        false
     }
 
     override fun players(): List<String> {
@@ -65,9 +132,14 @@ class VolumeHelperService() : IVolumeHelper.Stub() {
         return try {
             val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val cfg = am.activePlaybackConfigurations.firstOrNull { it.invokeInt("getPlayerInterfaceId") == piid } ?: return false
-            val proxy = cfg.javaClass.getMethod("getPlayerProxy").invoke(cfg) ?: return false
-            proxy.javaClass.getMethod("setVolume", Float::class.javaPrimitiveType).invoke(proxy, volume.coerceIn(0f, 1f))
-            true
+            synchronized(lock) {
+                val v = volume.coerceIn(0f, 1f)
+                levels[piid] = v
+                if (levels.size > 256) levels.keys.retainAll(am.activePlaybackConfigurations.mapNotNull { it.invokeInt("getPlayerInterfaceId") }.toSet() + piid)
+                // Under a navigation prompt, the new level is ducked like the rest.
+                val ducked = cfg.invokeInt("getClientUid") in duckedUids
+                push(cfg, if (ducked) v * DUCK else v)
+            }
         } catch (_: Throwable) {
             false
         }
@@ -167,5 +239,8 @@ class VolumeHelperService() : IVolumeHelper.Stub() {
 
         /** +15 dB, the most the boost ever asks for. */
         const val MAX_GAIN_MB = 1500
+
+        /** How far a duck lowers a player: Android's own figure. */
+        const val DUCK = 0.2f
     }
 }

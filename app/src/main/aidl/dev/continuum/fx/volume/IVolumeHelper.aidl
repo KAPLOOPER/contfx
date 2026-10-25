@@ -19,11 +19,17 @@ interface IVolumeHelper {
     // Do Not Disturb alone. Returns the command's output.
     String setRingerMode(String mode) = 4;
 
-    // Lets an app play alongside others (ignore = true) or not, through the TAKE_AUDIO_FOCUS app-op.
+    // Sets the TAKE_AUDIO_FOCUS app-op (ignore = true refuses the app focus). No longer used to
+    // play alongside, since most players won't play when refused; kept to undo what earlier
+    // builds set.
     String setPlaysAlongside(String packageName, boolean ignore) = 5;
 
     // Every package whose TAKE_AUDIO_FOCUS is set to ignore.
     List<String> playsAlongside() = 6;
+
+    // The apps that play alongside others. With any, the helper looks after audio focus for the
+    // phone (an audio focus policy); with none, Android does. "" when done, else why not.
+    String setAlongside(in List<String> packages) = 8;
 
     // Loudness boost on the whole output in millibels; 0 releases it. "" on success, else an error.
     String setLoudnessGain(int millibels) = 7;

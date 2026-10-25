@@ -31,6 +31,7 @@ import dev.continuum.fx.dsp.EqImport
 import dev.continuum.fx.island.IslandNotificationListener
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
+import dev.continuum.fx.volume.AppVolumes
 import dev.continuum.fx.volume.VolumeHelper
 import dev.continuum.fx.volume.VolumeModel
 import dev.continuum.fx.volume.VolumePrefs
@@ -433,9 +434,7 @@ class MainActivity : ComponentActivity(), AppActions {
     }
 
     override fun setPlaysAlongside(pkg: String, on: Boolean) {
-        VolumeHelper.setPlaysAlongside(pkg, on) { ok ->
-            if (!ok) runOnUiThread { message.value = "Couldn't change that. Is Shizuku still running?" }
-        }
+        AppVolumes.setAlongside(pkg, on)
     }
 
     override fun updateIsland(transform: (IslandPrefs) -> IslandPrefs) {

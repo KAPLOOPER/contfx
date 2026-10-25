@@ -46,6 +46,13 @@ object AppVolumes {
     private val _known = MutableStateFlow<List<String>>(emptyList())
     val known: StateFlow<List<String>> = _known.asStateFlow()
 
+    /** Apps that play alongside others: they don't pause anything, and nothing pauses them. */
+    private val _alongside = MutableStateFlow<Set<String>>(emptySet())
+    val alongside: StateFlow<Set<String>> = _alongside.asStateFlow()
+
+    /** Why playing alongside isn't working right now, if it isn't. */
+    val alongsideProblem = MutableStateFlow<String?>(null)
+
     private val thread = Executors.newSingleThreadExecutor { r -> Thread(r, "ContinuumAppVolumes") }
     private val scope = CoroutineScope(SupervisorJob() + thread.asCoroutineDispatcher())
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -72,6 +79,7 @@ object AppVolumes {
         prefs = ctx.getSharedPreferences("app_volumes", Context.MODE_PRIVATE)
         am = ctx.getSystemService(AudioManager::class.java)
         _known.value = prefs?.getString(KNOWN, null)?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+        _alongside.value = prefs?.getString(ALONGSIDE, null)?.split(',')?.filter { it.isNotBlank() }?.toSet().orEmpty()
         try {
             am?.registerAudioPlaybackCallback(object : AudioManager.AudioPlaybackCallback() {
                 override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) = poke()
@@ -79,9 +87,42 @@ object AppVolumes {
         } catch (_: Exception) {
         }
         scope.launch {
-            VolumeHelper.ready.collect { poke() }
+            VolumeHelper.ready.collect { ready ->
+                poke()
+                if (ready) {
+                    undoOldAlongside()
+                    pushAlongside()
+                }
+            }
         }
         scope.launch { loop() }
+    }
+
+    /** Switches [pkg] playing alongside on or off, and hands the list to the helper. */
+    fun setAlongside(pkg: String, on: Boolean) {
+        val next = if (on) _alongside.value + pkg else _alongside.value - pkg
+        _alongside.value = next
+        prefs?.edit()?.putString(ALONGSIDE, next.joinToString(","))?.apply()
+        pushAlongside()
+    }
+
+    private fun pushAlongside() {
+        if (!VolumeHelper.ready.value) return
+        val set = _alongside.value
+        VolumeHelper.setAlongside(set) { problem -> alongsideProblem.value = if (set.isEmpty()) null else problem }
+    }
+
+    /**
+     * Earlier builds made an app play alongside by refusing it audio focus, which stops most
+     * players playing at all. Put back any refusal left on an app this app has seen, once.
+     */
+    private fun undoOldAlongside() {
+        val p = prefs ?: return
+        if (p.getBoolean(UNDONE_OLD, false)) return
+        val known = _known.value.toSet() + _alongside.value
+        val refused = VolumeHelper.playsAlongside().filter { it in known }
+        for (pkg in refused) VolumeHelper.setPlaysAlongside(pkg, false) {}
+        p.edit().putBoolean(UNDONE_OLD, true).apply()
     }
 
     /** Look again soon: something started, stopped, or the helper came back. */
@@ -212,4 +253,6 @@ object AppVolumes {
     private const val MAX_SESSIONS = 12
     private const val MAX_KNOWN = 40
     private const val KNOWN = "_known"
+    private const val ALONGSIDE = "_alongside"
+    private const val UNDONE_OLD = "_undone_focus_refusals"
 }

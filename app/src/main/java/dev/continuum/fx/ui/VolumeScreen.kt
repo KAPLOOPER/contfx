@@ -64,11 +64,9 @@ import dev.continuum.fx.volume.VolumePrefs
 import dev.continuum.fx.volume.VolumeSettings
 import dev.continuum.fx.volume.VolumeStatus
 import dev.continuum.fx.volume.ui.streamIcon
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private fun volumeOn(state: UiState, prefs: VolumePrefs) = prefs.enabled && state.privileges.volumeService
 
@@ -279,38 +277,47 @@ private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Flo
     }
 }
 
-/** Apps allowed to keep playing when another starts, through the audio-focus app-op. */
+/**
+ * Apps that play alongside others. With any switched on, the helper looks after audio focus for
+ * the phone, the way Android does, except that these neither pause others nor get paused.
+ */
 @Composable
 private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppActions) {
     val p = LocalPalette.current
-    var alongside by remember { mutableStateOf<Set<String>>(emptySet()) }
-    LaunchedEffect(helper) {
-        if (helper) alongside = withContext(Dispatchers.IO) { VolumeHelper.playsAlongside() }
-    }
+    val alongside by AppVolumes.alongside.collectAsState()
+    val problem by AppVolumes.alongsideProblem.collectAsState()
     Txt("Play alongside", 21.sp, p.text, bold = true)
     Gap(2.dp)
     Txt(
-        "Normally, an app that starts playing pauses the one before. Switch an app on to keep hearing it when something else starts " +
-            "(restart its playback for it to take). Some apps lose their pause button this way; switch them back off if so.",
+        "Normally, an app that starts playing pauses the one before. Switch an app on and it plays alongside: starting it doesn't " +
+            "pause anything, and nothing else starting pauses it. Calls and alarms still pause it, and directions still lower it. " +
+            "While any app is on, the helper looks after audio focus for the phone.",
         15.sp, p.sub,
     )
     val list = (alongside.toList() + known).distinct()
     when {
         !helper -> {
             Gap(6.dp)
-            Txt("Needs Shizuku: set it up from the dock.", 15.sp, p.sub)
+            Txt(
+                if (alongside.isEmpty()) "Needs Shizuku: set it up from the dock."
+                else "Waiting for Shizuku: until it's back, apps pause each other as usual.",
+                15.sp, p.sub,
+            )
         }
         list.isEmpty() -> {
             Gap(6.dp)
             Txt("Apps show up here once they've played something.", 15.sp, p.sub)
         }
         else -> {
+            problem?.let {
+                Gap(6.dp)
+                Txt(it, 15.sp, p.danger)
+            }
             Gap(10.dp)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
                 list.forEach { pkg ->
                     val on = pkg in alongside
-                    ToggleRow(AppVolumes.label(pkg), if (on) "Keeps playing alongside" else "Pauses when another starts", on) {
-                        alongside = if (on) alongside - pkg else alongside + pkg
+                    ToggleRow(AppVolumes.label(pkg), if (on) "Plays alongside" else "Pauses when another starts", on) {
                         actions.setPlaysAlongside(pkg, !on)
                     }
                 }

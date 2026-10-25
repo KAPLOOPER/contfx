@@ -143,6 +143,24 @@ object VolumeHelper {
         }
     }
 
+    /**
+     * Sends the apps that play alongside; [onDone] gets null when it's done, otherwise why not
+     * (no helper, or a phone that won't let it look after audio focus).
+     */
+    fun setAlongside(packages: Set<String>, onDone: (String?) -> Unit) {
+        calls.execute {
+            val out = call<String?>("Shizuku isn't connected.") { it.setAlongside(packages.toList()) }
+            onDone(
+                when {
+                    out == null -> "Shizuku isn't connected."
+                    out.isEmpty() -> null
+                    else -> "This phone won't let the helper look after audio focus ($out)."
+                },
+            )
+        }
+    }
+
+    /** Undoes the audio-focus app-op earlier builds used (most players won't play with it). */
     fun setPlaysAlongside(pkg: String, on: Boolean, onDone: (Boolean) -> Unit) {
         calls.execute {
             val out = call<String?>(null) { it.setPlaysAlongside(pkg, on) }

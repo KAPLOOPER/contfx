@@ -40,11 +40,25 @@ data class EqBand(
     val enabled: Boolean = true,
 )
 
+/**
+ * Which way round the sound comes out. Some earphones are wired, or built, so that a push in the
+ * recording comes out as a pull: [Inverted] turns the signal over so it's the right way round
+ * again. [LeftInverted] and [RightInverted] mend one channel wired backwards.
+ */
+enum class Polarity(val label: String, val left: Double, val right: Double) {
+    Normal("Normal", 1.0, 1.0),
+    Inverted("Inverted", -1.0, -1.0),
+    LeftInverted("Left only", -1.0, 1.0),
+    RightInverted("Right only", 1.0, -1.0),
+}
+
 data class EqProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val preampDb: Double = 0.0,
     val bands: List<EqBand> = emptyList(),
+    /** Belongs to the earphones this EQ is for, so it goes with the EQ. */
+    val polarity: Polarity = Polarity.Normal,
 ) {
     companion object {
         fun flat(): EqProfile = EqProfile(name = "Flat")

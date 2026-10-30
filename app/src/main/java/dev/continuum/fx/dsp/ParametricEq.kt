@@ -18,25 +18,38 @@ class ParametricEq(
     private val channels: Int = 2,
     private val sampleRate: Double = EqResponse.SAMPLE_RATE,
 ) {
-    private class Stage(val coeffs: Array<BiquadCoefficients>, val preamp: Double, val bypass: Boolean)
+    /** [signs] turns each channel over (-1) or not (1), after the filters. */
+    private class Stage(val coeffs: Array<BiquadCoefficients>, val preamp: Double, val bypass: Boolean, val signs: DoubleArray)
 
     private val pending = AtomicReference<Stage?>(null)
-    private var stage = Stage(emptyArray(), 1.0, true)
+    private val upright = DoubleArray(channels) { 1.0 }
+    private var stage = Stage(emptyArray(), 1.0, true, upright)
     private var z1 = DoubleArray(0)
     private var z2 = DoubleArray(0)
     private var scratch = FloatArray(0)
 
-    /** Pass null to bypass the EQ entirely. */
-    fun setProfile(profile: EqProfile?) {
+    /**
+     * Pass null to leave the sound as it is. [polarity] turns channels over (the profile's own,
+     * unless said otherwise); it's applied after the filters, so their memory never sees a flip,
+     * and a change fades through like any other, so turning it over never clicks.
+     */
+    fun setProfile(profile: EqProfile?, polarity: Polarity = profile?.polarity ?: Polarity.Normal) {
+        val signs = if (polarity == Polarity.Normal) upright else DoubleArray(channels) { ch ->
+            when {
+                channels < 2 -> polarity.left
+                ch % 2 == 0 -> polarity.left
+                else -> polarity.right
+            }
+        }
         if (profile == null) {
-            pending.set(Stage(emptyArray(), 1.0, true))
+            pending.set(Stage(emptyArray(), 1.0, polarity == Polarity.Normal, signs))
             return
         }
         val coeffs = profile.bands
             .filter { it.enabled }
             .map { BiquadCoefficients.design(it, sampleRate) }
             .toTypedArray()
-        pending.set(Stage(coeffs, 10.0.pow(profile.preampDb / 20.0), false))
+        pending.set(Stage(coeffs, 10.0.pow(profile.preampDb / 20.0), false, signs))
     }
 
     /**
@@ -82,6 +95,7 @@ class ParametricEq(
         val coeffs = s.coeffs
         val n = coeffs.size
         val pre = s.preamp
+        val signs = s.signs
         for (frame in 0 until frames) {
             val base = frame * channels
             for (ch in 0 until channels) {
@@ -95,7 +109,7 @@ class ParametricEq(
                     st2[zi] = c.b2 * x - c.a2 * y
                     x = y
                 }
-                buffer[idx] = x.toFloat()
+                buffer[idx] = (x * signs[ch]).toFloat()
             }
         }
     }

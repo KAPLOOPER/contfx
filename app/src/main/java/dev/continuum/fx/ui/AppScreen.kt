@@ -82,6 +82,7 @@ import dev.continuum.fx.dsp.EqBand
 import dev.continuum.fx.dsp.EqLimits
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.FilterType
+import dev.continuum.fx.dsp.Polarity
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
@@ -381,6 +382,8 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
             onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
         )
+        Gap(14.dp)
+        PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
         Gap(26.dp)
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -537,6 +540,90 @@ private fun PreampSection(
             Chip(if (eqEnabled) "EQ on" else "EQ off", eqEnabled, onToggleEq)
             PillButton("Auto preamp", onAuto, height = 38.dp)
             if (canCompare) ComparePill()
+        }
+    }
+}
+
+/**
+ * Polarity, for earphones that come out the wrong way round: a push in the recording arriving
+ * as a pull. Saved with the EQ, since an EQ is usually for one pair.
+ */
+@Composable
+private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
+    val p = LocalPalette.current
+    val mode by EngineSettings.mode.collectAsState()
+    val direct = mode == EngineMode.Direct
+    var open by remember { mutableStateOf(false) }
+    val source = remember { MutableInteractionSource() }
+    val flipped = polarity != Polarity.Normal
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(p.surface)
+            .animateContentSize(Motion.flow()),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(interactionSource = source, indication = null) { open = !open }
+                .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Txt("Polarity", 17.sp, p.text, bold = flipped, maxLines = 1)
+                Txt(
+                    when {
+                        flipped && direct -> "Needs Capture mode to turn the sound over"
+                        polarity == Polarity.Inverted -> "Turned over, for earphones that push the wrong way"
+                        polarity == Polarity.LeftInverted -> "The left channel turned over"
+                        polarity == Polarity.RightInverted -> "The right channel turned over"
+                        else -> "As recorded"
+                    },
+                    14.sp, if (flipped && !direct) p.text else p.sub, maxLines = 2,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (flipped) p.primary else p.ground)
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Txt(polarity.label, 13.sp, if (flipped) p.onPrimary else p.sub, bold = true, maxLines = 1)
+            }
+        }
+        if (open) {
+            Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 16.dp)) {
+                Txt(
+                    "Some earphones are built or wired so that a push in the recording comes out as a pull. Inverted turns " +
+                        "the sound over so they push the right way round. Left only and Right only mend one channel wired " +
+                        "backwards, which sounds hollow, with the middle and the bass gone. It's saved with this EQ.",
+                    14.sp, p.sub,
+                )
+                Gap(6.dp)
+                Txt(
+                    "Turning both channels over is a subtle change, and recordings aren't always the right way round " +
+                        "themselves, so trust your ears: switch back and forth on a track with a punchy kick drum.",
+                    14.sp, p.sub,
+                )
+                if (direct) {
+                    Gap(6.dp)
+                    Txt(
+                        "Needs Capture: Direct mode works through Android's own effect, which can only raise and lower the " +
+                            "sound, not turn it over.",
+                        14.sp, p.text,
+                    )
+                }
+                Gap(10.dp)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Polarity.entries.forEach { pol ->
+                        Chip(pol.label, polarity == pol, onClick = { onPick(pol) }, on = Surface.Card)
+                    }
+                }
+            }
         }
     }
 }

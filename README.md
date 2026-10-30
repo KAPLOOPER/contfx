@@ -79,6 +79,7 @@ then switch on *Continuum island* in accessibility settings. The **Try it** butt
 - **Live spectrum:** while processing, the music itself moves behind the curve as a soft liquid outline.
 - **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.
 - **EQ per device:** link an EQ to your headphones, speaker, car or USB DAC, and it comes on by itself whenever they connect.
+- **Polarity:** turn the sound over for earphones that come out the wrong way round (a push in the recording arriving as a pull), or mend one channel wired backwards. It's saved with the EQ, stays on with the EQ switched off, and goes into shared files as Equalizer APO's `Copy: L=-1*L R=-1*R`. Capture mode only: Direct mode's effect can raise and lower the sound but not turn it over.
 - **EQ per app:** give an app its own EQ (a podcast app a voice EQ, say). In Direct mode each app plays through its own, side by side; in Capture mode, where everything is mixed first, an app's own EQ is used while it's what's playing. A music player's **Equalizer** button opens Continuum FX and offers that app one.
 - **Backup:** everything you've set up (EQs and their links, effects, island, volume panel, each app's volume) in one file, to keep or move to a new phone.
 - **Quick Settings tiles:** *Continuum EQ* (on or off, showing which EQ is playing) and *Island*.

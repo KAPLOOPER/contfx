@@ -31,18 +31,30 @@ object EqImport {
     private val qRegex = Regex("""(?:^|\s)Q\s+($NUM)""", RegexOption.IGNORE_CASE)
     private val bwRegex = Regex("""BW\s+Oct\s+($NUM)""", RegexOption.IGNORE_CASE)
 
+    // Equalizer APO turns a channel over with Copy, e.g. "Copy: L=-1*L R=-1*R" (or "L=-L").
+    private val copyRegex = Regex("""^Copy\s*:""", RegexOption.IGNORE_CASE)
+    private fun flipped(line: String, ch: Char) =
+        Regex("""(?:^|[\s:])$ch\s*=\s*-\s*(?:1(?:[.,]0+)?\s*\*\s*)?$ch(?![A-Za-z])""", RegexOption.IGNORE_CASE).containsMatchIn(line)
+
     fun parse(text: String, name: String = "Imported EQ"): Result {
         val warnings = mutableListOf<String>()
         val bands = mutableListOf<EqBand>()
         var preamp = 0.0
         var sawPreamp = false
         var sawGraphic = false
+        var flipLeft = false
+        var flipRight = false
 
         text.lineSequence().forEachIndexed { index, raw ->
             val line = raw.substringBefore('#').trim()
             if (line.isEmpty()) return@forEachIndexed
             if (line.startsWith("GraphicEQ", ignoreCase = true)) {
                 sawGraphic = true
+                return@forEachIndexed
+            }
+            if (copyRegex.containsMatchIn(line)) {
+                flipLeft = flipped(line, 'L')
+                flipRight = flipped(line, 'R')
                 return@forEachIndexed
             }
             preampRegex.find(line)?.let {
@@ -89,12 +101,23 @@ object EqImport {
             }
             return Result(null, warnings, error)
         }
-        return Result(EqProfile(name = cleanName(name), preampDb = preamp, bands = bands), warnings, null)
+        val polarity = when {
+            flipLeft && flipRight -> Polarity.Inverted
+            flipLeft -> Polarity.LeftInverted
+            flipRight -> Polarity.RightInverted
+            else -> Polarity.Normal
+        }
+        return Result(EqProfile(name = cleanName(name), preampDb = preamp, bands = bands, polarity = polarity), warnings, null)
     }
 
     /** Writes the profile in the same format, so it can go back into squig.link or Equalizer APO. */
     fun export(profile: EqProfile): String = buildString {
         append("Preamp: ").append(fmt(profile.preampDb, 1)).append(" dB\n")
+        if (profile.polarity != Polarity.Normal) {
+            val l = if (profile.polarity.left < 0) "-1*L" else "L"
+            val r = if (profile.polarity.right < 0) "-1*R" else "R"
+            append("Copy: L=").append(l).append(" R=").append(r).append('\n')
+        }
         profile.bands.forEachIndexed { i, b ->
             append("Filter ").append(i + 1).append(": ")
             append(if (b.enabled) "ON " else "OFF ")

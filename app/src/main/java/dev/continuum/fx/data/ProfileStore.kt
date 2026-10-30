@@ -6,6 +6,7 @@ import android.os.Looper
 import dev.continuum.fx.dsp.EqBand
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.FilterType
+import dev.continuum.fx.dsp.Polarity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -150,6 +151,7 @@ class ProfileStore(context: Context) {
         put("id", p.id)
         put("name", p.name)
         put("preamp", p.preampDb)
+        if (p.polarity != Polarity.Normal) put("polarity", p.polarity.name)
         val bands = JSONArray()
         p.bands.forEach { b ->
             bands.put(JSONObject().apply {
@@ -181,6 +183,7 @@ class ProfileStore(context: Context) {
             name = o.optString("name", "EQ"),
             preampDb = o.optDouble("preamp", 0.0),
             bands = bands,
+            polarity = Polarity.entries.firstOrNull { it.name == o.optString("polarity") } ?: Polarity.Normal,
         )
     }
 

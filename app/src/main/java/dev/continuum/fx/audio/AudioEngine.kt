@@ -54,18 +54,22 @@ class AudioEngine(
     fun setSound(library: Library, fx: FxSettings, ctx: FxContext, compare: Boolean, playing: List<String>) {
         val c = ctx.copy(direct = false)
         val tone = FxTone.bands(fx, c)
-        val profile = if (library.eqEnabled) library.profileForPlaying(playing) else null
+        val playingProfile = library.profileForPlaying(playing)
+        val profile = if (library.eqEnabled) playingProfile else null
+        // Polarity belongs to the earphones, not the sound: it stays with the EQ switched off and
+        // while comparing.
+        val polarity = playingProfile.polarity
         val both = when {
             profile != null -> FxTone.withTone(profile, tone)
             tone.isNotEmpty() -> EqProfile(name = "Effects", bands = tone)
             else -> null
         }
         if (compare) {
-            eq.setProfile(both?.let { EqProfile(name = "Original", preampDb = EqResponse.loudnessDb(it)) })
+            eq.setProfile(both?.let { EqProfile(name = "Original", preampDb = EqResponse.loudnessDb(it)) }, polarity)
             chain.set(FxChain.Params())
             limiter.soft = false
         } else {
-            eq.setProfile(both)
+            eq.setProfile(both, polarity)
             chain.set(fx, c)
             limiter.soft = fx.enabled && fx.dynamics == DynamicsMode.Pure
         }

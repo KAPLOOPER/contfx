@@ -13,6 +13,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -373,6 +375,7 @@ internal fun BudContent(
     live: LiveInfo? = null,
     sound: SoundMode? = null,
     eventLabel: String = "",
+    ringBattery: Boolean = false,
 ) {
     Row(
         Modifier.fillMaxSize().padding(horizontal = 10.dp),
@@ -386,7 +389,9 @@ internal fun BudContent(
                 Txt(callText(call, now), 13.sp, InkColors.live, bold = true, maxLines = 1)
             }
             Kind.Timer -> if (timer != null) Txt(timerText(timer, now), 13.sp, InkColors.on, bold = true, maxLines = 1)
-            Kind.Battery -> if (battery != null) InkBattery(battery)
+            Kind.Battery -> if (battery != null) {
+                if (ringBattery) Txt("${battery.level}%", 13.sp, batteryColor(battery), bold = true, maxLines = 1) else InkBattery(battery)
+            }
             Kind.Alarm -> if (alarm != null) {
                 Glyph(R.drawable.ic_alarm, InkColors.on, 14.dp)
                 Txt(clockText(LocalContext.current, alarm.at), 13.sp, InkColors.on, bold = true, maxLines = 1)
@@ -830,6 +835,66 @@ internal fun InkBattery(
             clipPath(body) {
                 clipPath(liquid) { drawText(number, color = onFill, topLeft = tl) }
                 clipPath(liquid, clipOp = ClipOp.Difference) { drawText(number, color = InkColors.on, topLeft = tl) }
+            }
+        }
+    }
+}
+
+/** The ring's gap from the lens and its thickness, in dp. */
+internal const val RING_GAP = 2f
+internal const val RING_STROKE = 2.5f
+
+/** How far past the lens the ring reaches, in dp. */
+internal const val RING_REACH = RING_GAP + RING_STROKE
+
+/**
+ * The battery as a ring of liquid round the camera, so it takes no room in the island at all.
+ * It fills clockwise from the top with your charge, on a dark track: green while charging (a
+ * glint runs along it), red when low (and breathing at 10%), white otherwise. Plugging in sweeps
+ * it up from empty to where it stands. [cx], [cy] and [lens] (the camera's radius) are in pixels.
+ */
+@Composable
+internal fun CameraRing(b: BatteryInfo?, cx: Float, cy: Float, lens: Float, visible: Boolean, flashAt: Long) {
+    val alpha by animateFloatAsState(
+        if (visible && b != null) 1f else 0f,
+        tween(if (visible) 320 else 180),
+        label = "ringAlpha",
+    )
+    if (b == null || alpha < 0.01f) return
+    val level by animateFloatAsState(b.level / 100f, Motion.flow(), label = "ringLevel")
+    val sweep = remember { Animatable(1f) }
+    LaunchedEffect(flashAt) {
+        if (flashAt > 0 && System.currentTimeMillis() - flashAt < 5_000) {
+            sweep.snapTo(0f)
+            sweep.animateTo(1f, tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        }
+    }
+    val charging = b.charging && !b.full
+    val critical = !b.charging && b.level <= 10
+    val motion = rememberInfiniteTransition(label = "ring")
+    val glint by motion.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "ringGlint")
+    val breath by motion.animateFloat(
+        0.5f, 1f,
+        infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "ringBreath",
+    )
+    val color = batteryColor(b)
+    Canvas(Modifier.fillMaxSize()) {
+        val stroke = RING_STROKE.dp.toPx()
+        val r = lens + RING_GAP.dp.toPx() + stroke / 2f
+        val topLeft = Offset(cx - r, cy - r)
+        val box = Size(r * 2f, r * 2f)
+        drawCircle(InkColors.tonal.copy(alpha = alpha), r, Offset(cx, cy), style = Stroke(stroke))
+        val arc = 360f * level.coerceIn(0f, 1f) * sweep.value
+        if (arc > 0.5f) {
+            val a = alpha * (if (critical) breath else 1f)
+            drawArc(color.copy(alpha = a), -90f, arc, false, topLeft, box, style = Stroke(stroke, cap = StrokeCap.Round))
+            if (charging && arc > 40f) {
+                val g = 24f
+                drawArc(
+                    Color.White.copy(alpha = 0.5f * alpha), -90f + (arc - g) * glint, g, false, topLeft, box,
+                    style = Stroke(stroke * 0.55f, cap = StrokeCap.Round),
+                )
             }
         }
     }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.IntState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -43,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -109,6 +111,37 @@ private fun <T : Any> rememberLast(current: T?): T? {
 }
 
 /**
+ * The island as you've placed it: moved from the camera, sized to its lens, and everything in it
+ * scaled together (by drawing it at a larger or smaller density, so every measure follows).
+ */
+@Composable
+fun IslandSurface(
+    spotState: State<CameraSpot?>,
+    outsideTaps: IntState,
+    onBounds: (android.graphics.Rect?, Boolean) -> Unit,
+) {
+    val prefs by IslandSettings.state.collectAsState()
+    val base = LocalDensity.current
+    val raw = spotState.value
+    val placed = remember(raw, prefs.offsetX, prefs.offsetY, prefs.cameraSize, base.density) {
+        raw?.let { s ->
+            val d = base.density
+            val lens = (s.radius + prefs.cameraSize * d).coerceIn(4f * d, 30f * d)
+            s.copy(
+                cx = (s.cx + prefs.offsetX * d).coerceIn(lens, s.screenWidth - lens),
+                cy = (s.cy + prefs.offsetY * d).coerceAtLeast(lens * 0.5f),
+                radius = lens,
+            )
+        }
+    }
+    val placedState = rememberUpdatedState(placed)
+    val scaled = remember(base, prefs.scale) { Density(base.density * prefs.scale, base.fontScale) }
+    CompositionLocalProvider(LocalDensity provides scaled) {
+        IslandRoot(placedState, outsideTaps, onBounds)
+    }
+}
+
+/**
  * The Continuum island. Everything is one body of ink that starts as the camera:
  * the island grows out of it, a second activity pinches off as a bud, alerts drip
  * down from it, and you can pull a drop out of it by hand. Nothing appears or
@@ -163,7 +196,17 @@ fun IslandRoot(
     // The always-on clock: checked every second, but only changes once a minute, so it
     // is right again the moment the screen wakes.
     val context = LocalContext.current
-    val alwaysTime = prefs.alwaysTime
+    // While you're placing it, the island shows itself with the time and the battery to line up by.
+    val placingAt by IslandRepository.placing.collectAsState()
+    var placing by remember { mutableStateOf(false) }
+    LaunchedEffect(placingAt) {
+        if (placingAt > 0 && System.currentTimeMillis() - placingAt < 3_000) {
+            placing = true
+            delay(3_000)
+            placing = false
+        }
+    }
+    val alwaysTime = prefs.alwaysTime || placing
     val clock by produceState(System.currentTimeMillis(), alwaysTime) {
         value = System.currentTimeMillis()
         while (alwaysTime) {
@@ -299,10 +342,14 @@ fun IslandRoot(
     val lastSound = rememberLast(soundRaw)
     val lastOutput = rememberLast(outputShowing)
 
-    // Always-on extras share the pill with whatever is live.
-    val ambientBattery = if (prefs.alwaysBattery && primary != Kind.Battery) batteryData else null
+    // Always-on extras share the pill with whatever is live. The battery as a ring takes no room
+    // in it: it sits round the camera, and with nothing else on, the ink is just big enough for it.
+    val ringMode = prefs.batteryRing
+    val ringOn = ringMode && batteryData != null && (prefs.alwaysBattery || primary == Kind.Battery || placing)
+    val ambientBattery = if (prefs.alwaysBattery && !ringMode && primary != Kind.Battery) batteryData else null
     val ambient = alwaysTime || ambientBattery != null
-    val pillShown = primary != null || ambient
+    val ringAlone = ringOn && primary == null && !ambient
+    val pillShown = primary != null || ambient || ringAlone
     val lastSecondary = rememberLast(secondary)
 
     // ---- The pulled drop ----
@@ -362,9 +409,12 @@ fun IslandRoot(
     // ---- Geometry, in window pixels ----
 
     val sw = spot.screenWidth.toFloat()
-    val band = max(spot.radius * 2f + px(12f), px(34f))
+    // Never so thin that the lens, or the ring round it, stands out of the ink.
+    val minBand = spot.radius * 2f + px(if (ringOn) RING_REACH * 2f + 2f else 4f)
+    val band = max(max(spot.radius * 2f + px(12f), px(34f)) * prefs.height, minBand)
     val top = (spot.cy - band / 2f).coerceAtLeast(px(2f))
-    val camSlot = if (spot.detected) spot.radius * 2f + px(14f) else px(18f)
+    val camSlot = if (spot.detected || ringOn) spot.radius * 2f + px(14f) else px(18f)
+    val extra = px(prefs.width)
     val cardW = min(sw - px(24f), px(380f))
     val idleR = spot.radius * 0.85f
     val gap = px(12f)
@@ -413,7 +463,11 @@ fun IslandRoot(
         Kind.Media -> listOf(PillItem.Art)
         Kind.Call -> listOf(PillItem.Icon(R.drawable.ic_call, InkColors.live))
         Kind.Timer -> listOf(PillItem.Icon(R.drawable.ic_timer, InkColors.on))
-        Kind.Battery -> listOf(PillItem.Cell)
+        Kind.Battery -> if (ringMode) {
+            listOfNotNull(batteryData?.let { PillItem.Label("${it.level}%", 14f, batteryColor(it), true) })
+        } else {
+            listOf(PillItem.Cell)
+        }
         Kind.Alarm -> listOf(PillItem.Icon(R.drawable.ic_alarm, InkColors.on))
         Kind.Event -> listOf(PillItem.Icon(R.drawable.ic_event, InkColors.on))
         Kind.Live -> listOf(PillItem.AppIcon(lastLive?.smallIcon, InkColors.on))
@@ -424,7 +478,10 @@ fun IslandRoot(
         Kind.Media -> listOf(PillItem.Pulse)
         Kind.Call -> listOf(PillItem.Label(callLabel, 14f, InkColors.live, true))
         Kind.Timer -> listOf(PillItem.Label(timerLabel, 14f, InkColors.on, true))
-        Kind.Battery -> listOfNotNull(batteryStatus)
+        Kind.Battery -> listOfNotNull(
+            // The ring and the number on the left say the level; this side says what's happening.
+            if (ringMode && batteryData?.let { !it.full && !it.charging && !it.low } == true) null else batteryStatus,
+        )
         Kind.Alarm -> listOf(PillItem.Label(alarmLabel, 14f, InkColors.on, true))
         Kind.Event -> listOf(PillItem.Label(lastEventLabel, 14f, eventColor(lastEventLabel), true))
         Kind.Live -> {
@@ -494,7 +551,7 @@ fun IslandRoot(
         Kind.Media -> band
         Kind.Call -> px(10f + 14f + 6f + 10f) + textW(PillItem.Label(callLabel, 13f, InkColors.live, true))
         Kind.Timer -> px(20f) + textW(PillItem.Label(timerLabel, 13f, InkColors.on, true))
-        Kind.Battery -> px(BATTERY_W + 20f)
+        Kind.Battery -> if (ringMode) px(20f) + textW(PillItem.Label("${lastBattery?.level ?: 100}%", 13f, InkColors.on, true)) else px(BATTERY_W + 20f)
         Kind.Alarm -> px(20f + 14f + 6f) + textW(PillItem.Label(alarmLabel, 13f, InkColors.on, true))
         Kind.Event -> px(20f + 14f + 6f) + textW(PillItem.Label(lastEventLabel, 13f, InkColors.on, true))
         Kind.Live -> px(20f + 16f) + (liveLabel?.let { px(6f) + textW(PillItem.Label(it, 13f, InkColors.on, true)) } ?: 0f)
@@ -524,6 +581,11 @@ fun IslandRoot(
     val tTop: Float
     val tR: Float
     when {
+        ringAlone -> {
+            // Just the ring: a round drop of ink the pill's height, centred on the camera.
+            val d = minOf(band, max(minBand, spot.radius * 2f + px(RING_REACH * 2f + 3f)))
+            tW = d; tH = d; tTop = spot.cy - d / 2f; tR = d / 2f
+        }
         primary == null && !ambient -> {
             tW = idleR * 2f; tH = idleR * 2f; tTop = spot.cy - idleR; tR = idleR
         }
@@ -531,7 +593,7 @@ fun IslandRoot(
             tW = cardW; tH = expandedHeight(open); tTop = top; tR = px(30f)
         }
         else -> {
-            tW = camSlot + pillLayout(primary, mode.time, mode.battery).side * 2f; tH = band; tTop = top; tR = band / 2f
+            tW = camSlot + (pillLayout(primary, mode.time, mode.battery).side + extra) * 2f; tH = band; tTop = top; tR = band / 2f
         }
     }
     val mW by animateFloatAsState(tW, Motion.flow(), label = "mainW")
@@ -640,7 +702,7 @@ fun IslandRoot(
 
     val canPull = prefs.pull && drip == null && open == null
     val canPullNow by rememberUpdatedState(canPull)
-    val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null) Kind.Battery else null)?.takeIf { it != Kind.Sound && it != Kind.Output })
+    val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null || ringOn) Kind.Battery else null)?.takeIf { it != Kind.Sound && it != Kind.Output })
 
     fun haptic(strong: Boolean) {
         val kind = when {
@@ -756,13 +818,17 @@ fun IslandRoot(
             }
         }
 
+        // ---- The battery round the camera, on the ink (not part of it, so the goo leaves it sharp) ----
+
+        CameraRing(lastBattery, spot.cx, spot.cy, spot.radius, ringOn, if (ringMode) batteryFlash else 0L)
+
         // ---- Content on the ink, clipped to the ink as it moves ----
 
         Crossfade(targetState = mode, modifier = Modifier.fillMaxSize(), animationSpec = tween(220), label = "islandContent") { md ->
             val k = md.kind
             if (k == null && !md.time && !md.battery) return@Crossfade
             val layout = pillLayout(k, md.time, md.battery)
-            val w = if (md.expanded && k != null) cardW else camSlot + layout.side * 2f
+            val w = if (md.expanded && k != null) cardW else camSlot + (layout.side + extra) * 2f
             val h = if (md.expanded && k != null) expandedHeight(k) else band
             val left = centerFor(w) - w / 2f
             Box(Modifier.fillMaxSize()) {
@@ -815,7 +881,7 @@ fun IslandRoot(
                     } else {
                         PillContent(
                             layout = layout,
-                            side = toDp(layout.side),
+                            side = toDp(layout.side + extra),
                             media = lastMedia,
                             battery = lastBattery,
                             height = toDp(band),
@@ -880,7 +946,7 @@ fun IslandRoot(
                         }
                         .pointerInput(budKind) { detectTapGestures { expanded = budKind } },
                 ) {
-                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now, lastAlarm, lastLive, lastSound, lastEventLabel)
+                    BudContent(budKind, lastMedia, lastCall, lastTimer, lastBattery, now, lastAlarm, lastLive, lastSound, lastEventLabel, ringMode)
                 }
             }
         }

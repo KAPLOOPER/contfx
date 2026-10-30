@@ -23,7 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import dev.continuum.fx.island.ui.IslandRoot
+import dev.continuum.fx.island.ui.IslandSurface
 
 /**
  * Two overlay windows, the way Essentials does it: a large window that only draws
@@ -101,7 +101,7 @@ class IslandHost(private val context: Context) {
         val view = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             if (Build.VERSION.SDK_INT >= 35) requestedFrameRate = View.REQUESTED_FRAME_RATE_CATEGORY_HIGH
-            setContent { IslandRoot(spot, outsideTaps, this@IslandHost::onBounds) }
+            setContent { IslandSurface(spot, outsideTaps, this@IslandHost::onBounds) }
             isHapticFeedbackEnabled = true
         }
         val root = FrameLayout(context).apply {

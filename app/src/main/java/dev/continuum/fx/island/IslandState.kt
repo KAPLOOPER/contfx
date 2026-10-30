@@ -185,6 +185,9 @@ object IslandRepository {
     /** When the battery last had something to say: plugged in, running low, or full. */
     val batteryFlash = MutableStateFlow(0L)
 
+    /** When the placement was last changed, so the island shows itself while you fit it. */
+    val placing = MutableStateFlow(0L)
+
     /** True while the overlay is attached by the accessibility service. */
     val hostActive = MutableStateFlow(false)
 
@@ -537,7 +540,31 @@ data class IslandPrefs(
     val sound: Boolean = true,
     /** Headphones, a speaker or the car connecting, for a moment. */
     val headphones: Boolean = true,
+    /** The battery as a ring around the camera, rather than an ink battery in the pill. */
+    val batteryRing: Boolean = true,
+
+    // ---- Placement: fitting the island to the camera, or moving it ----
+
+    /** Left (-) or right (+) of the camera, in dp. */
+    val offsetX: Float = 0f,
+    /** Up (-) or down (+) from the camera, in dp. */
+    val offsetY: Float = 0f,
+    /** Added to the camera's detected radius, in dp, so the ink and the ring hug the lens. */
+    val cameraSize: Float = 0f,
+    /** Everything in the island, larger or smaller together. */
+    val scale: Float = 1f,
+    /** How tall the pill is, against its usual height. */
+    val height: Float = 1f,
+    /** Extra room on each side of the camera, in dp. */
+    val width: Float = 0f,
 ) {
+    /** Whether the island has been moved or resized from where it fits the camera. */
+    val placed: Boolean
+        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f || height != 1f || width != 0f
+
+    /** These settings with the placement put back. */
+    fun unplaced() = copy(offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f, height = 1f, width = 0f)
+
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
 
@@ -578,8 +605,28 @@ object IslandSettings {
             live = p.getBoolean("live", true),
             sound = p.getBoolean("sound", true),
             headphones = p.getBoolean("headphones", true),
+            batteryRing = p.getBoolean("batteryRing", true),
+            offsetX = p.getFloat("offsetX", 0f).coerceIn(PLACE_X_MIN, PLACE_X_MAX),
+            offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
+            cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),
+            scale = p.getFloat("scale", 1f).coerceIn(SCALE_MIN, SCALE_MAX),
+            height = p.getFloat("height", 1f).coerceIn(HEIGHT_MIN, HEIGHT_MAX),
+            width = p.getFloat("width", 0f).coerceIn(WIDTH_MIN, WIDTH_MAX),
         )
     }
+
+    const val PLACE_X_MIN = -60f
+    const val PLACE_X_MAX = 60f
+    const val PLACE_Y_MIN = -12f
+    const val PLACE_Y_MAX = 30f
+    const val CAMERA_MIN = -6f
+    const val CAMERA_MAX = 8f
+    const val SCALE_MIN = 0.85f
+    const val SCALE_MAX = 1.25f
+    const val HEIGHT_MIN = 0.8f
+    const val HEIGHT_MAX = 1.4f
+    const val WIDTH_MIN = 0f
+    const val WIDTH_MAX = 40f
 
     fun update(transform: (IslandPrefs) -> IslandPrefs) {
         val next = transform(_state.value)
@@ -602,6 +649,13 @@ object IslandSettings {
             ?.putBoolean("live", next.live)
             ?.putBoolean("sound", next.sound)
             ?.putBoolean("headphones", next.headphones)
+            ?.putBoolean("batteryRing", next.batteryRing)
+            ?.putFloat("offsetX", next.offsetX)
+            ?.putFloat("offsetY", next.offsetY)
+            ?.putFloat("cameraSize", next.cameraSize)
+            ?.putFloat("scale", next.scale)
+            ?.putFloat("height", next.height)
+            ?.putFloat("width", next.width)
             ?.apply()
     }
 }

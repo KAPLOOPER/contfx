@@ -1,6 +1,7 @@
 package dev.continuum.fx.ui
 
 import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -25,8 +26,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.island.CameraLocator
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.island.IslandRepository
+import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
@@ -37,6 +40,7 @@ import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Txt
+import kotlin.math.abs
 
 private fun islandOn(state: UiState) = state.island.enabled && state.privileges.islandReady
 
@@ -180,10 +184,28 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     }
                 }
             }
-            ToggleRow("Battery", "An ink battery on the far right with your charge inside it. Tap the island for details.", prefs.alwaysBattery) {
+            ToggleRow(
+                "Battery",
+                if (prefs.batteryRing) "Your charge as a ring round the camera, so it takes no room: green while charging, red when low. Tap the island for details."
+                else "An ink battery on the far right with your charge inside it. Tap the island for details.",
+                prefs.alwaysBattery,
+            ) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
             }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Chip("Ring round the camera", prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = true) } }, on = Surface.Card)
+                Chip("Ink battery", !prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = false) } }, on = Surface.Card)
+            }
         }
+        Gap(28.dp)
+
+        PlacementSection(prefs, actions)
         Gap(28.dp)
 
         Txt("How it moves", 21.sp, p.text, bold = true)
@@ -196,6 +218,100 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 "leans away on a neck that thins and snaps; swipe up to send it back. Nothing pops in or out: ink only separates and merges.",
             15.sp, p.sub,
         )
+    }
+}
+
+/**
+ * Where the island sits and how big it is. It starts fitted to the camera; move it, fit it to the
+ * lens, or resize it, and it shows itself as you go so you can line it up.
+ */
+@Composable
+private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    val detected = remember {
+        try {
+            CameraLocator.locate(context, context.getSystemService(WindowManager::class.java)).detected
+        } catch (_: Exception) {
+            true
+        }
+    }
+    fun place(transform: (IslandPrefs) -> IslandPrefs) {
+        actions.updateIsland(transform)
+        IslandRepository.placing.value = System.currentTimeMillis()
+    }
+    /** A slider's 0..1 into [lo]..[hi], in [step]s, catching on [rest] when close to it. */
+    fun value(t: Float, lo: Float, hi: Float, step: Float, rest: Float): Float {
+        val v = lo + t * (hi - lo)
+        if (abs(v - rest) < (hi - lo) * 0.025f) return rest
+        return (Math.round(v / step) * step).coerceIn(lo, hi)
+    }
+    fun frac(v: Float, lo: Float, hi: Float) = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
+    fun dpText(v: Float) = if (v % 1f == 0f) "${v.toInt()} dp" else "$v dp"
+    fun pct(v: Float) = "${Math.round(v * 100)}%"
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Txt("Placement", 21.sp, p.text, bold = true, modifier = Modifier.weight(1f))
+        if (prefs.placed) PillButton("Reset", { place { it.unplaced() } }, height = 36.dp)
+    }
+    Gap(2.dp)
+    Txt(
+        if (detected) "The island starts fitted to your camera. Move it, fit it to the lens or resize it here; it shows itself while you do."
+        else "No camera cutout was found, so the island sits at the top centre. Move it over your camera here; it shows itself while you do.",
+        15.sp, p.sub,
+    )
+    Gap(10.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(p.surface)
+            .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
+    ) {
+        val y = prefs.offsetY
+        SliderField(
+            "Up and down",
+            when {
+                y == 0f -> "On the camera"
+                y > 0f -> "${dpText(y)} lower"
+                else -> "${dpText(-y)} higher"
+            },
+            frac(y, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX),
+        ) { t -> place { it.copy(offsetY = value(t, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX, 0.5f, 0f)) } }
+        val x = prefs.offsetX
+        SliderField(
+            "Left and right",
+            when {
+                x == 0f -> "On the camera"
+                x > 0f -> "${dpText(x)} right"
+                else -> "${dpText(-x)} left"
+            },
+            frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX),
+        ) { t -> place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) } }
+        val c = prefs.cameraSize
+        SliderField(
+            "Camera size",
+            when {
+                c == 0f -> "As found"
+                c > 0f -> "+${dpText(c)}"
+                else -> "−${dpText(-c)}"
+            },
+            frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX),
+        ) { t -> place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) } }
+        Txt("Grow or shrink this until the ink, and the battery ring, hug your lens.", 13.sp, p.sub)
+        Gap(8.dp)
+        SliderField("Size", pct(prefs.scale), frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX)) { t ->
+            place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
+        }
+        SliderField("Height", pct(prefs.height), frac(prefs.height, IslandSettings.HEIGHT_MIN, IslandSettings.HEIGHT_MAX)) { t ->
+            place { it.copy(height = value(t, IslandSettings.HEIGHT_MIN, IslandSettings.HEIGHT_MAX, 0.01f, 1f)) }
+        }
+        SliderField(
+            "Width",
+            if (prefs.width == 0f) "As wide as it needs" else "+${dpText(prefs.width)} each side",
+            frac(prefs.width, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX),
+        ) { t -> place { it.copy(width = value(t, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX, 1f, 0f)) } }
+        Txt("Size scales everything together; height and width shape the pill around what's in it.", 13.sp, p.sub)
     }
 }
 

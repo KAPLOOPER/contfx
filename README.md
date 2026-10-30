@@ -49,8 +49,10 @@ The island is one piece of ink that starts as your camera. It follows the Contin
 - **Downloads and live updates:** progress rings for downloads, plus directions, deliveries and rides while they're happening.
 - **Sound mode and headphones** speak up for a moment: ring, vibrate or silent as you switch, and headphones, speakers or the car as they connect.
 - **Pull a drop:** hold the island (or the bare camera) and drag down. A drop stretches out on a neck; let go early and it springs back in, pull past the snap and it tears free as a card of your recent notifications. Swipe it sideways for the next one, tap to open, swipe up to send it back.
-- **Always on:** switch on *Time* and *Battery* to keep them in the island all the time, beside whatever else is live. The time can sit left of the artwork, right of it, or around the camera, with the hours on one side, the minutes on the other and the camera as the colon. The battery is an ink capsule on the far right with your charge inside it. With nothing playing, the island rests as a slim pill of time and battery (or time and date).
-- **Charging and battery:** plugging in, by cable or wireless, makes the island show your charge in a liquid battery that ripples as it fills. It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
+- **Always on:** switch on *Time* and *Battery* to keep them in the island all the time, beside whatever else is live. The time can sit left of the artwork, right of it, or around the camera, with the hours on one side, the minutes on the other and the camera as the colon. The battery is a ring round the camera that fills with your charge (green while charging, with a glint running along it; red when low), so it takes no room in the island at all; with nothing else on, the ink is just big enough to hold it. Prefer the ink capsule on the far right? It's still there. With nothing playing, the island rests as a slim pill of the time and date.
+- **Charging and battery:** plugging in, by cable or wireless, sweeps the ring up from empty to your charge, with the percentage beside the camera (or shows it in a liquid battery that ripples as it fills). It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
+
+- **Placement:** the island starts fitted to the camera. Move it up, down, left or right, fit it to your lens with *Camera size* (so the ink and the ring hug it), scale everything with *Size*, and shape the pill with *Height* and *Width*. It shows itself while you adjust it, and *Reset* puts it back on the camera.
 
 On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur. With the screen off the island rests completely and draws nothing.
 
@@ -173,7 +175,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [ ] Per-app exclusions
 - [x] Liquid ink island: music, calls, timers and notifications
 - [x] Island: alarms, calendar, downloads and directions, charging, sound mode, headphones
-- [ ] Island: per-device camera fine-tuning
+- [x] Island: placement and camera fitting, battery ring
 - [x] In-app updates that install over the top
 - [x] The Continuum keyboard
 - [ ] Liquid-ink transitions for the remaining sheets

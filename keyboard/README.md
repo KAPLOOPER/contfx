@@ -13,6 +13,7 @@ it shares no code with other keyboards.
 - `ui/Panels.kt` — clipboard and emoji, in Compose; `ui/EditPanel.kt` — the edit panel (cursor, selection, clipboard, undo).
 - `ContinuumIME.kt` — the input method: the word in progress, corrections and undo, spacing, swipes, panels, autofill.
 - `scan/` — Scan text (CameraX and ML Kit, on the phone).
+- `Codes.kt` — one-time codes, read from Continuum FX through a provider only apps signed by the same key can open.
 - `settings/` — settings and setup.
 - `tools/` — scripts that build the word and emoji data in `src/main/assets/`.
 

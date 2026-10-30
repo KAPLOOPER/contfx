@@ -244,9 +244,16 @@ class IslandNotificationListener : NotificationListenerService() {
         if (!changed && recent.containsKey(sbn.key)) return
         seenNotes[sbn.key] = signature
 
+        // A one-time code: in the newest message of a conversation, or the notification's text.
+        val code = if (prefs.codes) OneTimeCode.find(title, newestMessage(extras) ?: text) else null
+        val app = appName(sbn.packageName)
+        if (code != null && !initial && changed && System.currentTimeMillis() - sbn.postTime < OneTimeCodes.FRESH_MS) {
+            OneTimeCodes.offer(this, code, app, sbn.postTime)
+        }
+
         val info = NoteInfo(
             key = sbn.key,
-            appName = appName(sbn.packageName),
+            appName = app,
             title = title,
             text = text,
             largeIcon = n.getLargeIcon()?.let { iconBitmap(it) },
@@ -255,6 +262,7 @@ class IslandNotificationListener : NotificationListenerService() {
             postedAt = sbn.postTime,
             actions = actionsOf(n),
             clearable = sbn.isClearable,
+            code = code,
         )
         recent[sbn.key] = info
         while (recent.size > IslandRepository.MAX_RECENT * 2) {
@@ -265,6 +273,16 @@ class IslandNotificationListener : NotificationListenerService() {
         if (initial || !changed || importance < NotificationManager.IMPORTANCE_DEFAULT) return
         if (System.currentTimeMillis() - sbn.postTime > 15_000) return
         IslandRepository.note.value = info
+    }
+
+    /** In a conversation, the text of its newest message. */
+    private fun newestMessage(extras: android.os.Bundle): String? = try {
+        // Each message is a bundle with its text under "text", oldest first.
+        @Suppress("DEPRECATION")
+        val arr = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+        (arr?.lastOrNull() as? android.os.Bundle)?.getCharSequence("text")?.toString()?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
     }
 
     private fun publishRecent() {

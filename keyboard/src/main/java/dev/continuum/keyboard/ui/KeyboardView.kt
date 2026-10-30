@@ -44,6 +44,9 @@ sealed class Strip {
     /** Something just copied, ready to paste. */
     data class Paste(val preview: String, val image: Boolean) : Strip()
 
+    /** A one-time code that just arrived (from Continuum FX), ready to type. */
+    data class Code(val code: String, val app: String) : Strip()
+
     /** Left clear for autofill chips. */
     object Blank : Strip()
 }
@@ -79,6 +82,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         /** The round button at the start of the strip: tools, or back to words. */
         fun onHub()
         fun onPaste()
+        fun onCode()
         fun onEmoji()
         fun onLayout(layout: Layout)
         fun onGeometry()
@@ -260,6 +264,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             invalidate()
         }
     }
+
+    /** Whether the strip is offering a one-time code right now. */
+    val showingCode: Boolean get() = strip is Strip.Code
 
     /** Whether the strip is showing the tools right now (whatever was asked for). */
     val showingTools: Boolean get() = strip is Strip.Tools
@@ -635,6 +642,38 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val shown = pasteLabel(if (s.image) "Paste image" else s.preview.replace('\n', ' ').trim(), maxW)
                 val fm = text.fontMetrics
                 canvas.drawText(shown, pasteRect.left + 44f * u, pasteRect.centerY() - (fm.ascent + fm.descent) / 2f, text)
+                text.textAlign = Paint.Align.CENTER
+                canvas.restore()
+            }
+            is Strip.Code -> {
+                // Bright, so it's seen: a code is only good for a few minutes.
+                val pr = stripPress[STRIP_CODE]?.value ?: 0f
+                val sc = (1f - 0.05f * pr) * (0.9f + 0.1f * a)
+                canvas.save()
+                canvas.scale(sc, sc, pasteRect.centerX(), pasteRect.centerY())
+                fill.color = p.bright
+                fill.alpha = (255 * a).toInt()
+                canvas.drawRoundRect(pasteRect, pasteRect.height() / 2f, pasteRect.height() / 2f, fill)
+                icon.color = p.onBright
+                icon.alpha = (255 * a).toInt()
+                Icons.draw(canvas, Icons.KEY, pasteRect.left + 26f * u, pasteRect.centerY(), 20f * v, icon)
+                text.textAlign = Paint.Align.LEFT
+                text.typeface = bold
+                text.textSize = 18f * v
+                text.color = p.onBright
+                text.alpha = (255 * a).toInt()
+                val shown = if (s.code.length == 6) s.code.substring(0, 3) + "\u2009" + s.code.substring(3) else s.code
+                val x0 = pasteRect.left + 44f * u
+                val fm = text.fontMetrics
+                // The code and where it's from share a baseline.
+                val base = pasteRect.centerY() - (fm.ascent + fm.descent) / 2f
+                canvas.drawText(shown, x0, base, text)
+                val w = text.measureText(shown)
+                text.typeface = regular
+                text.textSize = 14f * v
+                text.alpha = (170 * a).toInt()
+                val from = pasteLabel("from ${s.app}", pasteRect.right - (x0 + w + 10f * u) - 16f * u)
+                canvas.drawText(from, x0 + w + 10f * u, base, text)
                 text.textAlign = Paint.Align.CENTER
                 canvas.restore()
             }
@@ -1250,6 +1289,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 -1
             }
             is Strip.Paste -> STRIP_PASTE
+            is Strip.Code -> STRIP_CODE
             else -> -1
         }
     }
@@ -1266,6 +1306,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             target in 0..2 -> listener.onSuggestion(target)
             target == STRIP_HUB -> listener.onHub()
             target == STRIP_PASTE -> listener.onPaste()
+            target == STRIP_CODE -> listener.onCode()
             target >= STRIP_TOOL -> listener.onTool(Tool.values()[target - STRIP_TOOL])
         }
     }
@@ -1290,6 +1331,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val LONG_PRESS = 360L
         private const val STRIP_HUB = 10
         private const val STRIP_PASTE = 11
+        private const val STRIP_CODE = 12
         private const val STRIP_TOOL = 20
         /** The tools in the strip, in order after the hub. */
         private val STRIP_TOOLS = listOf(Tool.Clipboard, Tool.Emoji, Tool.Edit, Tool.Scan, Tool.Settings)

@@ -25,6 +25,7 @@ object Icons {
     const val CHECK = "M5 12l5 5 9-10"
     const val PIN = "M9 4h6l-1 6 3 3v1H7v-1l3-3z M12 14v6"
     const val TRASH = "M5 7h14 M10 7V5h4v2 M7 7l1 12h8l1-12"
+    const val KEY = "M7.5 9a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z M11 12.5h9 M17 12.5v3 M20 12.5v2"
     const val PASTE = "M9 4h6v3H9z M8 5.5H6.5A1.5 1.5 0 0 0 5 7v11.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H16 M9 13h6"
     const val LEFT = "M15 6l-6 6 6 6"
     const val RIGHT = "M9 6l6 6-6 6"

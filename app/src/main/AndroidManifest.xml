@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Lets Continuum Keyboard (signed with the same key, and only it) read a fresh one-time code. -->
+    <permission
+        android:name="dev.continuum.fx.permission.ONE_TIME_CODES"
+        android:label="Read one-time codes from Continuum FX"
+        android:protectionLevel="signature" />
+
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -201,6 +207,14 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- The latest one-time code, for Continuum Keyboard's strip. -->
+        <provider
+            android:name=".island.CodesProvider"
+            android:authorities="dev.continuum.fx.codes"
+            android:exported="true"
+            android:readPermission="dev.continuum.fx.permission.ONE_TIME_CODES"
+            android:writePermission="dev.continuum.fx.permission.ONE_TIME_CODES" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

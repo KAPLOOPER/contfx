@@ -1,5 +1,7 @@
 package dev.continuum.keyboard.settings
 
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -262,6 +264,11 @@ class SettingsActivity : ComponentActivity() {
                             prefs.passwordChips,
                         ) { prefs.passwordChips = it }
                     }
+                    Toggle(
+                        g, "One-time codes",
+                        "Sign-in codes from your messages and emails, offered in the strip as they arrive. They come from Continuum FX on this phone; the keyboard still never goes online.",
+                        prefs.codes,
+                    ) { prefs.codes = it }
                     val manager = remember(tick) { autofillServiceName() }
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
                         Txt("Password manager", 17.sp, g.text, bold = true)
@@ -405,10 +412,24 @@ private fun Step(g: Ground, number: Int, done: Boolean, title: String, body: Str
 @Composable
 private fun Toggle(g: Ground, title: String, body: String?, initial: Boolean, onChange: (Boolean) -> Unit) {
     var on by remember { mutableStateOf(initial) }
+    val view = LocalView.current
     Row(
         Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) { detectTapGestures { on = !on; onChange(on) } }
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    on = !on
+                    // The same feel as Continuum FX's switches: ink filling, or draining.
+                    view.performHapticFeedback(
+                        when {
+                            Build.VERSION.SDK_INT >= 34 -> if (on) HapticFeedbackConstants.TOGGLE_ON else HapticFeedbackConstants.TOGGLE_OFF
+                            on -> HapticFeedbackConstants.VIRTUAL_KEY
+                            else -> HapticFeedbackConstants.CLOCK_TICK
+                        },
+                    )
+                    onChange(on)
+                }
+            }
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -163,6 +163,12 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     private var selEnd = -1
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipboardChanged() }
+
+    // ---- One-time codes from Continuum FX. ----
+    private var codeOffer: Codes.Offer? = null
+    /** Codes already typed or set aside, so they aren't offered again. */
+    private val usedCodes = HashSet<String>()
+    private var stopCodeWatch: (() -> Unit)? = null
     private var stopClipListening: (() -> Unit)? = null
 
     // ================================================================ Lifecycle
@@ -178,6 +184,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         clips = ClipboardHistory.get(this)
         emojiUsage = EmojiUsage(this)
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(clipListener)
+        stopCodeWatch = Codes.watch(this) { readCode(refresh = true) }
         stopClipListening = clips.listen {
             panelState.clips = clips.clips
             // A copy is kept off the main thread: once it's in, the paste chip can offer it.
@@ -189,6 +196,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     override fun onDestroy() {
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.removePrimaryClipChangedListener(clipListener)
         stopClipListening?.invoke()
+        stopCodeWatch?.invoke()
         engine.save()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
@@ -301,6 +309,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         updateEnter()
         refreshStrip()
         if (!restarting) keyboard?.popIn()
+        readCode(refresh = true)
         // An offer that arrived before the keyboard was on screen.
         if (Build.VERSION.SDK_INT >= 30) pendingInline?.let { r ->
             pendingInline = null
@@ -770,6 +779,12 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             return
         }
         val kv = keyboard ?: return
+        // The hub on a code: set the code aside, and the strip goes back to what it was.
+        if (kv.showingCode) {
+            codeOffer?.let { usedCodes += it.code }
+            refreshStrip()
+            return
+        }
         // Toggle what's actually on screen: the tools can be showing without being chosen (no
         // words to offer), and going by the choice alone made the hub seem to do nothing.
         val showingTools = kv.showingTools
@@ -789,6 +804,50 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             Tool.Settings -> openSettings()
             Tool.Hide -> if (panel != null) closePanel(animate = true) else requestHideSelf(0)
         }
+    }
+
+    /** Looks for a fresh code from Continuum FX, off the main thread, and shows it if it fits. */
+    private fun readCode(refresh: Boolean) {
+        if (!prefs.codes) {
+            codeOffer = null
+            return
+        }
+        background.execute {
+            val offer = Codes.read(this)
+            main.post {
+                if (offer != codeOffer) {
+                    codeOffer = offer
+                    if (refresh && composing.isEmpty() && panel == null) refreshStrip()
+                }
+            }
+        }
+    }
+
+    /**
+     * The code to offer here, if any: fresh, not used yet, and into an empty field. In the first
+     * minute and a half it's offered anywhere; after that only where a code is plainly wanted (a
+     * number field, or one whose hint asks for a code).
+     */
+    private fun offeredCode(): Codes.Offer? {
+        val o = codeOffer ?: return null
+        if (!prefs.codes || o.code in usedCodes) return null
+        val age = System.currentTimeMillis() - o.at
+        if (age > Codes.FRESH_MS) return null
+        if (composing.isNotEmpty() || !fieldEmpty()) return null
+        if (age < 90_000) return o
+        val info = currentInputEditorInfo ?: return null
+        val hint = (info.hintText?.toString().orEmpty() + " " + info.fieldName.orEmpty()).lowercase()
+        val wanted = mode == FieldMode.Number ||
+            listOf("code", "otp", "pin", "verif", "one-time", "2fa", "passcode", "token").any { it in hint }
+        return o.takeIf { wanted }
+    }
+
+    override fun onCode() {
+        val o = codeOffer ?: return
+        val ic = currentInputConnection ?: return
+        usedCodes += o.code
+        ic.commitText(o.code, 1)
+        afterEdit()
     }
 
     override fun onPaste() {
@@ -921,6 +980,12 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         if (autofillShowing) {
             kv.setStrip(Strip.Blank)
             return
+        }
+        if (stripChoice == StripChoice.Auto && panel == null) {
+            offeredCode()?.let { o ->
+                kv.setStrip(Strip.Code(o.code, o.app))
+                return
+            }
         }
         if (stripIsTools()) {
             engine.cancel(EngineHost.SUGGEST)

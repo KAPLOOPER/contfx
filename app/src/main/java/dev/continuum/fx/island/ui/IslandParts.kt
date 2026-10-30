@@ -737,13 +737,56 @@ internal fun NoteDrip(n: NoteInfo) {
         ) {
             NoteIcon(n, 44.dp)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
-                if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
-                if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+            val code = n.code
+            if (code != null) {
+                // A one-time code: the code itself, large, and a way to copy it.
+                Column(Modifier.weight(1f)) {
+                    Txt("${n.appName} · code", 11.sp, InkColors.sub, maxLines = 1)
+                    Txt(spacedCode(code), 26.sp, InkColors.on, bold = true, maxLines = 1)
+                }
+                Spacer(Modifier.width(8.dp))
+                CopyCode(code)
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
+                    if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
+                    if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
+                }
             }
         }
         if (n.actions.isNotEmpty()) NoteActions(n, Modifier.padding(start = 12.dp, end = 12.dp))
+    }
+}
+
+/** A code split in two for reading ("482 913"); copied without the space. */
+internal fun spacedCode(code: String): String = when {
+    code.length == 6 -> code.substring(0, 3) + "\u2009" + code.substring(3)
+    code.length == 8 -> code.substring(0, 4) + "\u2009" + code.substring(4)
+    else -> code
+}
+
+/** Copy, then Copied, in green, for a moment. */
+@Composable
+private fun CopyCode(code: String) {
+    val context = LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    var copied by remember(code) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2_000)
+            copied = false
+        }
+    }
+    InkPill(
+        if (copied) "Copied" else "Copy",
+        if (copied) InkColors.live else InkColors.on,
+        if (copied) InkColors.onLive else InkColors.ink,
+        icon = if (copied) R.drawable.ic_check else R.drawable.ic_copy,
+    ) {
+        if (dev.continuum.fx.island.OneTimeCodes.copy(context, code)) {
+            copied = true
+            InkFeel.land(view)
+        }
     }
 }
 

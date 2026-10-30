@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -49,6 +50,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.island.ui.Goo
+import dev.continuum.fx.island.ui.InkFeel
 import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.ui.theme.LocalPalette
 import kotlin.math.abs
@@ -108,6 +110,7 @@ internal fun PivotHeader(
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
+    val view = LocalView.current
     val measurer = rememberTextMeasurer()
     val style = remember { TextStyle(fontFamily = Libron, fontSize = 42.sp, fontWeight = FontWeight.Normal) }
     val widths = remember(titles, density) { titles.map { measurer.measure(it, style).size.width.toFloat() } }
@@ -164,7 +167,11 @@ internal fun PivotHeader(
                         Modifier
                             .offset { IntOffset(xs.roundToInt(), 0) }
                             .semantics { selected = s == pivot.contentSlot }
-                            .clickable(interactionSource = source, indication = null, role = Role.Tab) { onSelect(s) },
+                            .clickable(interactionSource = source, indication = null, role = Role.Tab) {
+                                // A drop squeezes out of the line for the page you chose.
+                                if (s != pivot.contentSlot) InkFeel.split(view)
+                                onSelect(s)
+                            },
                     ) {
                         BasicText(titles[pivot.indexOf(s)], style = style.copy(color = color), maxLines = 1, softWrap = false)
                     }

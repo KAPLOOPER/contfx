@@ -1,7 +1,6 @@
 package dev.continuum.fx.island.ui
 
 import android.os.Build
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -393,7 +392,8 @@ fun IslandRoot(
             return@LaunchedEffect
         }
         peek = n
-        delay(if (n.actions.isEmpty()) 5_000 else 8_000)
+        // A code stays out long enough to copy, or to type it in by eye.
+        delay(if (n.code != null) 15_000 else if (n.actions.isEmpty()) 5_000 else 8_000)
         peek = null
         delay(700)
         if (IslandRepository.note.value?.key == n.key) IslandRepository.note.value = null
@@ -704,14 +704,8 @@ fun IslandRoot(
     val canPullNow by rememberUpdatedState(canPull)
     val tapTarget by rememberUpdatedState((primary ?: if (ambientBattery != null || ringOn) Kind.Battery else null)?.takeIf { it != Kind.Sound && it != Kind.Output })
 
-    fun haptic(strong: Boolean) {
-        val kind = when {
-            strong && Build.VERSION.SDK_INT >= 30 -> HapticFeedbackConstants.CONFIRM
-            strong -> HapticFeedbackConstants.VIRTUAL_KEY
-            else -> HapticFeedbackConstants.CLOCK_TICK
-        }
-        view.performHapticFeedback(kind)
-    }
+    // Something done (cleared, opened) lands; a hold that's ready to pull ticks.
+    fun haptic(strong: Boolean) = if (strong) InkFeel.land(view) else InkFeel.detent(view)
 
     fun startPull() {
         dripFromPull = true
@@ -733,7 +727,7 @@ fun IslandRoot(
         val s = dropSize(mainRect())
         val q = pullPx / (gap + s)
         dripLatch.joined = false
-        haptic(strong = true)
+        InkFeel.split(view)
         pullIndex = 0
         pulledOpen = true
         scope.launch {
@@ -753,6 +747,8 @@ fun IslandRoot(
 
     fun releasePull() {
         if (pullPx < 0f || pulledOpen) return
+        // Let go before it tore: it springs back into the island, and that's felt.
+        if (pullPx > px(6f)) InkFeel.merge(view)
         val q = pullPx / (gap + dropSize(mainRect()))
         scope.launch {
             dripP.snapTo(q)
@@ -815,7 +811,11 @@ fun IslandRoot(
                 } else {
                     // Leaning away: the neck thins as the drop goes, and once it snaps it stays apart.
                     val side = (1f - abs(lean) / px(90f)).coerceIn(0f, 1f)
-                    if (side <= 0f) sideLatch.joined = false
+                    if (side <= 0f) {
+                        // Your finger pulled it free: felt as the neck lets go.
+                        if (sideLatch.joined) InkFeel.split(view)
+                        sideLatch.joined = false
+                    }
                     if (sideLatch.joined) {
                         val gapNow = (d.top - m.bottom).coerceAtLeast(0f)
                         val rest = (1f - gapNow / reach).coerceIn(0f, 1f).pow(1.5f)

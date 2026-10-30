@@ -1,10 +1,8 @@
 package dev.continuum.fx.ui
 
 import android.os.Build
-import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -63,6 +61,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -86,6 +85,7 @@ import dev.continuum.fx.dsp.EqLimits
 import dev.continuum.fx.dsp.EqResponse
 import dev.continuum.fx.dsp.FilterType
 import dev.continuum.fx.dsp.Polarity
+import dev.continuum.fx.island.ui.InkFeel
 import dev.continuum.fx.island.IslandPrefs
 import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
@@ -99,6 +99,10 @@ import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
+import dev.continuum.fx.ui.components.Touch
+import dev.continuum.fx.ui.components.notes
+import dev.continuum.fx.ui.components.rememberSpread
+import dev.continuum.fx.ui.components.spreadInk
 import dev.continuum.fx.ui.components.squash
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
@@ -184,6 +188,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     val p = LocalPalette.current
     BackHandler(enabled = state.setupOpen) { actions.setSetupOpen(false) }
 
+    val view = LocalView.current
     val sections = Section.entries
     val pivot = remember { PivotState(state.section.ordinal, sections.size) }
     val scope = rememberCoroutineScope()
@@ -273,7 +278,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             change.consume()
                             val width = size.width.toFloat().coerceAtLeast(1f)
                             val from = pivot.contentSlot.toFloat()
-                            scope.launch { pivot.slot.snapTo((pivot.slot.value - dx / width).coerceIn(from - 1f, from + 1f)) }
+                            val before = pivot.slot.value
+                            val next = (before - dx / width).coerceIn(from - 1f, from + 1f)
+                            // Halfway across, the drop hands over to the next title: felt as a detent.
+                            if (before.roundToInt() != next.roundToInt()) InkFeel.detent(view)
+                            scope.launch { pivot.slot.snapTo(next) }
                         }
                     },
             ) {
@@ -659,33 +668,38 @@ internal fun ComparePill() {
     val view = LocalView.current
     val comparing by EngineStatus.comparing.collectAsState()
     DisposableEffect(Unit) { onDispose { EngineStatus.comparing.value = false } }
-    val bg by animateColorAsState(if (comparing) p.primary else p.surface, Motion.flow(), label = "compareBg")
-    val fg by animateColorAsState(if (comparing) p.onPrimary else p.text, Motion.flow(), label = "compareFg")
+    val touch = remember { Touch() }
+    // Ink spreads from your finger for as long as you hold, and drains when you let go.
+    val spread = rememberSpread(comparing, touch, feel = false)
     Box(
         Modifier
             .squash(source, pill = true)
             .height(38.dp)
             .clip(RoundedCornerShape(50))
-            .background(bg)
+            .background(p.surface)
+            .notes(touch)
             .pointerInput(Unit) {
                 detectTapGestures(onPress = { pos ->
                     val press = PressInteraction.Press(pos)
                     source.emit(press)
-                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    InkFeel.toggle(view, true)
                     EngineStatus.comparing.value = true
                     val lifted = tryAwaitRelease()
                     EngineStatus.comparing.value = false
+                    InkFeel.toggle(view, false)
                     source.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press))
                 })
             }
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = "Hold to hear without the EQ"
-            }
-            .padding(horizontal = 16.dp),
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Txt("Hold to compare", 15.sp, fg, maxLines = 1)
+        Txt("Hold to compare", 15.sp, p.text, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
+        Box(Modifier.matchParentSize().clearAndSetSemantics {}.spreadInk(spread).background(p.primary), contentAlignment = Alignment.Center) {
+            Txt("Hold to compare", 15.sp, p.onPrimary, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
+        }
     }
 }
 

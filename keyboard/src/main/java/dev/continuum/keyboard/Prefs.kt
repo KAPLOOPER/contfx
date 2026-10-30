@@ -36,6 +36,9 @@ class Prefs(context: Context) {
     /** Logins from your password manager as chips in the strip (Android 11 and later). */
     var passwordChips by bool("password_chips", true)
 
+    /** One-time codes from Continuum FX, offered in the strip. */
+    var codes by bool("codes", true)
+
     val clipboardKeepMillis: Long
         get() = when (clipboardKeep) {
             "1h" -> HOUR

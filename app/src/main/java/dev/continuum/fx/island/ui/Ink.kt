@@ -3,6 +3,9 @@ package dev.continuum.fx.island.ui
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Shader
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -46,6 +49,45 @@ internal object Goo {
         val sharpen = android.graphics.RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(threshold))
         return android.graphics.RenderEffect.createChainEffect(sharpen, blur).asComposeRenderEffect()
     }
+}
+
+/**
+ * The feel of ink: one small vocabulary of haptics, used wherever your finger moves ink. A neck
+ * letting go is a crisp tick, pieces coming together a softer one, a drop landing (a code
+ * copied) a firm confirm, and switches click on and off. Ink that moves by itself (a
+ * notification dripping in) stays silent: only what you do is felt. Android's touch-feedback
+ * setting is respected throughout.
+ */
+internal object InkFeel {
+    private var last = 0L
+
+    private fun feel(view: View, modern: Int, fallback: Int, sdk: Int) {
+        val now = android.os.SystemClock.uptimeMillis()
+        // Never a buzz: a burst of changes in one moment is felt once.
+        if (now - last < 45) return
+        last = now
+        view.performHapticFeedback(if (Build.VERSION.SDK_INT >= sdk) modern else fallback)
+    }
+
+    /** A neck lets go: a drop separates. */
+    fun split(view: View) = feel(view, HapticFeedbackConstants.SEGMENT_TICK, HapticFeedbackConstants.CLOCK_TICK, 34)
+
+    /** Ink comes back together. */
+    fun merge(view: View) = feel(view, HapticFeedbackConstants.GESTURE_THRESHOLD_DEACTIVATE, HapticFeedbackConstants.CLOCK_TICK, 34)
+
+    /** A step passed: a page handed over mid-swipe. */
+    fun detent(view: View) = feel(view, HapticFeedbackConstants.SEGMENT_FREQUENT_TICK, HapticFeedbackConstants.CLOCK_TICK, 34)
+
+    /** Something done: a drop landing where you sent it. */
+    fun land(view: View) = feel(view, HapticFeedbackConstants.CONFIRM, HapticFeedbackConstants.VIRTUAL_KEY, 30)
+
+    /** A switch or chip filling with ink, or draining. */
+    fun toggle(view: View, on: Boolean) = feel(
+        view,
+        if (on) HapticFeedbackConstants.TOGGLE_ON else HapticFeedbackConstants.TOGGLE_OFF,
+        if (on) HapticFeedbackConstants.VIRTUAL_KEY else HapticFeedbackConstants.CLOCK_TICK,
+        34,
+    )
 }
 
 /**

@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
+import dev.continuum.fx.island.ui.InkFeel
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -82,6 +84,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Call", { IslandRepository.demo("call") }, icon = R.drawable.ic_call, height = 38.dp)
             PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
             PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
+            PillButton("Code", { IslandRepository.demo("code") }, icon = R.drawable.ic_copy, height = 38.dp)
             PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm, height = 38.dp)
             PillButton("Event", { IslandRepository.demo("event") }, icon = R.drawable.ic_event, height = 38.dp)
             PillButton("Download", { IslandRepository.demo("download") }, height = 38.dp)
@@ -109,6 +112,13 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 prefs.notifications,
             ) {
                 actions.updateIsland { it.copy(notifications = !it.notifications) }
+            }
+            ToggleRow(
+                "One-time codes",
+                "Sign-in codes from messages and emails drip down large, with Copy, and Continuum Keyboard offers them in its strip. Kept for five minutes, in memory only.",
+                prefs.codes,
+            ) {
+                actions.updateIsland { it.copy(codes = !it.codes) }
             }
             ToggleRow("Alarms", "Your next alarm, and alarms and timers as they ring, with Snooze and Stop.", prefs.alarms) {
                 actions.updateIsland { it.copy(alarms = !it.alarms) }
@@ -365,10 +375,14 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
 internal fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () -> Unit) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
+    val view = LocalView.current
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(interactionSource = source, indication = null, role = Role.Switch, onClick = onToggle)
+            .clickable(interactionSource = source, indication = null, role = Role.Switch) {
+                InkFeel.toggle(view, !on)
+                onToggle()
+            }
             .padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

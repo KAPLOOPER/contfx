@@ -90,6 +90,8 @@ data class NoteInfo(
     val actions: List<NoteAction> = emptyList(),
     /** Whether swiping can clear it from the shade. */
     val clearable: Boolean = true,
+    /** A one-time code in it, ready to copy. */
+    val code: String? = null,
     val demo: Boolean = false,
 )
 
@@ -453,6 +455,15 @@ object IslandRepository {
                 open = null, actions = listOf(IslandAction("+1:00", null), IslandAction("Cancel", null)),
                 appName = "Clock", demo = true,
             )
+            "code" -> {
+                val n = NoteInfo(
+                    key = "demo-code-$now", appName = "Messages", title = "Google",
+                    text = "G-482913 is your Google verification code.", largeIcon = null, smallIcon = null,
+                    open = null, postedAt = now, code = "482913", demo = true,
+                )
+                note.value = n
+                recent.value = (listOf(n) + recent.value).take(MAX_RECENT)
+            }
             "note" -> {
                 val n = NoteInfo(
                     key = "demo-note-$now", appName = "Messages", title = "Priya Shah",
@@ -542,6 +553,8 @@ data class IslandPrefs(
     val headphones: Boolean = true,
     /** The battery as a ring around the camera, rather than an ink battery in the pill. */
     val batteryRing: Boolean = true,
+    /** One-time codes: shown large with Copy, and offered to Continuum Keyboard. */
+    val codes: Boolean = true,
 
     // ---- Placement: fitting the island to the camera, or moving it ----
 
@@ -606,6 +619,7 @@ object IslandSettings {
             sound = p.getBoolean("sound", true),
             headphones = p.getBoolean("headphones", true),
             batteryRing = p.getBoolean("batteryRing", true),
+            codes = p.getBoolean("codes", true),
             offsetX = p.getFloat("offsetX", 0f).coerceIn(PLACE_X_MIN, PLACE_X_MAX),
             offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
             cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),
@@ -650,6 +664,7 @@ object IslandSettings {
             ?.putBoolean("sound", next.sound)
             ?.putBoolean("headphones", next.headphones)
             ?.putBoolean("batteryRing", next.batteryRing)
+            ?.putBoolean("codes", next.codes)
             ?.putFloat("offsetX", next.offsetX)
             ?.putFloat("offsetY", next.offsetY)
             ?.putFloat("cameraSize", next.cameraSize)

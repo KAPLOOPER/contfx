@@ -139,14 +139,19 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
 
         Txt("Apps", 21.sp, p.text, bold = true)
         Gap(2.dp)
-        Txt(
-            when {
-                !helper -> "Each app can have its own volume, with Shizuku. Set it up from the dock."
-                apps.isEmpty() -> "Nothing's playing. Apps show up here while they make sound."
-                else -> "Each app's own volume, kept while it's open" + if (prefs.rememberApps) " and for next time." else "."
-            },
-            15.sp, p.sub,
-        )
+        when {
+            !helper -> Rest(
+                "Each app can have its own volume, with Shizuku.",
+                action = "Set up",
+                icon = R.drawable.ic_setup,
+                onAction = { actions.setSetupOpen(true) },
+            )
+            apps.isEmpty() -> Rest("Nothing's playing. Apps show up here while they make sound.")
+            else -> Txt(
+                "Each app's own volume, kept while it's open" + if (prefs.rememberApps) " and for next time." else ".",
+                15.sp, p.sub,
+            )
+        }
         if (helper && apps.isNotEmpty()) {
             Gap(10.dp)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 8.dp)) {
@@ -298,17 +303,17 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
     )
     val list = (alongside.toList() + known).distinct()
     when {
+        !helper && alongside.isEmpty() -> {
+            Gap(6.dp)
+            Rest("Playing alongside needs Shizuku.", action = "Set up", icon = R.drawable.ic_setup, onAction = { actions.setSetupOpen(true) })
+        }
         !helper -> {
             Gap(6.dp)
-            Txt(
-                if (alongside.isEmpty()) "Needs Shizuku: set it up from the dock."
-                else "Waiting for Shizuku: until it's back, apps pause each other as usual.",
-                15.sp, p.sub,
-            )
+            Rest("Waiting for Shizuku: until it's back, apps pause each other as usual.", action = "Reconnect", onAction = actions::connectVolumeHelper)
         }
         list.isEmpty() -> {
             Gap(6.dp)
-            Txt("Apps show up here once they've played something.", 15.sp, p.sub)
+            Rest("Apps show up here once they've played something.")
         }
         else -> {
             problem?.let {

@@ -8,7 +8,7 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
-The ink rule holds across the app too. The drop under the page's title and the dock are the app's ink: an update, or an app that sent you here, drips out of the drop on a neck and spreads into a card where it sits (and gathers back into it when it goes), and messages bud off the top of the dock, hang on a thread of ink and sink back in.
+The ink rule holds across the app too. The drop under the page's title and the dock are the app's ink: an update, or an app that sent you here, drips out of the drop on a neck and spreads into a card where it sits (and gathers back into it when it goes), and messages bud off the top of the dock, hang on a thread of ink and sink back in. Empty places rest the same way everywhere: the title's drop, one sentence and at most one thing to do.
 
 ## Continuum Keyboard
 

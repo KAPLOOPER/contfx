@@ -220,6 +220,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
 
     // The ink the rest of the app's ink comes from: the title's drop, and the dock.
     val seeds = remember { Seeds() }
+    // A new page is shown: whatever comes with it is simply there, not dripped in.
+    remember(state.section) {
+        seeds.pageAt = System.currentTimeMillis()
+        0
+    }
     val dockRect = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
     CompositionLocalProvider(LocalSeeds provides seeds) {
@@ -408,9 +413,13 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             })
         }
         Gap(8.dp)
-        if (profile.bands.isEmpty()) {
-            Txt("No filters yet. Add one, or import an EQ exported from squig.link.", 16.sp, p.sub)
-        }
+        Rest(
+            "${profile.name} has no filters, so music plays as it is. Add one with +, or bring in an EQ from squig.link or AutoEQ.",
+            visible = profile.bands.isEmpty(),
+            action = "Import an EQ",
+            icon = R.drawable.ic_import,
+            onAction = actions::importFile,
+        )
         profile.bands.forEachIndexed { i, band ->
             BandCard(
                 band = band,

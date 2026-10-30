@@ -167,7 +167,11 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                     13.sp, p.sub, modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 4.dp),
                 )
                 if (list.isEmpty()) {
-                    Txt("Apps show up here once they've played something.", 14.sp, p.sub, modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 6.dp))
+                    Rest(
+                        "Apps show up here once they've played something through the EQ.",
+                        modifier = Modifier.padding(horizontal = 18.dp),
+                        on = Surface.Card,
+                    )
                 }
                 list.forEach { pkg ->
                     key(pkg) {

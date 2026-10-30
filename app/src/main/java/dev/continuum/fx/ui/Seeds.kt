@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
@@ -74,11 +75,17 @@ import kotlin.math.roundToInt
 internal class Seeds {
     /** The drop under the current title, at rest, in root coordinates. */
     var drop by mutableStateOf<Rect?>(null)
+
+    /** When the page on screen was shown: what comes with a page is simply there, not dripped in. */
+    @Volatile
+    var pageAt = System.currentTimeMillis()
     val cards = mutableStateListOf<SeedCard>()
 }
 
-internal class SeedCard {
-    val grow = Animatable(0f)
+internal class SeedCard(start: Float = 0f) {
+    val grow = Animatable(start)
+    /** Its ink: black for cards; the title's own colour for a resting drop. */
+    var color = Color.Black
     var topLeft by mutableStateOf(Offset.Zero)
     var size by mutableStateOf(Size.Zero)
     var corner = 0f
@@ -104,11 +111,16 @@ internal fun Seeded(
     visible: Boolean,
     corner: Dp,
     modifier: Modifier = Modifier,
+    color: Color? = null,
+    /** Already in place if it's there from the start (it came with the page), rather than dripping in. */
+    settledAtStart: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val seeds = LocalSeeds.current
     val p = LocalPalette.current
-    val card = remember { SeedCard() }
+    val card = remember { SeedCard(if (settledAtStart && visible) 1f else 0f) }
+    val ink = color ?: p.ink
+    card.color = ink
     val cornerPx = with(LocalDensity.current) { corner.toPx() }
     card.corner = cornerPx
     LaunchedEffect(visible) {
@@ -142,7 +154,7 @@ internal fun Seeded(
                 card.size = Size(it.size.width.toFloat(), it.size.height.toFloat())
             }
             .clip(shape)
-            .then(if (settled || seeds == null) Modifier.background(p.ink) else Modifier),
+            .then(if (settled || seeds == null) Modifier.background(ink) else Modifier),
     ) {
         Box(Modifier.graphicsLayer { alpha = if (settled || seeds == null) 1f else ((q - 0.78f) / 0.22f).coerceIn(0f, 1f) }) {
             content()
@@ -181,7 +193,7 @@ internal fun SeedOverlay(seeds: Seeds) {
             )
             val r = lerpF(s / 2f, card.corner, spread).coerceAtMost(min(shape.width, shape.height) / 2f)
             // Light while it's still the title's drop (in dark mode the drop is light), ink once it lands.
-            drawRoundRect(lerp(seed, p.ink, spread), shape.topLeft, shape.size, CornerRadius(r))
+            drawRoundRect(lerp(seed, card.color, spread), shape.topLeft, shape.size, CornerRadius(r))
             val gap = (c.top - d.bottom).coerceAtLeast(1f)
             neckDown(d, shape, cx, card.latch, gap * (1.3f - 0.7f * b), 1.dp.toPx(), 5.dp.toPx(), seed)
         }

@@ -31,14 +31,15 @@ object Codes {
         null
     }
 
-    /** Calls [onChange] whenever a new code arrives. Returns how to stop. */
-    fun watch(context: Context, onChange: () -> Unit): () -> Unit {
+    /** Calls [then] whenever a new code arrives. Returns how to stop. */
+    fun watch(context: Context, then: () -> Unit): () -> Unit {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) = onChange()
+            override fun onChange(selfChange: Boolean) = then()
         }
         return try {
             context.contentResolver.registerContentObserver(URI, false, observer)
-            { runCatching { context.contentResolver.unregisterContentObserver(observer) } }
+            val stop: () -> Unit = { runCatching { context.contentResolver.unregisterContentObserver(observer) } }
+            stop
         } catch (_: Exception) {
             {}
         }

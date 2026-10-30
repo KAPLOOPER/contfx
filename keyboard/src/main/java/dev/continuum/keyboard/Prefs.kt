@@ -33,6 +33,9 @@ class Prefs(context: Context) {
     var clipboardKeep by string("clipboard_keep", "3d")
     var clipboardChip by bool("clipboard_chip", true)
 
+    /** Logins from your password manager as chips in the strip (Android 11 and later). */
+    var passwordChips by bool("password_chips", true)
+
     val clipboardKeepMillis: Long
         get() = when (clipboardKeep) {
             "1h" -> HOUR

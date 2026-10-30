@@ -16,21 +16,37 @@ import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Something you copied. Text, or an image kept in the keyboard's own storage. */
+/**
+ * Something you copied. Text, or an image kept in the keyboard's own storage. A long text is
+ * kept in a file of its own and read when it's pasted; everything that shows a clip uses its
+ * [preview], so a copied essay costs no more to show than a copied word.
+ */
 data class Clip(
     val id: Long,
+    /** The whole text, for short clips. Long ones are in [textFile]: read them with [ClipboardHistory.textOf]. */
     val text: String?,
     /** File name under clips/ for images. */
     val image: String?,
     val mime: String?,
     val time: Long,
     val pinned: Boolean,
+    /** The start of the text, enough for a few lines. */
+    val preview: String = text?.let { ClipboardHistory.previewOf(it) }.orEmpty(),
+    /** How long the whole text is, in characters. */
+    val length: Int = text?.length ?: 0,
+    /** File name under clips/ holding a long text. */
+    val textFile: String? = null,
+    /** Of the whole text, to spot the same thing copied again without comparing it all. */
+    val hash: Int = text?.hashCode() ?: 0,
 )
 
 /**
  * Clipboard history: everything you copy while Continuum Keyboard is your keyboard, kept
  * on the phone for as long as you choose. Pinned clips stay until you unpin them. Copies
  * marked sensitive (passwords and the like) are never kept.
+ *
+ * All the work (reading the history, keeping a copy, writing it out) happens on a thread of its
+ * own, so copying something huge never makes the keyboard stutter.
  */
 class ClipboardHistory private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -46,11 +62,20 @@ class ClipboardHistory private constructor(context: Context) {
         private set
 
     /** When the newest clip arrived, for the paste chip in the strip. */
+    @Volatile
     var lastAdded: Clip? = null
         private set
 
     init {
-        clips = load()
+        io.execute {
+            val loaded = load()
+            synchronized(this) {
+                // Anything copied while it loaded goes on top.
+                clips = clips + loaded.filter { l -> clips.none { it.id == l.id } }
+            }
+            moveLongTextsOut()
+            changed()
+        }
     }
 
     fun listen(listener: () -> Unit): () -> Unit {
@@ -62,7 +87,7 @@ class ClipboardHistory private constructor(context: Context) {
         main.post { listeners.toList().forEach { it() } }
     }
 
-    /** Reads the system clipboard after it changes and keeps what's on it. */
+    /** Reads the system clipboard after it changes and keeps what's on it (the keeping is done off the main thread). */
     fun capture(manager: ClipboardManager) {
         val clip: ClipData = try {
             manager.primaryClip ?: return
@@ -79,8 +104,22 @@ class ClipboardHistory private constructor(context: Context) {
             io.execute { addImage(uri, imageMime) }
             return
         }
-        val text = item.coerceToText(appContext)?.toString()?.takeIf { it.isNotBlank() } ?: return
-        addText(text)
+        val plain = item.text
+        if (plain != null) {
+            // Already text: take it as it is and do the rest off the main thread.
+            val text = plain.toString()
+            if (text.isNotBlank()) io.execute { addText(text) }
+            return
+        }
+        // Text behind a link or an intent: reading it can take a while, so not here.
+        io.execute {
+            val text = try {
+                item.coerceToText(appContext)?.toString()
+            } catch (e: Exception) {
+                null
+            }
+            if (!text.isNullOrBlank()) addText(text)
+        }
     }
 
     private fun isSensitive(desc: ClipDescription): Boolean {
@@ -89,15 +128,34 @@ class ClipboardHistory private constructor(context: Context) {
         return extras.getBoolean("android.content.extra.IS_SENSITIVE", false)
     }
 
-    @Synchronized
-    fun addText(text: String) {
-        val trimmed = if (text.length > MAX_TEXT) text.substring(0, MAX_TEXT) else text
-        val existing = clips.firstOrNull { it.text == trimmed }
-        val clip = Clip(System.currentTimeMillis(), trimmed, null, "text/plain", System.currentTimeMillis(), existing?.pinned ?: false)
-        clips = listOf(clip) + clips.filter { it.text != trimmed }
-        lastAdded = clip
-        trim()
-        save()
+    /** Keeps [full] (cut to [MAX_TEXT]), on top. Runs on the clips thread. */
+    private fun addText(full: String) {
+        val text = if (full.length > MAX_TEXT) full.substring(0, MAX_TEXT) else full
+        val hash = text.hashCode()
+        val id = System.currentTimeMillis()
+        val long = text.length > INLINE_MAX
+        val name = if (long) "$id.txt" else null
+        if (name != null) {
+            try {
+                dir.mkdirs()
+                File(dir, name).writeText(text)
+            } catch (e: Exception) {
+                Log.w(TAG, "Couldn't keep a long clip", e)
+                return
+            }
+        }
+        synchronized(this) {
+            val existing = clips.firstOrNull { it.image == null && it.length == text.length && it.hash == hash }
+            existing?.let { deleteFiles(it) }
+            val clip = Clip(
+                id, if (long) null else text, null, "text/plain", id, existing?.pinned ?: false,
+                preview = previewOf(text), length = text.length, textFile = name, hash = hash,
+            )
+            clips = listOf(clip) + clips.filter { it !== existing }
+            lastAdded = clip
+            trim()
+            save()
+        }
         changed()
     }
 
@@ -137,6 +195,17 @@ class ClipboardHistory private constructor(context: Context) {
         }
     }
 
+    /** The whole text of [clip]: in hand for short ones, read from its file for long ones. */
+    fun textOf(clip: Clip): String? {
+        clip.text?.let { return it }
+        val name = clip.textFile ?: return null
+        return try {
+            File(dir, name).takeIf { it.exists() }?.readText()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     @Synchronized
     fun pin(id: Long, pinned: Boolean) {
         clips = clips.map { if (it.id == id) it.copy(pinned = pinned) else it }
@@ -145,7 +214,7 @@ class ClipboardHistory private constructor(context: Context) {
 
     @Synchronized
     fun remove(id: Long) {
-        clips.firstOrNull { it.id == id }?.image?.let { File(dir, it).delete() }
+        clips.firstOrNull { it.id == id }?.let { deleteFiles(it) }
         clips = clips.filter { it.id != id }
         if (lastAdded?.id == id) lastAdded = null
         save(); changed()
@@ -154,7 +223,7 @@ class ClipboardHistory private constructor(context: Context) {
     /** Removes everything except pinned clips. */
     @Synchronized
     fun clearUnpinned() {
-        clips.filter { !it.pinned }.forEach { c -> c.image?.let { File(dir, it).delete() } }
+        clips.filter { !it.pinned }.forEach { deleteFiles(it) }
         clips = clips.filter { it.pinned }
         lastAdded = null
         save(); changed()
@@ -167,7 +236,7 @@ class ClipboardHistory private constructor(context: Context) {
         val cutoff = System.currentTimeMillis() - keepMillis
         val old = clips.filter { !it.pinned && it.time < cutoff }
         if (old.isEmpty()) return
-        old.forEach { c -> c.image?.let { File(dir, it).delete() } }
+        old.forEach { deleteFiles(it) }
         clips = clips - old.toSet()
         save(); changed()
     }
@@ -186,12 +255,39 @@ class ClipboardHistory private constructor(context: Context) {
 
     fun fileFor(clip: Clip): File? = clip.image?.let { File(dir, it) }?.takeIf { it.exists() }
 
+    private fun deleteFiles(c: Clip) {
+        c.image?.let { File(dir, it).delete() }
+        c.textFile?.let { File(dir, it).delete() }
+    }
+
     private fun trim() {
         val unpinned = clips.filter { !it.pinned }
         if (unpinned.size > MAX_CLIPS) {
             val drop = unpinned.drop(MAX_CLIPS).toSet()
-            drop.forEach { c -> c.image?.let { File(dir, it).delete() } }
+            drop.forEach { deleteFiles(it) }
             clips = clips - drop
+        }
+    }
+
+    /** Earlier builds kept every text inside the history file: long ones move out to their own. */
+    private fun moveLongTextsOut() {
+        val long = clips.filter { it.text != null && it.text.length > INLINE_MAX }
+        if (long.isEmpty()) return
+        dir.mkdirs()
+        val moved = HashMap<Long, Clip>()
+        for (c in long) {
+            val name = "${c.id}.txt"
+            try {
+                File(dir, name).writeText(c.text!!)
+                moved[c.id] = c.copy(text = null, textFile = name)
+            } catch (e: Exception) {
+                Log.w(TAG, "Couldn't move a long clip out", e)
+            }
+        }
+        synchronized(this) {
+            clips = clips.map { moved[it.id] ?: it }
+            lastAdded?.let { a -> moved[a.id]?.let { lastAdded = it } }
+            save()
         }
     }
 
@@ -208,7 +304,11 @@ class ClipboardHistory private constructor(context: Context) {
                             .put("image", c.image ?: JSONObject.NULL)
                             .put("mime", c.mime ?: JSONObject.NULL)
                             .put("time", c.time)
-                            .put("pinned", c.pinned),
+                            .put("pinned", c.pinned)
+                            .put("preview", c.preview)
+                            .put("length", c.length)
+                            .put("textFile", c.textFile ?: JSONObject.NULL)
+                            .put("hash", c.hash),
                     )
                 }
                 val tmp = File(file.path + ".tmp")
@@ -225,13 +325,18 @@ class ClipboardHistory private constructor(context: Context) {
             val arr = JSONArray(file.readText())
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
+                val text = if (o.isNull("text")) null else o.getString("text")
                 Clip(
                     id = o.getLong("id"),
-                    text = if (o.isNull("text")) null else o.getString("text"),
+                    text = text,
                     image = if (o.isNull("image")) null else o.getString("image"),
                     mime = if (o.isNull("mime")) null else o.getString("mime"),
                     time = o.getLong("time"),
                     pinned = o.optBoolean("pinned"),
+                    preview = o.optString("preview").ifEmpty { text?.let { previewOf(it) }.orEmpty() },
+                    length = o.optInt("length", text?.length ?: 0),
+                    textFile = if (o.isNull("textFile") || !o.has("textFile")) null else o.getString("textFile"),
+                    hash = if (o.has("hash")) o.getInt("hash") else text?.hashCode() ?: 0,
                 )
             }
         }
@@ -244,8 +349,18 @@ class ClipboardHistory private constructor(context: Context) {
         private const val TAG = "ContinuumClips"
         const val AUTHORITY = "dev.continuum.keyboard.files"
         private const val MAX_CLIPS = 60
-        private const val MAX_TEXT = 20_000
+        /** About a million characters: longer than anything you'd paste, short enough to keep. */
+        private const val MAX_TEXT = 1_000_000
+        /** Texts longer than this live in a file of their own. */
+        private const val INLINE_MAX = 4_000
+        private const val PREVIEW = 300
         private const val MAX_IMAGE = 15L * 1024 * 1024
+
+        /** The start of [text], for showing: a few lines' worth, never the whole of something long. */
+        fun previewOf(text: String): String {
+            val head = if (text.length > PREVIEW) text.substring(0, PREVIEW) else text
+            return head.trim()
+        }
 
         @Volatile
         private var shared: ClipboardHistory? = null

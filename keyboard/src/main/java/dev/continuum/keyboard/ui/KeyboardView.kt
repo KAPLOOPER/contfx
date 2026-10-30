@@ -261,6 +261,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
+    /** Whether the strip is showing the tools right now (whatever was asked for). */
+    val showingTools: Boolean get() = strip is Strip.Tools
+
+    /** A little bob of the strip, to say "this is all there is" when the hub has nothing else to show. */
+    fun nudgeStrip() {
+        stripAppear.snap(0.7f)
+        stripAppear.to(1f, SpringSpec.Flow)
+        frame()
+    }
+
     fun setStrip(s: Strip) {
         if (s == strip) return
         val kindChanged = s::class != strip::class
@@ -622,12 +632,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.color = p.label
                 text.alpha = (255 * a).toInt()
                 val maxW = pasteRect.width() - 60f * u
-                var shown = if (s.image) "Paste image" else s.preview.replace('\n', ' ').trim()
-                if (text.measureText(shown) > maxW) {
-                    var cut = shown.length
-                    while (cut > 1 && text.measureText(shown.substring(0, cut) + "…") > maxW) cut--
-                    shown = shown.substring(0, cut) + "…"
-                }
+                val shown = pasteLabel(if (s.image) "Paste image" else s.preview.replace('\n', ' ').trim(), maxW)
                 val fm = text.fontMetrics
                 canvas.drawText(shown, pasteRect.left + 44f * u, pasteRect.centerY() - (fm.ascent + fm.descent) / 2f, text)
                 text.textAlign = Paint.Align.CENTER
@@ -635,6 +640,35 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             else -> Unit
         }
+    }
+
+    private var pasteSource = ""
+    private var pasteWidth = 0f
+    private var pasteShown = ""
+
+    /**
+     * [source] cut to fit [maxW] with an ellipsis, worked out once and kept: the chip is drawn on
+     * every frame of the keyboard's animations, and measuring text again each time is what made a
+     * long copy slow the keyboard down.
+     */
+    private fun pasteLabel(source: String, maxW: Float): String {
+        if (source == pasteSource && maxW == pasteWidth) return pasteShown
+        var shown = source
+        if (text.measureText(source) > maxW) {
+            // The longest start that fits, found by halving rather than letter by letter.
+            var lo = 0
+            var hi = source.length
+            while (lo < hi) {
+                val mid = (lo + hi + 1) / 2
+                if (text.measureText(source, 0, mid) + text.measureText("…") <= maxW) lo = mid else hi = mid - 1
+            }
+            if (lo > 0 && Character.isHighSurrogate(source[lo - 1])) lo--
+            shown = source.substring(0, lo).trimEnd() + "…"
+        }
+        pasteSource = source
+        pasteWidth = maxW
+        pasteShown = shown
+        return shown
     }
 
     /** Everything liquid: balloons, the accent bar and the delete tongue, fused by the goo. */
@@ -1003,7 +1037,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val target = t.stripTarget
                 if (target != -1) {
                     pressStrip(target, false)
-                    if (stripTargetAt(x, y) == target) fireStrip(target)
+                    // A tap counts if it lifts on the same thing, or hardly moved at all: a thumb
+                    // tapping the bottom of the hub often lifts just past the strip.
+                    val still = hypot(x - t.x0, y - t.y0) < 14f * v
+                    if (stripTargetAt(x, y) == target || still) fireStrip(target)
                 }
             }
             Mode.Done -> release(t)

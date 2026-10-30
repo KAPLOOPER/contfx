@@ -383,10 +383,14 @@ private fun ClipCard(clip: Clip, p: KeyPalette, actions: PanelActions) {
                     contentScale = ContentScale.Fit,
                 )
                 clip.image != null -> Txt("Image", 15.sp, label)
-                else -> Txt(clip.text.orEmpty(), 15.sp, label, maxLines = 3)
+                // The preview: a few lines' worth, however much was copied.
+                else -> Txt(clip.preview, 15.sp, label, maxLines = 3)
             }
             Spacer(Modifier.height(4.dp))
-            Txt((if (clip.pinned) "Pinned · " else "") + age(clip.time), 12.sp, sub, maxLines = 1)
+            Txt(
+                (if (clip.pinned) "Pinned · " else "") + age(clip.time) + (if (clip.length > 1_000) " · ${size(clip.length)}" else ""),
+                12.sp, sub, maxLines = 1,
+            )
         }
         IconBubble(
             Icons.PIN,
@@ -409,4 +413,11 @@ private fun age(time: Long): String {
         s < 2 * 86400 -> "Yesterday"
         else -> "${s / 86400} days ago"
     }
+}
+
+/** A long clip's size, roughly: "48k characters". */
+private fun size(chars: Int): String = when {
+    chars >= 1_000_000 -> "${chars / 100_000 / 10.0}M characters"
+    chars >= 10_000 -> "${chars / 1_000}k characters"
+    else -> "${"%,d".format(chars)} characters"
 }

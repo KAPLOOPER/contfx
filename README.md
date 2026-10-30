@@ -18,9 +18,9 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 - **Corrections and suggestions:** a 115,000-word English list with a touch-aware corrector (a slip onto a neighbouring key costs less than a real typo), completions, next-word predictions, and learning that picks up your words and phrases. Delete straight after a correction to undo it; long-press a suggestion to stop it coming up.
 - **Swipe typing** with an ink trail that's drawn back in when you lift.
 - **Delete swiping:** drag left from delete to select whole words, lift to delete them.
-- **Clipboard and emoji:** clipboard history kept from 1 hour to forever, with pins and a paste suggestion in the strip; every emoji your phone can draw, with Frequent and skin tones.
+- **Clipboard and emoji:** clipboard history kept from 1 hour to forever, with pins and a paste suggestion in the strip. Long copies (up to about a million characters) are kept whole in files of their own and shown by their start, so a huge prompt costs no more than a word, and pasted in pieces so nothing is lost; every emoji your phone can draw, with Frequent and skin tones.
 - **Scan text:** take a picture, tap the lines you want, and they're typed where you were.
-- **Autofill:** passwords and addresses from your autofill service as chips in the strip.
+- **Passwords:** logins from your password manager (Keyguard, Bitwarden, Proton Pass or any autofill service with inline suggestions) as chips in the strip when you tap a login field, sized to the strip. Settings shows which password manager is filling and takes you to choose one; switch the chips off and it uses its own pop-up instead.
 - **Edit panel:** arrows that keep going while held, jumps by word and to either end of the line, *Select* to grow a selection with the same arrows, Select all, Copy, Cut, Paste, Undo and Redo.
 - Caps lock shows a bar under the shift arrow, so it never reads as a one-letter shift.
 - Slide on space to move the cursor, number row, key height, double-space full stop.

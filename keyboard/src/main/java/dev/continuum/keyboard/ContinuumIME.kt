@@ -85,6 +85,8 @@ import java.util.concurrent.Executors
  * undo, spacing around punctuation, shift and caps, swipes, delete-swipe, the panels,
  * autofill chips and text from Scan text.
  */
+private const val PASTE_CHUNK = 16_000
+
 class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
@@ -151,6 +153,8 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     private var stripChoice = StripChoice.Auto
     private var panel: Tool? = null
     private var autofillShowing = false
+    /** Logins that arrived before the keyboard's views did, shown once they exist. */
+    private var pendingInline: Any? = null
     private var chipUntil = 0L
     private var recomposeAfterDelete = false
     private var deleteAnchor = -1
@@ -174,7 +178,11 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         clips = ClipboardHistory.get(this)
         emojiUsage = EmojiUsage(this)
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(clipListener)
-        stopClipListening = clips.listen { panelState.clips = clips.clips }
+        stopClipListening = clips.listen {
+            panelState.clips = clips.clips
+            // A copy is kept off the main thread: once it's in, the paste chip can offer it.
+            if (chipActive() && composing.isEmpty() && panel == null) refreshStrip()
+        }
         panelState.clips = clips.clips
     }
 
@@ -258,6 +266,16 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        // A new field: whatever the password manager offered for the last one goes. (Not when the
+        // keyboard merely shows: its offer for this field may already have arrived.)
+        if (!restarting) {
+            pendingInline = null
+            clearAutofill()
+        }
+    }
+
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         applyLook()
@@ -268,7 +286,6 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         phantomSpace = false
         stripChoice = StripChoice.Auto
         closePanel(animate = false)
-        clearAutofill()
         clips.expire(prefs.clipboardKeepMillis)
         sheet = when (mode) {
             FieldMode.Number -> Sheet.Numbers
@@ -284,6 +301,11 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         updateEnter()
         refreshStrip()
         if (!restarting) keyboard?.popIn()
+        // An offer that arrived before the keyboard was on screen.
+        if (Build.VERSION.SDK_INT >= 30) pendingInline?.let { r ->
+            pendingInline = null
+            showInline(r as InlineSuggestionsResponse)
+        }
 
         // Text from Scan text goes in once the field you came from is back.
         ScanResult.take()?.let { text ->
@@ -747,9 +769,14 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             closePanel(animate = true)
             return
         }
-        val showingTools = stripIsTools()
+        val kv = keyboard ?: return
+        // Toggle what's actually on screen: the tools can be showing without being chosen (no
+        // words to offer), and going by the choice alone made the hub seem to do nothing.
+        val showingTools = kv.showingTools
         stripChoice = if (showingTools) StripChoice.Words else StripChoice.Tools
         refreshStrip()
+        // Nothing else to show here (a field without suggestions): the tools stay, and say so.
+        if (showingTools && stripIsTools()) kv.nudgeStrip()
     }
 
     override fun onTool(tool: Tool) {
@@ -924,7 +951,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         }
         if (chipActive()) {
             val clip = clips.lastAdded!!
-            kv.setStrip(Strip.Paste(clip.text.orEmpty(), clip.image != null))
+            kv.setStrip(Strip.Paste(clip.preview.take(160).replace('\n', ' '), clip.image != null))
             return
         }
         val before = ic.getTextBeforeCursor(80, 0)?.toString().orEmpty()
@@ -940,6 +967,8 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             if (composing.isNotEmpty()) return@ask
             stripWords = words
             keyboard?.setStrip(if (words.isEmpty()) Strip.Tools else Strip.Words(words, -1, -1))
+            // Asked for words and there are none to give: the tools stay, and say so.
+            if (words.isEmpty() && stripChoice == StripChoice.Words) keyboard?.nudgeStrip()
         }
     }
 
@@ -1057,10 +1086,48 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             val content = InputContentInfoCompat(uri, ClipDescription("Copied image", arrayOf(mime)), null)
             InputConnectionCompat.commitContent(ic, info, content, InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
         } else {
-            ic.commitText(clip.text.orEmpty(), 1)
+            val inHand = clip.text
+            if (inHand != null) {
+                commitLong(ic, inHand)
+            } else {
+                // A long clip waits in its file: read it off the main thread, then put it in.
+                background.execute {
+                    val text = clips.textOf(clip)
+                    main.post {
+                        val now = currentInputConnection
+                        if (text == null) {
+                            Toast.makeText(this, "That clip couldn't be read", Toast.LENGTH_SHORT).show()
+                        } else if (now != null) {
+                            commitLong(now, text)
+                            afterEdit()
+                        }
+                    }
+                }
+            }
         }
         autoSpaced = false
         afterEdit()
+    }
+
+    /**
+     * Puts [text] in, in pieces when it's long: everything sent to another app goes through a
+     * channel that refuses anything over about a megabyte at once, so a huge paste would
+     * otherwise just vanish.
+     */
+    private fun commitLong(ic: InputConnection, text: String) {
+        if (text.length <= PASTE_CHUNK) {
+            ic.commitText(text, 1)
+            return
+        }
+        ic.beginBatchEdit()
+        var i = 0
+        while (i < text.length) {
+            var end = minOf(i + PASTE_CHUNK, text.length)
+            if (end < text.length && Character.isHighSurrogate(text[end - 1])) end--
+            ic.commitText(text.substring(i, end), 1)
+            i = end
+        }
+        ic.endBatchEdit()
     }
 
     override fun pinClip(clip: Clip, pinned: Boolean) = clips.pin(clip.id, pinned)
@@ -1155,34 +1222,63 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
 
     // ================================================================ Autofill
 
+    /** How tall the strip is, which is how tall a password manager's chips are asked to be. */
+    private fun stripHeightPx(): Int {
+        val measured = keyboard?.stripArea?.height()?.toInt() ?: 0
+        return if (measured > 0) measured else (44 * resources.displayMetrics.density * prefs.heightScale).toInt()
+    }
+
     @RequiresApi(30)
-    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? =
-        Autofill.request(this, panelState.palette)
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? {
+        // Off, the password manager shows its own pop-up instead.
+        if (!prefs.passwordChips) return null
+        return Autofill.request(this, panelState.palette, stripHeightPx())
+    }
 
     @RequiresApi(30)
     override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
-        val row = autofillRow ?: return false
+        if (autofillRow == null) {
+            // The keyboard isn't on screen yet: keep it for when it is.
+            pendingInline = response
+            return true
+        }
+        showInline(response)
+        return true
+    }
+
+    @RequiresApi(30)
+    private fun showInline(response: InlineSuggestionsResponse) {
+        val row = autofillRow ?: return
         val list = response.inlineSuggestions
         row.removeAllViews()
         if (list.isEmpty()) {
             clearAutofill()
-            return true
+            return
         }
-        val height = (keyboard?.stripArea?.height() ?: (44 * resources.displayMetrics.density)).toInt()
+        val want = stripHeightPx()
         list.forEach { s ->
-            s.inflate(this, Size(ViewGroup.LayoutParams.WRAP_CONTENT, height), mainExecutor) { view ->
-                if (view != null) {
-                    val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, height)
-                    lp.marginEnd = (6 * resources.displayMetrics.density).toInt()
-                    row.addView(view, lp)
+            // Each chip has to be inflated within the size its password manager agreed to, or
+            // Android refuses it outright: that refusal is why no logins ever showed before.
+            val spec = s.info.inlinePresentationSpec
+            val height = want.coerceIn(spec.minSize.height, spec.maxSize.height)
+            try {
+                s.inflate(this, Size(ViewGroup.LayoutParams.WRAP_CONTENT, height), mainExecutor) { view ->
+                    if (view != null) {
+                        view.setZOrderedOnTop(true)
+                        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, height)
+                        lp.marginEnd = (6 * resources.displayMetrics.density).toInt()
+                        lp.gravity = android.view.Gravity.CENTER_VERTICAL
+                        row.addView(view, lp)
+                    }
                 }
+            } catch (e: Exception) {
+                android.util.Log.w("ContinuumIME", "Couldn't show an autofill suggestion", e)
             }
         }
         autofillShowing = true
         positionOverlays()
         autofillBar?.visibility = View.VISIBLE
         refreshStrip()
-        return true
     }
 
     private fun clearAutofill() {

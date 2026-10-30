@@ -19,7 +19,8 @@ import dev.continuum.keyboard.ui.KeyPalette
  */
 @RequiresApi(30)
 object Autofill {
-    fun request(context: Context, palette: KeyPalette): InlineSuggestionsRequest {
+    /** [heightPx] is the strip's height: chips are asked for at exactly that, so they sit in it. */
+    fun request(context: Context, palette: KeyPalette, heightPx: Int): InlineSuggestionsRequest {
         val d = context.resources.displayMetrics.density
         fun px(dp: Int) = (dp * d).toInt()
         val chip = Icon.createWithResource(context, R.drawable.autofill_chip).setTint(palette.fn)
@@ -52,7 +53,7 @@ object Autofill {
             )
             .build()
         val styles = UiVersions.newStylesBuilder().addStyle(style).build()
-        val spec = InlinePresentationSpec.Builder(Size(px(64), px(40)), Size(px(320), px(40)))
+        val spec = InlinePresentationSpec.Builder(Size(px(48), heightPx), Size(px(360), heightPx))
             .setStyle(styles)
             .build()
         return InlineSuggestionsRequest.Builder(listOf(spec))

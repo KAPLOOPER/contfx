@@ -101,6 +101,37 @@ class SettingsActivity : ComponentActivity() {
         return imm.enabledInputMethodList.any { it.packageName == packageName }
     }
 
+    /** The autofill service's app name, or null when none is chosen. */
+    private fun autofillServiceName(): String? = try {
+        val component = getSystemService(android.view.autofill.AutofillManager::class.java)?.autofillServiceComponentName
+        component?.let { c ->
+            try {
+                packageManager.getApplicationLabel(packageManager.getApplicationInfo(c.packageName, 0)).toString()
+            } catch (_: Exception) {
+                c.packageName
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Android's own place for choosing the password manager, wherever this version keeps it. */
+    private fun openAutofillSettings() {
+        val tries = buildList {
+            // Android 14 and later: Passwords, passkeys and accounts.
+            if (Build.VERSION.SDK_INT >= 34) add(Intent("android.settings.CREDENTIAL_PROVIDER"))
+            add(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            add(Intent(Settings.ACTION_SETTINGS))
+        }
+        for (intent in tries) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private fun selected(): Boolean =
         Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)?.startsWith("$packageName/") == true
 
@@ -208,6 +239,36 @@ class SettingsActivity : ComponentActivity() {
                         ) { keep = it; prefs.clipboardKeep = it }
                         Txt("Pinned clips stay until you unpin them.", 14.sp, g.sub, Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
                         Toggle(g, "Paste suggestion", "Offer what you just copied in the strip", prefs.clipboardChip) { prefs.clipboardChip = it }
+                    }
+                }
+            }
+            item {
+                Heading(g, "Passwords")
+                Card(g) {
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        Toggle(
+                            g, "Logins in the strip",
+                            "When you tap a login field, your password manager's logins appear as chips above the keys. Off, it shows its own pop-up instead.",
+                            prefs.passwordChips,
+                        ) { prefs.passwordChips = it }
+                    }
+                    val manager = remember(tick) { autofillServiceName() }
+                    Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+                        Txt("Password manager", 17.sp, g.text, bold = true)
+                        Txt(
+                            if (manager != null) "$manager fills your logins."
+                            else "None chosen yet. Pick yours (Keyguard, Bitwarden, Proton Pass and the like) as Android's autofill service.",
+                            14.sp, g.sub,
+                        )
+                        if (Build.VERSION.SDK_INT >= 30) {
+                            Spacer(Modifier.height(6.dp))
+                            Txt(
+                                "For chips in the strip, the password manager's inline suggestions need to be on. In Keyguard: Settings, Autofill, Inline suggestions (on unless you've turned it off).",
+                                13.sp, g.sub,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Pill(if (manager != null) "Change password manager" else "Choose a password manager", g.surface, g.text, { openAutofillSettings() })
                     }
                 }
             }

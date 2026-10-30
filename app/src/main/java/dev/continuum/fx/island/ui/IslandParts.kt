@@ -147,14 +147,8 @@ internal fun Glyph(@DrawableRes icon: Int, tint: Color, size: Dp = 18.dp, modifi
  */
 @Composable
 internal fun InkPulse(color: Color, playing: Boolean, modifier: Modifier = Modifier, width: Dp = 24.dp, height: Dp = 20.dp) {
-    val transition = rememberInfiniteTransition(label = "pulse")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1700, easing = LinearEasing)),
-        label = "pulsePhase",
-    )
     val level by animateFloatAsState(if (playing) 1f else 0f, Motion.flow(), label = "pulseLevel")
+    val phase by loopPhase(playing || level > 0.01f, 1700, "pulsePhase")
     val density = LocalDensity.current
     val goo = remember(density) {
         if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 2.4.dp.toPx() }) else null
@@ -790,14 +784,8 @@ internal fun InkBattery(
     val fill = batteryColor(b)
     val onFill = if (fill == InkColors.end) InkColors.onEnd else InkColors.ink
     val level by animateFloatAsState(b.level / 100f, Motion.flow(), label = "batteryLevel")
-    val transition = rememberInfiniteTransition(label = "batteryWave")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
-        label = "batteryPhase",
-    )
     val wave by animateFloatAsState(if (b.charging && !b.full) 1f else 0f, Motion.flow(), label = "batteryRipple")
+    val phase by loopPhase((b.charging && !b.full) || wave > 0.01f, 1400, "batteryPhase")
     val measurer = rememberTextMeasurer()
     val number = remember(b.level, height) {
         measurer.measure(
@@ -840,6 +828,18 @@ internal fun InkBattery(
     }
 }
 
+/**
+ * An endlessly repeating 0..1 phase that runs only while [running]. Stopped, nothing asks for a
+ * new frame, so a still island isn't redrawn at all.
+ */
+@Composable
+internal fun loopPhase(running: Boolean, periodMs: Int, label: String): androidx.compose.runtime.State<Float> {
+    if (!running) return remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    return rememberInfiniteTransition(label = label).animateFloat(
+        0f, 1f, infiniteRepeatable(tween(periodMs, easing = LinearEasing)), label = label,
+    )
+}
+
 /** The ring's gap from the lens and its thickness, in dp. */
 internal const val RING_GAP = 2f
 internal const val RING_STROKE = 2.5f
@@ -850,7 +850,7 @@ internal const val RING_REACH = RING_GAP + RING_STROKE
 /**
  * The battery as a ring of liquid round the camera, so it takes no room in the island at all.
  * It fills clockwise from the top with your charge, on a dark track: green while charging (a
- * glint runs along it), red when low (and breathing at 10%), white otherwise. Plugging in sweeps
+ * glint runs along it), red when low, white otherwise. Plugging in sweeps
  * it up from empty to where it stands. [cx], [cy] and [lens] (the camera's radius) are in pixels.
  */
 @Composable
@@ -870,14 +870,8 @@ internal fun CameraRing(b: BatteryInfo?, cx: Float, cy: Float, lens: Float, visi
         }
     }
     val charging = b.charging && !b.full
-    val critical = !b.charging && b.level <= 10
-    val motion = rememberInfiniteTransition(label = "ring")
-    val glint by motion.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "ringGlint")
-    val breath by motion.animateFloat(
-        0.5f, 1f,
-        infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse),
-        label = "ringBreath",
-    )
+    // Only while charging does anything move, so the rest of the time the ring is drawn once and left.
+    val glint by loopPhase(charging, 1800, "ringGlint")
     val color = batteryColor(b)
     Canvas(Modifier.fillMaxSize()) {
         val stroke = RING_STROKE.dp.toPx()
@@ -887,8 +881,7 @@ internal fun CameraRing(b: BatteryInfo?, cx: Float, cy: Float, lens: Float, visi
         drawCircle(InkColors.tonal.copy(alpha = alpha), r, Offset(cx, cy), style = Stroke(stroke))
         val arc = 360f * level.coerceIn(0f, 1f) * sweep.value
         if (arc > 0.5f) {
-            val a = alpha * (if (critical) breath else 1f)
-            drawArc(color.copy(alpha = a), -90f, arc, false, topLeft, box, style = Stroke(stroke, cap = StrokeCap.Round))
+            drawArc(color.copy(alpha = alpha), -90f, arc, false, topLeft, box, style = Stroke(stroke, cap = StrokeCap.Round))
             if (charging && arc > 40f) {
                 val g = 24f
                 drawArc(
@@ -1008,8 +1001,8 @@ internal fun AppGlyph(icon: android.graphics.drawable.Icon?, tint: Color, size: 
 @Composable
 internal fun InkRing(progress: Float, color: Color, size: Dp, stroke: Dp = 3.dp) {
     val shown by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.flow(), label = "ring")
-    val spin = rememberInfiniteTransition(label = "ringSpin")
-    val turn by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "ringTurn")
+    val spin by loopPhase(progress < 0f, 1100, "ringTurn")
+    val turn = spin * 360f
     Canvas(Modifier.size(size)) {
         val w = stroke.toPx()
         val inset = w / 2f
@@ -1028,8 +1021,7 @@ internal fun InkRing(progress: Float, color: Color, size: Dp, stroke: Dp = 3.dp)
 @Composable
 internal fun InkBar(progress: Float, color: Color, modifier: Modifier = Modifier) {
     val shown by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.flow(), label = "bar")
-    val spin = rememberInfiniteTransition(label = "barSpin")
-    val run by spin.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = LinearEasing)), label = "barRun")
+    val run by loopPhase(progress < 0f, 1300, "barRun")
     Canvas(modifier.fillMaxWidth().height(8.dp)) {
         val h = this.size.height
         drawRoundRect(InkColors.tonal, Offset.Zero, this.size, CornerRadius(h / 2f))

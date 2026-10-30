@@ -8,6 +8,8 @@ The **Continuum** toolkit for Android, built in the Continuum design language: l
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
+The ink rule holds across the app too. The drop under the page's title and the dock are the app's ink: an update, or an app that sent you here, drips out of the drop on a neck and spreads into a card where it sits (and gathers back into it when it goes), and messages bud off the top of the dock, hang on a thread of ink and sink back in.
+
 ## Continuum Keyboard
 
 Continuum's own keyboard, written from scratch so every part of it can follow the liquid ink rule. It lives in `keyboard/` and builds as its own app (`./gradlew -p keyboard assembleRelease`). It has no internet access: your typing, learned words and clipboard stay on the phone.
@@ -54,7 +56,7 @@ The island is one piece of ink that starts as your camera. It follows the Contin
 
 - **Placement:** the island starts fitted to the camera. Move it up, down, left or right, fit it to your lens with *Camera size* (so the ink and the ring hug it), scale everything with *Size*, and shape the pill with *Height* and *Width*. It shows itself while you adjust it, and *Reset* puts it back on the camera.
 
-On Android 12 and later the ink is rendered as a true liquid (blur and threshold), so pieces fuse and necks thin before they snap. Older versions draw the necks without the blur. With the screen off the island rests completely and draws nothing.
+On Android 12 and later the ink is rendered as a true liquid (blur and threshold) while it changes shape, so pieces fuse and necks thin before they snap; at rest it's drawn as plain shapes, with no blur running. Older versions draw the necks without the blur. Nothing on the island animates unless it has a reason to (music playing, charging, an indeterminate download), so a still island isn't redrawn at all, and with the screen off it rests completely. The ink itself is pure black, so on an AMOLED screen it's pixels switched off.
 
 ### Setting up the island
 

@@ -48,21 +48,39 @@ internal fun UpdateCard(
     onDismiss: () -> Unit,
 ) {
     val p = LocalPalette.current
-    val release = when (update) {
+    val current = when (update) {
         is UpdateState.Available -> update.release
         is UpdateState.Downloading -> update.release
         is UpdateState.Installing -> update.release
         is UpdateState.NeedsPermission -> update.release
         is UpdateState.Failed -> update.release
         else -> null
-    } ?: return
+    }
+    // Kept while the card gathers itself back into the title's drop.
+    val release = rememberLastOf(current)
+    val lastUpdate = rememberLastOf(update.takeIf { current != null }) ?: update
+    Seeded(visible = current != null, corner = 28.dp, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)) {
+        if (release != null) UpdateCardBody(lastUpdate, release, title, subtitle, actionLabel, installingNote, onAction, onAllow, onDismiss)
+    }
+}
+
+@Composable
+private fun UpdateCardBody(
+    update: UpdateState,
+    release: Release,
+    title: (Release) -> String,
+    subtitle: String,
+    actionLabel: String,
+    installingNote: String,
+    onAction: () -> Unit,
+    onAllow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val p = LocalPalette.current
     val notes = release.notes.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(4).joinToString("\n")
     Column(
         Modifier
-            .padding(top = 14.dp, bottom = 6.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(p.ink)
             .animateContentSize(Motion.flow())
             .padding(start = 18.dp, end = 10.dp, top = 14.dp, bottom = 18.dp),
     ) {

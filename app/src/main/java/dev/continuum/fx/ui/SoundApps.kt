@@ -89,11 +89,10 @@ internal fun OpenedFromRow(pkg: String, library: Library, actions: AppActions) {
     val name = remember(pkg) { appLabel(context, pkg) }
     val profile = library.active
     val current = library.appProfile(pkg)
+    // On ink that the caller provides (it drips from the title's drop).
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.ink)
             .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

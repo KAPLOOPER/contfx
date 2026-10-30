@@ -783,9 +783,16 @@ fun IslandRoot(
     // ---- The ink ----
 
     val goo = remember(dp) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(px(7f)) else null }
+    // The liquid blur is only needed while the ink changes shape: growing, pinching off a bud,
+    // dripping, being pulled. At rest the island is plain shapes (necks included, which are drawn
+    // to look right on their own), so the blur, and its off-screen layer, are dropped.
+    fun changingShape(): Boolean =
+        abs(mW - tW) > 0.5f || abs(mH - tH) > 0.5f || abs(mTop - tTop) > 0.5f || abs(mR - tR) > 0.5f ||
+            budP.isRunning || dripP.isRunning || pullPx >= 0f || pullSpread.isRunning || dripDx.value != 0f ||
+            abs(budWNow - budW) > 0.5f || abs(dripH - dripHTarget) > 0.5f
 
     Box(Modifier.fillMaxSize()) {
-        Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
+        Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = if (changingShape()) goo else null }) {
             val m = mainRect()
             drawRoundRect(InkColors.ink, m.topLeft, m.size, CornerRadius(mainRadius(m)))
             if (budP.value > 0.002f) {

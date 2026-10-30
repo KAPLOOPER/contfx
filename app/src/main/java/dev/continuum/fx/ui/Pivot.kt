@@ -44,6 +44,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.island.ui.Goo
@@ -125,10 +127,18 @@ internal fun PivotHeader(
                 style = TextStyle(color = p.sub, fontSize = 12.sp, fontFamily = Libron, fontWeight = FontWeight.Bold, letterSpacing = 2.6.sp),
             )
         }
+        val seeds = LocalSeeds.current
         BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
                 .height(with(density) { textH.toDp() } + 16.dp)
+                .onGloballyPositioned { coords ->
+                    // Where the drop rests, for ink cards on the page to grow out of.
+                    val o = coords.positionInRoot()
+                    val left = o.x + x0 + px(2f)
+                    val top = o.y + textH - px(3f)
+                    seeds?.drop = androidx.compose.ui.geometry.Rect(left, top, left + px(30f), top + px(9f))
+                }
                 .clipToBounds(),
         ) {
             val slot = pivot.slot.value

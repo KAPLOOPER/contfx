@@ -43,6 +43,9 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -215,6 +218,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         scope.launch { pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) }
     }
 
+    // The ink the rest of the app's ink comes from: the title's drop, and the dock.
+    val seeds = remember { Seeds() }
+    val dockRect = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    CompositionLocalProvider(LocalSeeds provides seeds) {
     Box(Modifier.fillMaxSize().background(p.ground)) {
         Column(Modifier.fillMaxSize()) {
             PivotHeader(
@@ -294,6 +302,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     )
                     when (state.section) {
                         Section.Sound -> Column {
+                            // A player's Equalizer button sent you here: an ink card from the title's drop.
+                            val from = rememberLastOf(state.openedFrom)
+                            Seeded(visible = state.openedFrom != null, corner = 24.dp, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)) {
+                                if (from != null) OpenedFromRow(from, state.library, actions)
+                            }
                             StatusLine(state)
                             Gap(14.dp)
                             ModeRow(actions)
@@ -318,8 +331,10 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
             }
         }
 
-        MessagePill(state.message, actions::dismissMessage, Modifier.align(Alignment.BottomCenter))
-        Dock(state, actions, Modifier.align(Alignment.BottomCenter))
+        SeedOverlay(seeds)
+        DockMessage(state.message, dockRect, actions::dismissMessage)
+        Dock(state, actions, Modifier.align(Alignment.BottomCenter)) { dockRect.value = it }
+    }
     }
 }
 
@@ -340,10 +355,6 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             }
             PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
             PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
-        }
-        state.openedFrom?.let { pkg ->
-            Gap(12.dp)
-            OpenedFromRow(pkg, library, actions)
         }
         val output by OutputWatcher.current.collectAsState()
         output?.let { device ->
@@ -759,45 +770,12 @@ internal fun SliderField(label: String, valueText: String, value: Float, onChang
     }
 }
 
-@Composable
-private fun MessagePill(message: String?, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    val p = LocalPalette.current
-    var shown by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(message) {
-        if (message != null) {
-            shown = message
-            delay(3000)
-            onDismiss()
-        }
-    }
-    val t by animateFloatAsState(if (message != null) 1f else 0f, Motion.flow(), label = "message")
-    val text = shown
-    if (t > 0.01f && text != null) {
-        Box(
-            modifier
-                .navigationBarsPadding()
-                .padding(start = 24.dp, end = 24.dp, bottom = 104.dp)
-                .graphicsLayer {
-                    alpha = t.coerceIn(0f, 1f)
-                    translationY = (1f - t) * 80f
-                    scaleX = 0.7f + 0.3f * t
-                    scaleY = 0.7f + 0.3f * t
-                }
-                .clip(RoundedCornerShape(50))
-                .background(p.ink)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-        ) {
-            Txt(text, 15.sp, p.onInk, maxLines = 3)
-        }
-    }
-}
-
 /**
  * The ink dock. It holds the power control, and grows straight up into the setup
  * sheet rather than opening a separate panel: the same ink, reshaped.
  */
 @Composable
-private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modifier) {
+private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modifier, onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {}) {
     val p = LocalPalette.current
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val openHeight = (screenHeight - 120).coerceIn(420, 660).dp
@@ -810,6 +788,7 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
             .padding(start = side, end = side, bottom = 10.dp)
             .fillMaxWidth()
             .height(height)
+            .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
             .then(if (p.dark) Modifier.border(1.dp, p.edge, shape) else Modifier)
             .clip(shape)
             .background(p.ink),

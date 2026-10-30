@@ -22,6 +22,8 @@ android {
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
         buildConfigField("int", "BUILD_NUMBER", "$buildNumber")
+        // Where builds are published; the keyboard links there, it never connects itself.
+        buildConfigField("String", "UPDATE_REPO", "\"KAPLOOPER/contfx\"")
     }
 
     signingConfigs {

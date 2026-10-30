@@ -101,6 +101,16 @@ class SettingsActivity : ComponentActivity() {
         return imm.enabledInputMethodList.any { it.packageName == packageName }
     }
 
+    /** The keyboard's builds on GitHub, in the browser (the keyboard itself never goes online). */
+    private fun openReleases() {
+        val url = "https://github.com/${BuildConfig.UPDATE_REPO}/releases?q=%22Continuum+Keyboard%22&expanded=true"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, "No browser to open it with", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     /** The autofill service's app name, or null when none is chosen. */
     private fun autofillServiceName(): String? = try {
         val component = getSystemService(android.view.autofill.AutofillManager::class.java)?.autofillServiceComponentName
@@ -303,6 +313,16 @@ class SettingsActivity : ComponentActivity() {
                         Txt(
                             "Continuum's own keyboard. It has no internet access: your typing, learned words and clipboard stay on your phone.",
                             14.sp, g.sub,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        // No internet here, so the keyboard can't look for updates itself: this opens
+                        // the releases in your browser, and Continuum FX's Keyboard tab installs them.
+                        Pill("Check for updates on GitHub", g.surface, g.text, { openReleases() })
+                        Spacer(Modifier.height(6.dp))
+                        Txt(
+                            "Opens the keyboard's builds in your browser: anything above build ${BuildConfig.BUILD_NUMBER} is newer. " +
+                                "Continuum FX's Keyboard tab also checks for them, and installs them over this one.",
+                            13.sp, g.sub,
                         )
                         Spacer(Modifier.height(10.dp))
                         Txt(

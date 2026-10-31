@@ -102,6 +102,14 @@ class MainActivity : ComponentActivity(), AppActions {
         if (uri != null) importUri(uri)
     }
 
+    private val openMeasurement = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) readCurve(uri, target = false)
+    }
+
+    private val openTarget = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) readCurve(uri, target = true)
+    }
+
     private val saveBackupFile = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) writeBackup(uri)
     }
@@ -622,6 +630,67 @@ class MainActivity : ComponentActivity(), AppActions {
 
     override fun importFile() {
         openDocument.launch(arrayOf("text/plain", "text/*", "application/octet-stream"))
+    }
+
+    override fun pickMeasurement() {
+        openMeasurement.launch(arrayOf("text/plain", "text/*", "text/csv", "application/octet-stream"))
+    }
+
+    override fun pickTarget() {
+        openTarget.launch(arrayOf("text/plain", "text/*", "text/csv", "application/octet-stream"))
+    }
+
+    override fun makeFittedEq() {
+        val inputs = dev.continuum.fx.data.FitStore.state.value
+        val m = inputs.measurement
+        val t = inputs.target
+        if (m == null || t == null) {
+            message.value = if (m == null) "Choose your earphones' measurement first." else "Choose a target first."
+            return
+        }
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.Default) { runCatching { dev.continuum.fx.dsp.EqFit.fit(m, t, inputs.options) } }
+            result.onSuccess { r ->
+                store.add(r.profile)
+                message.value = "Made ${r.profile.name}: ${r.profile.bands.size} filters, off by %.1f dB, now %.1f dB.".format(r.errorBefore, r.errorAfter)
+            }.onFailure {
+                message.value = "Couldn't fit an EQ to that."
+            }
+        }
+    }
+
+    /** Reads a frequency response from [uri] as the measurement or the target. */
+    private fun readCurve(uri: Uri, target: Boolean) {
+        val text = readText(uri)
+        if (text == null) {
+            message.value = "Couldn't open that file."
+            return
+        }
+        dev.continuum.fx.dsp.Curve.parse(text, displayName(uri) ?: if (target) "Target" else "Measurement")
+            .onSuccess { c ->
+                dev.continuum.fx.data.FitStore.update { if (target) it.copy(target = c) else it.copy(measurement = c) }
+                message.value = "${if (target) "Target" else "Measurement"}: ${c.name}, ${c.size} points."
+            }
+            .onFailure { e -> message.value = e.message ?: "That file doesn't look like a frequency response." }
+    }
+
+    /**
+     * A text file's contents, or null if it can't be read or is far too large. Measurements can
+     * be big (a full-resolution REW export runs to a few megabytes).
+     */
+    private fun readText(uri: Uri, limit: Int = 8 * 1024 * 1024): String? = try {
+        contentResolver.openInputStream(uri)?.use { stream ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            while (out.size() <= limit) {
+                val n = stream.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
+            if (out.size() > limit) null else out.toString(Charsets.UTF_8.name())
+        }
+    } catch (_: Exception) {
+        null
     }
 
     override fun pasteFromClipboard() {

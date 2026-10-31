@@ -15,7 +15,7 @@ object Backup {
     private const val VERSION = 1
 
     /** The settings files that make up a backup. */
-    private val FILES = listOf("library", "effects", "spatial", "engine", "island", "volume", "app_volumes", "heard_apps", "ui")
+    private val FILES = listOf("library", "effects", "spatial", "fit", "engine", "island", "volume", "app_volumes", "heard_apps", "ui")
 
     fun export(context: Context, build: Int): String {
         val prefs = JSONObject()

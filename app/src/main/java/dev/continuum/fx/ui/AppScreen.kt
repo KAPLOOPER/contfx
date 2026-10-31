@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -144,6 +145,11 @@ interface AppActions {
     fun copyAdbCommands()
     fun importFile()
     fun pasteFromClipboard()
+    /** Choose your earphones' measured response, or the target, to fit an EQ between. */
+    fun pickMeasurement()
+    fun pickTarget()
+    /** Fits an EQ from the measurement to the target and adds it as a new EQ. */
+    fun makeFittedEq()
     fun shareActive()
     fun setSetupOpen(open: Boolean)
     fun dismissMessage()
@@ -358,6 +364,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     val library = state.library
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
+    var fitting by rememberSaveable { mutableStateOf(false) }
     Column {
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -369,6 +376,11 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             }
             PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
             PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
+            PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune, height = 38.dp)
+        }
+        if (fitting) {
+            Gap(12.dp)
+            FitCard(actions)
         }
         val output by OutputWatcher.current.collectAsState()
         output?.let { device ->

@@ -82,6 +82,7 @@ then switch on *Continuum island* in accessibility settings. The **Try it** butt
 
 - **Two ways to run:** *Capture* records what apps play and plays it back through the EQ's exact filters. *Direct* puts the EQ on each app's own sound instead, with no screen-capture prompt or icon, less battery and delay, and apps that block capture included; the filters are matched by 96 fine bands (about a third of a decibel off on a typical headphone EQ).
 - **Parametric EQ** with a response graph you drag: sideways for frequency, up and down for gain.
+- **Make an EQ from a measurement:** bring in your earphones' measured response and a target (text files of frequency and level, as REW, squig.link and AutoEQ write them) and Continuum fits a parametric EQ between them, AutoEQ-style: the difference smoothed more in the treble, centred, held to the lift you allow, and every filter tuned together. A preview shows the difference and what the EQ does before it's made; afterwards it's an ordinary EQ. Measured on an IEC 711 coupler, it pairs exactly with spatial audio's KEMAR head, whose ears are 711 ear simulators.
 - **Live spectrum:** while processing, the music itself moves behind the curve as a soft liquid outline.
 - **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.
 - **EQ per device:** link an EQ to your headphones, speaker, car or USB DAC, and it comes on by itself whenever they connect.

@@ -332,9 +332,9 @@ fun ChoiceRow(
                     var shape = Path().apply { addRoundRect(RoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, CornerRadius(hh / 2f))) }
                     val tr = h * 0.36f * tv
                     val tc = Offset(tailAt[0], tailAt[1])
-                    shape = Path.combine(PathOperation.Union, shape, Path().apply { addOval(Rect(tc, tr)) })
+                    shape = union(shape, Path().apply { addOval(Rect(tc, tr)) })
                     val cap = if (tc.x < cx) Offset(cx - w / 2f + hh / 2f, cy) else Offset(cx + w / 2f - hh / 2f, cy)
-                    inkNeck(tc, tr, cap, hh / 2f, reach = 1.5f)?.let { shape = Path.combine(PathOperation.Union, shape, it) }
+                    inkNeck(tc, tr, cap, hh / 2f, reach = 1.5f)?.let { shape = union(shape, it) }
                     drawPath(shape, ink, blendMode = BlendMode.Xor)
                 },
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -343,6 +343,9 @@ fun ChoiceRow(
         )
     }
 }
+
+/** One outline from two (drawn once, so the knock-out works); the first alone should that fail. */
+private fun union(a: Path, b: Path): Path = runCatching { Path.combine(PathOperation.Union, a, b) }.getOrDefault(a)
 
 /** How tall the ink is behind a chosen word. */
 private val PILL = 36.dp

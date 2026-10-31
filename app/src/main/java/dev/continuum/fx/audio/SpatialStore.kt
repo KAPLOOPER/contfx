@@ -152,7 +152,7 @@ object SpatialStore {
 }
 
 /** The measured heads, read from the app's assets the first time each is needed. */
-object Heads {
+internal object Heads {
     private val cache = HashMap<HeadModel, Head>()
 
     @Synchronized

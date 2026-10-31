@@ -129,7 +129,7 @@ internal fun AppsRow(library: Library, actions: AppActions) {
     val playing by EngineStatus.processingPackages.collectAsState()
     val mode by EngineSettings.mode.collectAsState()
     val source = remember { MutableInteractionSource() }
-    Column(Modifier.fillMaxWidth().animateContentSize(dev.continuum.fx.ui.theme.Motion.flow())) {
+    dev.continuum.fx.ui.components.InkSection(open, header = {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -152,9 +152,8 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                     14.sp, p.sub, maxLines = 1,
                 )
             }
-            Chevron(open, p.sub)
         }
-        if (open) {
+    }) {
             val list = (playing + heard + known + library.apps.keys).distinct()
             Column(Modifier.padding(bottom = 8.dp)) {
                 Txt(
@@ -200,7 +199,6 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                     }
                 }
             }
-        }
     }
 }
 

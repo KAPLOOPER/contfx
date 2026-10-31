@@ -98,6 +98,9 @@ import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
+import dev.continuum.fx.ui.components.InkSection
+import dev.continuum.fx.ui.components.choice
 import dev.continuum.fx.ui.components.EqGraph
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.InkSlider
@@ -389,10 +392,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     Column {
         SectionLabel("EQ", top = 0.dp)
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        ChoiceRow {
             library.profiles.forEach { pr ->
                 Chip(pr.name, pr.id == library.activeId, onClick = { store.select(pr.id) })
             }
@@ -456,40 +456,34 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         // The filters, folded into one line: the graph is where you shape the sound; this is
         // for exact numbers and filter types.
         val filtersSource = remember { MutableInteractionSource() }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 18.dp)
-                .heightIn(min = 56.dp)
-                .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
-            verticalAlignment = Alignment.CenterVertically,
+        Gap(18.dp)
+        InkSection(
+            open = filtersOpen && profile.bands.isNotEmpty(),
+            header = {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Txt(
+                        when (profile.bands.size) {
+                            0 -> "No filters"
+                            1 -> "1 filter"
+                            else -> "${profile.bands.size} filters"
+                        },
+                        17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f),
+                    )
+                    IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
+                        val newIndex = profile.bands.size
+                        store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
+                        selected = newIndex
+                        filtersOpen = true
+                    })
+                }
+            },
         ) {
-            Txt(
-                when (profile.bands.size) {
-                    0 -> "No filters"
-                    1 -> "1 filter"
-                    else -> "${profile.bands.size} filters"
-                },
-                17.sp, p.text, maxLines = 1,
-            )
-            Spacer(Modifier.width(8.dp))
-            Chevron(filtersOpen, p.sub)
-            Spacer(Modifier.weight(1f))
-            IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
-                val newIndex = profile.bands.size
-                store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
-                selected = newIndex
-                filtersOpen = true
-            })
-        }
-        Rest(
-            "${profile.name} has no filters, so music plays as it is. Add one with +, or bring in an EQ from squig.link or AutoEQ.",
-            visible = profile.bands.isEmpty(),
-            action = "Import an EQ",
-            icon = R.drawable.ic_import,
-            onAction = actions::importFile,
-        )
-        if (filtersOpen) {
             profile.bands.forEachIndexed { i, band ->
                 BandCard(
                     band = band,
@@ -505,6 +499,13 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 )
             }
         }
+        Rest(
+            "${profile.name} has no filters, so music plays as it is. Add one with +, or bring in an EQ from squig.link or AutoEQ.",
+            visible = profile.bands.isEmpty(),
+            action = "Import an EQ",
+            icon = R.drawable.ic_import,
+            onAction = actions::importFile,
+        )
         Gap(14.dp)
         Row {
             PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
@@ -564,7 +565,7 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
 private fun ModeRow(actions: AppActions) {
     val p = LocalPalette.current
     val mode by EngineSettings.mode.collectAsState()
-    Row {
+    ChoiceRow(scroll = false) {
         Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) })
         Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) })
     }
@@ -617,8 +618,7 @@ private fun PreampSection(
         InkSlider(
             value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
             onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
-            track = p.sub.copy(alpha = 0.35f),
-            fill = p.text,
+            label = Fmt.db(preampDb),
         )
         Gap(4.dp)
         Row(
@@ -644,7 +644,7 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val source = remember { MutableInteractionSource() }
     val flipped = polarity != Polarity.Normal
-    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
+    InkSection(open, header = {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -669,7 +669,7 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
             Spacer(Modifier.width(12.dp))
             Txt(polarity.label, 15.sp, if (flipped) p.text else p.sub, maxLines = 1)
         }
-        if (open) {
+    }) {
             Column(Modifier.padding(bottom = 12.dp)) {
                 Txt(
                     "Some earphones are built or wired so that a push in the recording comes out as a pull. Inverted turns " +
@@ -692,13 +692,12 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
                     )
                 }
                 Gap(10.dp)
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                ChoiceRow {
                     Polarity.entries.forEach { pol ->
                         Chip(pol.label, polarity == pol, onClick = { onPick(pol) }, on = Surface.Card)
                     }
                 }
             }
-        }
     }
 }
 
@@ -713,44 +712,34 @@ internal fun ComparePill() {
     val view = LocalView.current
     val comparing by EngineStatus.comparing.collectAsState()
     DisposableEffect(Unit) { onDispose { EngineStatus.comparing.value = false } }
-    // While you hold, the word brightens and a drop swells under it, as a chosen word's does.
-    val drop by animateFloatAsState(if (comparing) 1f else 0f, if (comparing) Motion.flow() else Motion.snap(), label = "compare")
-    Column(
-        Modifier
-            .squash(source, pill = true)
-            .heightIn(min = 44.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(onPress = { pos ->
-                    val press = PressInteraction.Press(pos)
-                    source.emit(press)
-                    InkFeel.toggle(view, true)
-                    EngineStatus.comparing.value = true
-                    val lifted = tryAwaitRelease()
-                    EngineStatus.comparing.value = false
-                    InkFeel.toggle(view, false)
-                    source.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press))
-                })
-            }
-            .semantics(mergeDescendants = true) {
-                role = Role.Button
-                contentDescription = "Hold to hear without the EQ"
-            }
-            .padding(end = 16.dp, top = 6.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Txt("Hold to compare", 16.sp, androidx.compose.ui.graphics.lerp(p.sub, p.text, drop), maxLines = 1)
-        Gap(6.dp)
+    // While you hold, a pill of ink swells in behind the words, as behind a chosen word.
+    ChoiceRow(scroll = false) {
         Box(
             Modifier
-                .size(width = 16.dp, height = 5.dp)
-                .graphicsLayer {
-                    scaleX = drop
-                    scaleY = drop.coerceAtMost(1f)
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                .choice(comparing)
+                .squash(source, pill = true)
+                .heightIn(min = 44.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(onPress = { pos ->
+                        val press = PressInteraction.Press(pos)
+                        source.emit(press)
+                        InkFeel.toggle(view, true)
+                        EngineStatus.comparing.value = true
+                        val lifted = tryAwaitRelease()
+                        EngineStatus.comparing.value = false
+                        InkFeel.toggle(view, false)
+                        source.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press))
+                    })
                 }
-                .clip(RoundedCornerShape(50))
-                .background(p.text),
-        )
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "Hold to hear without the EQ"
+                }
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Txt("Hold to compare", 16.sp, if (comparing) p.text else p.sub, maxLines = 1)
+        }
     }
 }
 
@@ -765,7 +754,7 @@ private fun BandCard(
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val textColor = if (band.enabled) p.text else p.sub
-    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
+    InkSection(expanded, header = {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -782,9 +771,9 @@ private fun BandCard(
             Txt("Q ${Fmt.q(band.q)}", 16.sp, p.sub, maxLines = 1)
             OnOffDot(band.enabled, R.drawable.ic_check, "Filter on") { onChange(band.copy(enabled = !band.enabled)) }
         }
-        if (expanded) {
-            Column(Modifier.padding(start = 36.dp, bottom = 16.dp)) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+    }) {
+            Column(Modifier.padding(bottom = 16.dp)) {
+                ChoiceRow {
                     listOf(
                         FilterType.PEAK, FilterType.LOW_SHELF, FilterType.HIGH_SHELF,
                         FilterType.LOW_PASS, FilterType.HIGH_PASS, FilterType.NOTCH,
@@ -808,7 +797,6 @@ private fun BandCard(
                 Gap(8.dp)
                 PillButton("Remove filter", onRemove, icon = R.drawable.ic_trash, on = Surface.Card, height = 40.dp)
             }
-        }
     }
 }
 
@@ -820,7 +808,7 @@ internal fun SliderField(label: String, valueText: String, value: Float, onChang
             Txt(label, 15.sp, p.sub, modifier = Modifier.weight(1f))
             Txt(valueText, 15.sp, p.text)
         }
-        InkSlider(value = value, onChange = onChange, track = p.sub.copy(alpha = 0.35f), fill = p.text)
+        InkSlider(value = value, onChange = onChange, label = valueText)
     }
 }
 

@@ -50,6 +50,8 @@ import dev.continuum.fx.dsp.Loudness
 import dev.continuum.fx.dsp.PunchMode
 import dev.continuum.fx.dsp.StageMode
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
+import dev.continuum.fx.ui.components.InkSection
 import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -125,7 +127,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         ) {
             Txt("Frequency", 15.sp, p.sub)
             Gap(6.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChoiceRow {
                 FxSettings.PULTEC_FREQS.forEachIndexed { i, f ->
                     Chip("${f.toInt()} Hz", fx.pultecFreq == i, onClick = { set { it.copy(pultecFreq = i) } }, on = Surface.Card)
                 }
@@ -147,7 +149,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 "alone while it's held. Kicks and plucked bass punch; a held note doesn't swell or boom.",
             notes = listOfNotNull(if (ctx.direct) "In Direct mode: a slow-attack compressor that lets each note's start through." else null),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChoiceRow {
                 PunchMode.entries.forEach { m -> Chip(m.label, fx.punch == m, onClick = { set { it.copy(punch = m) } }, on = Surface.Card) }
             }
         }
@@ -258,7 +260,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 "exactly there. Each adds a gentle smile of low end and air, and nothing to the mids.",
             notes = listOfNotNull(if (ctx.direct) FxAvailability.directNote("stage") else null),
         ) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChoiceRow {
                 StageMode.entries.forEach { m -> Chip(m.label, fx.stage == m, onClick = { set { it.copy(stage = m) } }, on = Surface.Card) }
             }
         }
@@ -298,7 +300,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 "and the top opened up.",
             notes = emptyList(),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChoiceRow {
                 DynamicsMode.entries.forEach { m -> Chip(m.label, fx.dynamics == m, onClick = { set { it.copy(dynamics = m) } }, on = Surface.Card) }
             }
         }
@@ -372,7 +374,7 @@ private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick:
             )
         } else {
             Gap(4.dp)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 38.dp)) {
+            ChoiceRow(Modifier.padding(start = 38.dp)) {
                 Listener.entries.filter { it != Listener.PhoneSpeaker }.forEach { l ->
                     Chip(l.label, current == l, onClick = { onPick(l) }, on = Surface.Card)
                 }
@@ -405,7 +407,7 @@ private fun EffectCard(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
+    InkSection(expanded, header = {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -425,16 +427,15 @@ private fun EffectCard(
                 Txt(mode, 15.sp, if (on) p.text else p.sub, maxLines = 1)
             }
         }
-        if (expanded) {
-            Column(Modifier.padding(top = 2.dp, bottom = 18.dp)) {
-                Txt(about, 14.sp, p.sub)
-                notes.forEach { n ->
-                    Gap(6.dp)
-                    Txt(n, 14.sp, p.text)
-                }
-                Gap(10.dp)
-                content()
+    }) {
+        Column(Modifier.padding(top = 2.dp, bottom = 18.dp)) {
+            Txt(about, 14.sp, p.sub)
+            notes.forEach { n ->
+                Gap(6.dp)
+                Txt(n, 14.sp, p.text)
             }
+            Gap(10.dp)
+            content()
         }
     }
 }

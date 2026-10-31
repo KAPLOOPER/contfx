@@ -1,6 +1,19 @@
 package dev.continuum.fx.ui.components
 
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.continuum.fx.ui.theme.Libron
+import kotlinx.coroutines.delay
+import kotlin.math.min
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
@@ -251,12 +264,21 @@ internal fun Modifier.spreadInk(spread: Spread): Modifier = drawWithContent {
 }
 
 /**
- * A choice: just its word, on the surface. The chosen one is bright, with a small drop under it,
- * the same mark the page title wears; choosing swells the drop in under the word (a little past
- * and back), and choosing another draws it away. Felt when your finger did it.
+ * A choice: its word, and when it's chosen, a pill of ink behind it that the word is knocked out
+ * of. In a [ChoiceRow] the row shares one pill, which flows from word to word; on its own it's a
+ * row of one and its pill swells in and out. Felt when your finger did it.
  */
 @Composable
 fun Chip(label: String, selected: Boolean, onClick: () -> Unit, on: Surface = Surface.Ground) {
+    if (LocalChoiceGroup.current == null) {
+        ChoiceRow(scroll = false, on = on) { ChipWord(label, selected, onClick, on) }
+    } else {
+        ChipWord(label, selected, onClick, on)
+    }
+}
+
+@Composable
+private fun ChipWord(label: String, selected: Boolean, onClick: () -> Unit, on: Surface) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val touch = remember { Touch() }
@@ -264,35 +286,22 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit, on: Surface = Su
     val bright = if (on == Surface.Ink) p.onInk else p.text
     val dim = if (on == Surface.Ink) p.onInkSub else p.sub
     val fg by animateColorAsState(if (selected) bright else dim, Motion.flow(), label = "choice")
-    val drop = remember { Animatable(if (selected) 1f else 0f) }
+    val was = remember { booleanArrayOf(selected) }
     LaunchedEffect(selected) {
-        val target = if (selected) 1f else 0f
-        if (drop.targetValue == target) return@LaunchedEffect
+        if (was[0] == selected) return@LaunchedEffect
+        was[0] = selected
         if (touch.recent() != null) InkFeel.toggle(view, selected)
-        drop.animateTo(target, if (selected) SWELL else Motion.snap())
     }
-    Column(
+    Box(
         Modifier
+            .choice(selected)
             .notes(touch)
             .selectable(selected, interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
             .heightIn(min = 44.dp)
-            .padding(end = 16.dp, top = 6.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Txt(label, 16.sp, fg, maxLines = 1, modifier = Modifier.squash(source, pill = true))
-        Spacer(Modifier.height(6.dp))
-        Box(
-            Modifier
-                .size(width = 16.dp, height = 5.dp)
-                .graphicsLayer {
-                    val s = drop.value.coerceAtLeast(0f)
-                    scaleX = s
-                    scaleY = s.coerceAtMost(1.2f)
-                    transformOrigin = TransformOrigin(0f, 0.5f)
-                }
-                .clip(RoundedCornerShape(50))
-                .background(bright),
-        )
     }
 }
 
@@ -382,29 +391,54 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
 /** A drop filling its socket: past it by a tenth, then back. */
 private val SWELL = spring<Float>(dampingRatio = 0.42f, stiffness = 420f)
 
+/** The value's bubble rises bouncily and sinks back on Snap; the drop under the finger swells. */
+private val RISE = spring<Float>(dampingRatio = 0.55f, stiffness = 300f)
+private val KNOB = spring<Float>(dampingRatio = 0.6f, stiffness = 620f)
+
 /**
- * Slider in the Continuum scrubber style: a flat track that thickens under the
- * finger on the Snap spring and settles back on Flow. [value] is 0..1.
+ * A slider is a line of ink with a drop on it: solid up to the drop, faint after. Hold the drop
+ * and a bubble of ink rises off it on a neck with [label] (the value) in it, following your
+ * finger; let go and it sinks back in. Inside an [InkSection] the solid part starts at the
+ * section's thread, as a branch of it, and grows out of it as the ink first reaches it.
+ * [value] is 0..1; [muted] draws it in grey.
  */
 @Composable
 fun InkSlider(
     value: Float,
     onChange: (Float) -> Unit,
-    track: Color,
-    fill: Color,
     modifier: Modifier = Modifier,
+    label: String? = null,
+    muted: Boolean = false,
 ) {
+    val p = LocalPalette.current
+    val ink = if (muted) p.sub else p.primary
+    val onInk = p.onPrimary
+    val thread = LocalInkThread.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    var pressing by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
-    val thickness by animateDpAsState(
-        if (dragging) 12.dp else 6.dp,
-        if (dragging) Motion.snap() else Motion.flow(),
-        label = "thickness",
-    )
+    val held = pressing || dragging
+    val lift = remember { Animatable(0f) }
+    val knob = remember { Animatable(0f) }
+    val first = remember { booleanArrayOf(true) }
+    LaunchedEffect(held) {
+        if (!first[0]) {
+            if (held) InkFeel.split(view) else InkFeel.merge(view)
+        }
+        first[0] = false
+        launch { lift.animateTo(if (held) 1f else 0f, if (held) RISE else Motion.snap()) }
+        launch { knob.animateTo(if (held) 1f else 0f, KNOB) }
+    }
+    val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val measurer = rememberTextMeasurer()
+    val style = TextStyle(color = onInk, fontSize = 14.sp, fontFamily = Libron)
     val latest = rememberUpdatedState(onChange)
     Box(
         modifier
             .fillMaxWidth()
             .height(36.dp)
+            .onPlaced { coords[0] = it }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { o ->
@@ -419,23 +453,51 @@ fun InkSlider(
                 }
             }
             .pointerInput(Unit) {
-                detectTapGestures { o -> latest.value((o.x / size.width).coerceIn(0f, 1f)) }
+                detectTapGestures(
+                    onPress = {
+                        // A moment's hold before the bubble rises, so a scroll passing over
+                        // doesn't raise it.
+                        val rise = scope.launch {
+                            delay(90)
+                            pressing = true
+                        }
+                        tryAwaitRelease()
+                        rise.cancel()
+                        pressing = false
+                    },
+                    onTap = { o -> latest.value((o.x / size.width).coerceIn(0f, 1f)) },
+                )
+            }
+            .drawBehind {
+                val cy = size.height / 2f
+                val w = size.width
+                val kx = value.coerceIn(0f, 1f) * w
+                var from = 0f
+                var reach = 1f
+                val t = thread
+                val mine = coords[0]
+                if (t != null && mine != null) {
+                    val sc = t.coords
+                    if (sc != null && sc.isAttached && mine.isAttached) {
+                        val at = sc.localPositionOf(mine, Offset.Zero)
+                        from = t.threadX - at.x
+                        reach = t.reach(at.y + cy)
+                    }
+                }
+                if (reach <= 0f) return@drawBehind
+                // The rest of the line, faint, drawn out from the drop.
+                drawLine(ink.copy(alpha = 0.25f), Offset(kx, cy), Offset(kx + (w - kx) * reach, cy), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                val end = from + (kx - from) * reach
+                drawLine(ink, Offset(from, cy), Offset(end, cy), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+                val kr = (7.dp.toPx() + 3.dp.toPx() * knob.value) * min(1f, reach * 1.3f)
+                drawCircle(ink, kr, Offset(end, cy))
+
+                if (reach < 1f) return@drawBehind
+                val b = lift.value
+                if (b > 0.02f) {
+                    val spill = 16.dp.toPx()
+                    inkBubble(Offset(kx, cy), b, label?.let { measurer.measure(it, style) }, ink, -spill, w + spill)
+                }
             },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(thickness)
-                .clip(RoundedCornerShape(50))
-                .background(track),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(value.coerceIn(0f, 1f))
-                    .fillMaxHeight()
-                    .background(fill),
-            )
-        }
-    }
+    )
 }

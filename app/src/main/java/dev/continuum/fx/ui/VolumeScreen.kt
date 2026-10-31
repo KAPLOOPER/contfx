@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.PillButton
@@ -121,10 +122,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 val muted = s == VolStream.Notification && snap.ringer != AudioManager.RINGER_MODE_NORMAL
                 StreamControl(s, lv, snap.ringer, muted, if (s == VolStream.Media && boost > 0) BoostPolicy.percent(boost) else null)
             }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ChoiceRow(Modifier.padding(top = 8.dp, bottom = 10.dp)) {
                 Chip("Ring", snap.ringer == AudioManager.RINGER_MODE_NORMAL, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_NORMAL) }, on = Surface.Card)
                 Chip("Vibrate", snap.ringer == AudioManager.RINGER_MODE_VIBRATE, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_VIBRATE) }, on = Surface.Card)
                 Chip("Silent", snap.ringer == AudioManager.RINGER_MODE_SILENT, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_SILENT) }, on = Surface.Card)
@@ -185,18 +183,12 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 actions.updateVolume { it.copy(rememberApps = !it.rememberApps) }
             }
             Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(top = 10.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
                 Chip("Right", !prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_RIGHT) } }, on = Surface.Card)
                 Chip("Left", prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_LEFT) } }, on = Surface.Card)
             }
             Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(top = 6.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ChoiceRow(Modifier.padding(top = 6.dp, bottom = 12.dp)) {
                 Chip("Higher", prefs.height == VolumePrefs.HEIGHT_HIGHER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_HIGHER) } }, on = Surface.Card)
                 Chip("Middle", prefs.height == VolumePrefs.HEIGHT_MIDDLE, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_MIDDLE) } }, on = Surface.Card)
                 Chip("Lower", prefs.height == VolumePrefs.HEIGHT_LOWER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_LOWER) } }, on = Surface.Card)
@@ -214,10 +206,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 prefs.boost,
             ) { actions.updateVolume { it.copy(boost = !it.boost) } }
             if (prefs.boost) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ChoiceRow(Modifier.padding(top = 4.dp, bottom = 12.dp)) {
                     listOf(2, 4, 7, 10).forEach { n ->
                         Chip(
                             "${BoostPolicy.percent(n)}% · +${BoostPolicy.db(n).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }} dB",
@@ -257,9 +246,9 @@ private fun StreamControl(s: VolStream, lv: Level, ringer: Int, muted: Boolean, 
             InkSlider(
                 value = lv.fraction,
                 onChange = { f -> VolumeModel.set(s, lv.indexAt(f)) },
-                track = p.sub.copy(alpha = 0.35f),
-                fill = if (muted) p.sub else p.text,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                label = boostPercent?.let { "$it%" } ?: "${lv.percent}%",
+                muted = muted,
             )
             RepeatBubble(R.drawable.ic_plus, "Up") { VolumeModel.step(s, 1) }
         }
@@ -280,7 +269,7 @@ private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Flo
             Txt(label, 17.sp, p.text, modifier = Modifier.weight(1f), maxLines = 1)
             Txt("${(volume * 100f).toInt()}%", 14.sp, p.sub, maxLines = 1)
         }
-        InkSlider(value = volume, onChange = onChange, track = p.sub.copy(alpha = 0.35f), fill = p.text, modifier = Modifier.fillMaxWidth())
+        InkSlider(value = volume, onChange = onChange, modifier = Modifier.fillMaxWidth(), label = "${(volume * 100f).toInt()}%")
     }
 }
 

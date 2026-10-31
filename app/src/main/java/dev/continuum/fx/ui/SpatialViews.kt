@@ -71,6 +71,7 @@ import dev.continuum.fx.dsp.Speaker
 import dev.continuum.fx.dsp.SpeakerRole
 import dev.continuum.fx.island.ui.InkFeel
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
@@ -147,7 +148,7 @@ internal fun SpatialContent() {
 
     Txt("Setups", 15.sp, p.sub)
     Spacer(Modifier.size(6.dp))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    ChoiceRow {
         lib.setups.forEach { s ->
             Chip(s.name, !showingOff && s.id == editing.id, onClick = { editingId = s.id }, on = Surface.Card)
         }
@@ -243,7 +244,7 @@ private fun SetupEditor(s: SpatialSetup) {
     Spacer(Modifier.size(14.dp))
     Txt("Layout", 15.sp, p.sub)
     Spacer(Modifier.size(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    ChoiceRow {
         SpatialLayout.entries.forEach { l -> Chip(l.label, s.layout == l, onClick = { set { it.withLayout(l) } }, on = Surface.Card) }
     }
     if (s.layout != SpatialLayout.Stereo) {
@@ -265,7 +266,7 @@ private fun SetupEditor(s: SpatialSetup) {
     Spacer(Modifier.size(14.dp))
     Txt("Room", 15.sp, p.sub)
     Spacer(Modifier.size(6.dp))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    ChoiceRow {
         RoomKind.entries.forEach { r -> Chip(r.label, s.room == r, onClick = { set { it.copy(room = r) } }, on = Surface.Card) }
     }
     Spacer(Modifier.size(4.dp))
@@ -288,44 +289,43 @@ private fun SetupEditor(s: SpatialSetup) {
     Txt("The tail is the room's echo after the reflections. Leave it low for a dry, close sound.", 13.sp, p.sub)
 
     Spacer(Modifier.size(6.dp))
-    More(fine, { fine = !fine }, label = "Head, bass and mix")
-    if (!fine) return
-
-    if (s.layout != SpatialLayout.Stereo) {
-        Spacer(Modifier.size(14.dp))
-        Txt("Mix", 15.sp, p.sub)
-        SliderField("Front width", "${(s.width * 100).roundToInt()}%", (s.width - 0.5f)) { v -> set { it.copy(width = ((0.5f + v) * 20).roundToInt() / 20f) } }
-        SliderField("Centre", dbText(s.centreDb), (s.centreDb + 12f) / 21f) { v -> set { it.copy(centreDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
-        SliderField("Surrounds", dbText(s.surroundDb), (s.surroundDb + 12f) / 21f) { v -> set { it.copy(surroundDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
-        Txt("Centre lifts voices in films; surrounds set how much of the space comes from around and behind.", 13.sp, p.sub)
-    }
-
-    Spacer(Modifier.size(14.dp))
-    Txt("Bass stays dry below", 15.sp, p.sub)
-    Spacer(Modifier.size(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(0, 80, 120, 200).forEach { hz ->
-            Chip(if (hz == 0) "Off" else "$hz Hz", s.bassHz == hz, onClick = { set { it.copy(bassHz = hz) } }, on = Surface.Card)
+    MoreSection(fine, { fine = !fine }, label = "Head, bass and mix") {
+        if (s.layout != SpatialLayout.Stereo) {
+            Spacer(Modifier.size(14.dp))
+            Txt("Mix", 15.sp, p.sub)
+            SliderField("Front width", "${(s.width * 100).roundToInt()}%", (s.width - 0.5f)) { v -> set { it.copy(width = ((0.5f + v) * 20).roundToInt() / 20f) } }
+            SliderField("Centre", dbText(s.centreDb), (s.centreDb + 12f) / 21f) { v -> set { it.copy(centreDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
+            SliderField("Surrounds", dbText(s.surroundDb), (s.surroundDb + 12f) / 21f) { v -> set { it.copy(surroundDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
+            Txt("Centre lifts voices in films; surrounds set how much of the space comes from around and behind.", 13.sp, p.sub)
         }
-    }
-    Spacer(Modifier.size(4.dp))
-    Txt("Below this the sound skips the room and the head, so the bass stays as tight and full as your EQ made it.", 13.sp, p.sub)
 
-    Spacer(Modifier.size(14.dp))
-    Txt("Head", 15.sp, p.sub)
-    Spacer(Modifier.size(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        HeadModel.entries.forEach { h -> Chip(h.label, s.head == h, onClick = { set { it.copy(head = h) } }, on = Surface.Card) }
+        Spacer(Modifier.size(14.dp))
+        Txt("Bass stays dry below", 15.sp, p.sub)
+        Spacer(Modifier.size(6.dp))
+        ChoiceRow {
+            listOf(0, 80, 120, 200).forEach { hz ->
+                Chip(if (hz == 0) "Off" else "$hz Hz", s.bassHz == hz, onClick = { set { it.copy(bassHz = hz) } }, on = Surface.Card)
+            }
+        }
+        Spacer(Modifier.size(4.dp))
+        Txt("Below this the sound skips the room and the head, so the bass stays as tight and full as your EQ made it.", 13.sp, p.sub)
+
+        Spacer(Modifier.size(14.dp))
+        Txt("Head", 15.sp, p.sub)
+        Spacer(Modifier.size(6.dp))
+        ChoiceRow {
+            HeadModel.entries.forEach { h -> Chip(h.label, s.head == h, onClick = { set { it.copy(head = h) } }, on = Surface.Card) }
+        }
+        Spacer(Modifier.size(6.dp))
+        ChoiceRow {
+            HeadSize.entries.forEach { h -> Chip(h.label, s.headSize == h, onClick = { set { it.copy(headSize = h) } }, on = Surface.Card) }
+        }
+        Spacer(Modifier.size(4.dp))
+        Txt(
+            "Two measured dummy heads (from the University of York's SADIE II). Heads differ: try both and keep whichever puts the speakers furthest out. Size sets how far sounds swing as they move round.",
+            13.sp, p.sub,
+        )
     }
-    Spacer(Modifier.size(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        HeadSize.entries.forEach { h -> Chip(h.label, s.headSize == h, onClick = { set { it.copy(headSize = h) } }, on = Surface.Card) }
-    }
-    Spacer(Modifier.size(4.dp))
-    Txt(
-        "Two measured dummy heads (from the University of York's SADIE II). Heads differ: try both and keep whichever puts the speakers furthest out. Size sets how far sounds swing as they move round.",
-        13.sp, p.sub,
-    )
 }
 
 private fun distanceToFraction(d: Float) =

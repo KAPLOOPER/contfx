@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import dev.continuum.fx.ui.theme.Libron
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -133,6 +138,15 @@ fun EqGraph(
     val latestMove = rememberUpdatedState(onMove)
     val latestQ = rememberUpdatedState(onQ)
     val latestSelected = rememberUpdatedState(selected)
+    // The filter under your finger: its values rise off its dot in a bubble of ink while you hold.
+    var holding by remember { mutableIntStateOf(-1) }
+    val lastHeld = remember { intArrayOf(-1) }
+    if (holding >= 0) lastHeld[0] = holding
+    val lift = remember { Animatable(0f) }
+    LaunchedEffect(holding >= 0) {
+        lift.animateTo(if (holding >= 0) 1f else 0f, if (holding >= 0) spring(dampingRatio = 0.55f, stiffness = 300f) else Motion.snap())
+    }
+    val measurer = rememberTextMeasurer()
 
     BoxWithConstraints(
         modifier
@@ -197,6 +211,7 @@ fun EqGraph(
                                     band = if (target >= 0) target else latestSelected.value
                                     if (band < 0 || band >= latestProfile.value.bands.size) continue
                                     mode = 2
+                                    holding = band
                                     q0 = latestProfile.value.bands[band].q
                                     d0 = (held[0].position - held[1].position).getDistance()
                                     latestSelect.value(band)
@@ -216,6 +231,7 @@ fun EqGraph(
                             if (target < 0) continue
                             if (mode == 0 && moved) {
                                 mode = 1
+                                holding = target
                                 latestSelect.value(target)
                             }
                             if (mode == 1) {
@@ -223,6 +239,7 @@ fun EqGraph(
                                 latestMove.value(target, freqOf(c.position.x), dbOf(c.position.y, latestRange.value))
                             }
                         }
+                        holding = -1
                         // A tap: choose the dot under it, or none.
                         if (mode == 0 && !moved) latestSelect.value(target)
                     }
@@ -274,8 +291,24 @@ fun EqGraph(
                 val c = Offset(xOf(b.frequency), dotY(i, profile, range, shape))
                 val isSel = i == selected
                 val radius = with(density) { (if (isSel) 11.dp else 7.dp).toPx() }
-                drawCircle(if (b.enabled) p.text else p.sub, radius, c)
+                drawCircle(if (b.enabled) p.primary else p.sub, radius, c)
                 if (isSel) drawCircle(p.ground, radius * 0.42f, c)
+            }
+
+            val held = lastHeld[0]
+            val up = lift.value
+            if (up > 0.02f && held in profile.bands.indices) {
+                val b = profile.bands[held]
+                val c = Offset(xOf(b.frequency), dotY(held, profile, range, shape))
+                val words = buildString {
+                    append(Fmt.freq(b.frequency))
+                    if (b.type.usesGain) append("   ").append(Fmt.db(b.gainDb))
+                    append("   Q ").append(Fmt.q(b.q))
+                }
+                val text = measurer.measure(words, TextStyle(color = p.onPrimary, fontSize = 13.sp, fontFamily = Libron))
+                // Above the dot, unless there's no room: then it hangs below.
+                val room = c.y - with(density) { 80.dp.toPx() }
+                inkBubble(c, up, text, p.primary, insetPx, w - insetPx, below = room < 0f)
             }
         }
 
@@ -310,6 +343,7 @@ fun EqGraph(
             val gap = with(density) { 18.dp.toPx() }
             Row(
                 Modifier
+                    .graphicsLayer { alpha = (1f - lift.value * 1.6f).coerceIn(0f, 1f) }
                     .offset {
                         val x = (dx - readoutW / 2f).coerceIn(insetPx, w - insetPx - readoutW)
                         // Above the dot, unless that would leave the graph.

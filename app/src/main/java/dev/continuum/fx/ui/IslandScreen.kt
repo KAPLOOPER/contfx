@@ -40,6 +40,7 @@ import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
@@ -131,19 +132,12 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 actions.updateIsland { it.copy(alarms = !it.alarms) }
             }
             if (prefs.alarms) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ChoiceRow(Modifier.padding(bottom = 10.dp)) {
                     Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } }, on = Surface.Card)
                     Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } }, on = Surface.Card)
                 }
             }
-            More(showMore, { showMore = !showMore })
-            if (showMore) {
+            MoreSection(showMore, { showMore = !showMore }) {
             val eventsOn = prefs.events && state.privileges.calendar
             ToggleRow(
                 "Calendar events",
@@ -188,13 +182,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
             }
             if (prefs.alwaysTime) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ChoiceRow(Modifier.padding(bottom = 10.dp)) {
                     listOf(
                         IslandPrefs.TIME_OUTSIDE to "Left of the art",
                         IslandPrefs.TIME_INSIDE to "Right of the art",
@@ -212,13 +200,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             ) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
             }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ChoiceRow(Modifier.padding(bottom = 10.dp)) {
                 Chip("Ring round the camera", prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = true) } }, on = Surface.Card)
                 Chip("Ink battery", !prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = false) } }, on = Surface.Card)
             }
@@ -228,15 +210,14 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         PlacementSection(prefs, actions)
         Gap(28.dp)
 
-        More(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves")
-        if (aboutInk) Txt(
+        MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
                 "pinches off a second bubble when two things are running, and drips alerts down from the camera. " +
                 "Hold it and drag down to pull a drop out on a stretchy neck: let go early and it springs back, " +
                 "pull past the snap and it tears free as your recent notifications. Swipe a notification sideways and it " +
                 "leans away on a neck that thins and snaps; swipe up to send it back. Nothing pops in or out: ink only separates and merges.",
             15.sp, p.sub,
-        )
+        ) }
     }
 }
 
@@ -302,8 +283,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
             },
             frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX),
         ) { t -> place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) } }
-        More(sizing, { sizing = !sizing }, label = "Size and shape")
-        if (sizing) {
+        MoreSection(sizing, { sizing = !sizing }, label = "Size and shape") {
         val c = prefs.cameraSize
         SliderField(
             "Camera size",

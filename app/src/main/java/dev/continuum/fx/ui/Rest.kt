@@ -100,7 +100,7 @@ internal fun Modifier.bleed(by: Dp): Modifier = layout { measurable, constraints
 
 /**
  * The quiet line at the end of a group that shows the rest of it: the finer settings stay out
- * of the way until asked for. Its arrow turns as it opens.
+ * of the way until asked for. Its drop in the margin is the sign that it opens.
  */
 @Composable
 internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", modifier: Modifier = Modifier) {
@@ -114,9 +114,13 @@ internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", m
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Txt(if (open) "Less" else label, 15.sp, p.sub, maxLines = 1)
-        Spacer(Modifier.width(6.dp))
-        Chevron(open, p.sub)
     }
+}
+
+/** [More], and the rest of the group it opens, written out by the ink. */
+@Composable
+internal fun MoreSection(open: Boolean, onToggle: () -> Unit, label: String = "More", content: @Composable () -> Unit) {
+    dev.continuum.fx.ui.components.InkSection(open, header = { More(open, onToggle, label) }, content = content)
 }
 
 /**

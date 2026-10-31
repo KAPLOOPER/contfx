@@ -34,6 +34,7 @@ import dev.continuum.fx.R
 import dev.continuum.fx.data.FitStore
 import dev.continuum.fx.dsp.EqFit
 import dev.continuum.fx.ui.components.Chip
+import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -77,24 +78,23 @@ internal fun FitCard(actions: AppActions) {
         Txt("Text files of frequency and level, as REW, squig.link and AutoEQ write them.", 13.sp, p.sub)
 
         Spacer(Modifier.size(6.dp))
-        More(tuning, { tuning = !tuning }, label = "How it fits")
-        if (tuning) {
+        MoreSection(tuning, { tuning = !tuning }, label = "How it fits") {
         Spacer(Modifier.size(8.dp))
         Txt("Filters", 15.sp, p.sub)
         Spacer(Modifier.size(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChoiceRow {
             listOf(6, 8, 10, 12).forEach { n -> Chip("$n", fit.options.filters == n, onClick = { options { it.copy(filters = n) } }, on = Surface.Card) }
         }
         Spacer(Modifier.size(10.dp))
         Txt("Most lift", 15.sp, p.sub)
         Spacer(Modifier.size(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChoiceRow {
             listOf(3.0, 6.0, 9.0).forEach { d -> Chip("+${d.toInt()} dB", fit.options.maxBoostDb == d, onClick = { options { it.copy(maxBoostDb = d) } }, on = Surface.Card) }
         }
         Spacer(Modifier.size(10.dp))
         Txt("Fit up to", 15.sp, p.sub)
         Spacer(Modifier.size(6.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChoiceRow {
             listOf(8000.0, 10000.0, 12000.0, 16000.0).forEach { f ->
                 Chip("${(f / 1000).toInt()} kHz", fit.options.fitTo == f, onClick = { options { it.copy(fitTo = f) } }, on = Surface.Card)
             }

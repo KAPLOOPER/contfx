@@ -5,6 +5,9 @@ name: Head data
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   convert:
     runs-on: ubuntu-latest
@@ -26,9 +29,12 @@ jobs:
           python -c "import pypdf; r=pypdf.PdfReader('dl/SADIE II V2-2 README.pdf'); print('\n'.join(p.extract_text() for p in r.pages)[:4000])"
           D1=$(find dl/D1 -iname '*48K*.sofa' | head -1); D2=$(find dl/D2 -iname '*48K*.sofa' | head -1)
           echo "D1=$D1 D2=$D2"
-          python tools/hrir/convert.py out d1="$D1" d2="$D2"
+          python tools/hrir/convert.py out d1="$D1" d2="$D2" 2>&1 | tee out/convert.log
           cp dl/LICENSE.txt out/SADIE-II-LICENSE.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: heads
-          path: out/
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete heads --yes --cleanup-tag 2>/dev/null || true
+          gh release create heads out/* --prerelease --title "Head data (SADIE II)" \
+            --notes "Converted SADIE II dummy-head HRIRs for Continuum FX's spatial audio. Source: University of York, Apache 2.0."

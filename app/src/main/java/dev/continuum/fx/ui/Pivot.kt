@@ -118,11 +118,11 @@ internal fun PivotHeader(
     val goo = remember(density) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 3.5.dp.toPx() }) else null }
     fun px(dp: Float) = dp * density.density
     val gap = px(22f)
-    val x0 = px(20f)
+    val x0 = px(24f)
 
     Column(modifier) {
         // The app's name above, small and spaced out, as Windows Phone did; the drop is Continuum's.
-        Row(Modifier.padding(start = 21.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 25.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(p.text))
             Spacer(Modifier.width(9.dp))
             BasicText(

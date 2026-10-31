@@ -100,7 +100,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         Txt(status, 17.sp, if (volumeOn(state, prefs)) p.text else p.sub, maxLines = 2)
         Gap(22.dp)
 
-        Txt("Try it", 21.sp, p.text, bold = true)
+        SectionLabel("Try it", top = 0.dp)
         Gap(2.dp)
         Txt(
             if (serviceOn) "Press a volume key, or show the panel from here." else "Finish setup and the volume keys open the panel.",
@@ -113,16 +113,16 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
-        Txt("Levels", 21.sp, p.text, bold = true)
+        SectionLabel("Levels", top = 0.dp)
         Gap(10.dp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth()) {
             VolStream.entries.forEach { s ->
                 val lv = snap[s]
                 val muted = s == VolStream.Notification && snap.ringer != AudioManager.RINGER_MODE_NORMAL
                 StreamControl(s, lv, snap.ringer, muted, if (s == VolStream.Media && boost > 0) BoostPolicy.percent(boost) else null)
             }
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 10.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp, bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Chip("Ring", snap.ringer == AudioManager.RINGER_MODE_NORMAL, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_NORMAL) }, on = Surface.Card)
@@ -137,7 +137,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
-        Txt("Apps", 21.sp, p.text, bold = true)
+        SectionLabel("Apps", top = 0.dp)
         Gap(2.dp)
         when {
             !helper -> Rest(
@@ -154,7 +154,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         }
         if (helper && apps.isNotEmpty()) {
             Gap(10.dp)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth()) {
                 // Each row belongs to its app, not to its place in the list.
                 apps.forEach { a ->
                     key(a.pkg) { AppControl(a.pkg, a.label, a.volume) { v -> AppVolumes.setVolume(a.pkg, v) } }
@@ -166,9 +166,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         PlaysAlongside(helper, known, actions)
         Gap(28.dp)
 
-        Txt("Panel", 21.sp, p.text, bold = true)
+        SectionLabel("Panel", top = 0.dp)
         Gap(10.dp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth()) {
             ToggleRow("Replace Android's panel", "The volume keys open the ink panel. Off hands them straight back to Android.", prefs.enabled) {
                 actions.updateVolume { it.copy(enabled = !it.enabled) }
             }
@@ -184,17 +184,17 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
             ToggleRow("Remember each app's volume", "An app you've turned down starts there next time. Back to full forgets it.", prefs.rememberApps) {
                 actions.updateVolume { it.copy(rememberApps = !it.rememberApps) }
             }
-            Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(start = 18.dp, top = 10.dp))
+            Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(top = 10.dp))
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Chip("Right", !prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_RIGHT) } }, on = Surface.Card)
                 Chip("Left", prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_LEFT) } }, on = Surface.Card)
             }
-            Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(start = 18.dp, top = 6.dp))
+            Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(top = 6.dp))
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 12.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Chip("Higher", prefs.height == VolumePrefs.HEIGHT_HIGHER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_HIGHER) } }, on = Surface.Card)
@@ -204,9 +204,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
-        Txt("Boost", 21.sp, p.text, bold = true)
+        SectionLabel("Boost", top = 0.dp)
         Gap(10.dp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+        Column(Modifier.fillMaxWidth()) {
             ToggleRow(
                 "Go past 100%",
                 "At full media volume, press volume up twice to go louder in 5% steps; volume down brings it back. " +
@@ -215,7 +215,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
             ) { actions.updateVolume { it.copy(boost = !it.boost) } }
             if (prefs.boost) {
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     listOf(2, 4, 7, 10).forEach { n ->
@@ -236,7 +236,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
 @Composable
 private fun StreamControl(s: VolStream, lv: Level, ringer: Int, muted: Boolean, boostPercent: Int?) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painterResource(streamIcon(s, lv.index == lv.min, ringer)),
@@ -257,7 +257,7 @@ private fun StreamControl(s: VolStream, lv: Level, ringer: Int, muted: Boolean, 
             InkSlider(
                 value = lv.fraction,
                 onChange = { f -> VolumeModel.set(s, lv.indexAt(f)) },
-                track = p.ground,
+                track = p.line,
                 fill = if (muted) p.sub else p.text,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
             )
@@ -271,7 +271,7 @@ private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Flo
     val p = LocalPalette.current
     val iconPx = with(LocalDensity.current) { 28.dp.roundToPx() }
     val icon = remember(pkg) { AppVolumes.icon(pkg, iconPx) }
-    Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Image(icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(24.dp).clip(CircleShape))
@@ -280,7 +280,7 @@ private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Flo
             Txt(label, 17.sp, p.text, modifier = Modifier.weight(1f), maxLines = 1)
             Txt("${(volume * 100f).toInt()}%", 14.sp, p.sub, maxLines = 1)
         }
-        InkSlider(value = volume, onChange = onChange, track = p.ground, fill = p.text, modifier = Modifier.fillMaxWidth())
+        InkSlider(value = volume, onChange = onChange, track = p.line, fill = p.text, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -293,7 +293,7 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
     val p = LocalPalette.current
     val alongside by AppVolumes.alongside.collectAsState()
     val problem by AppVolumes.alongsideProblem.collectAsState()
-    Txt("Play alongside", 21.sp, p.text, bold = true)
+    SectionLabel("Play alongside", top = 0.dp)
     Gap(2.dp)
     Txt(
         "Normally, an app that starts playing pauses the one before. Switch an app on and it plays alongside: starting it doesn't " +
@@ -321,7 +321,7 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
                 Txt(it, 15.sp, p.danger)
             }
             Gap(10.dp)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+            Column(Modifier.fillMaxWidth()) {
                 list.forEach { pkg ->
                     val on = pkg in alongside
                     ToggleRow(AppVolumes.label(pkg), if (on) "Plays alongside" else "Pauses when another starts", on) {
@@ -341,8 +341,6 @@ private fun RepeatBubble(icon: Int, description: String, onStep: () -> Unit) {
     Box(
         Modifier
             .size(40.dp)
-            .clip(CircleShape)
-            .background(p.ground)
             .semantics { contentDescription = description }
             .pointerInput(Unit) {
                 coroutineScope {

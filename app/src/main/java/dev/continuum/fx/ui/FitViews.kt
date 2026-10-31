@@ -58,14 +58,8 @@ internal fun FitCard(actions: AppActions) {
     }
     fun options(transform: (EqFit.Options) -> EqFit.Options) = FitStore.update { it.copy(options = transform(it.options)) }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .padding(18.dp),
-    ) {
-        Txt("Make an EQ from a measurement", 17.sp, p.text, bold = true)
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel("Make an EQ from a measurement", top = 4.dp)
         Spacer(Modifier.size(2.dp))
         Txt(
             "Your earphones' measured response, and the target you want them to sound like. Continuum fits an EQ between the two; after that it's an EQ like any other, to edit, link and share.",
@@ -113,7 +107,7 @@ internal fun FitCard(actions: AppActions) {
         }
 
         Spacer(Modifier.size(14.dp))
-        PillButton("Make the EQ", actions::makeFittedEq, icon = R.drawable.ic_check, primary = true, on = Surface.Card, height = 40.dp)
+        PillButton("Make the EQ", actions::makeFittedEq, icon = R.drawable.ic_check, primary = true)
         Spacer(Modifier.size(10.dp))
         Txt(
             "Measured on an IEC 711 coupler? KEMAR's ears are 711 ear simulators and its head is diffuse-field equalised, so with spatial audio on the KEMAR head this same EQ keeps you on your target.",
@@ -131,7 +125,7 @@ private fun FileRow(label: String, value: String, chosen: Boolean, onChoose: () 
             Txt(value, 16.sp, if (chosen) p.text else p.sub, maxLines = 1)
         }
         Spacer(Modifier.width(8.dp))
-        PillButton(if (chosen) "Change" else "Choose", onChoose, icon = R.drawable.ic_import, height = 36.dp, on = Surface.Card)
+        PillButton(if (chosen) "Change" else "Choose", onChoose, icon = R.drawable.ic_import)
     }
 }
 
@@ -139,8 +133,8 @@ private fun FileRow(label: String, value: String, chosen: Boolean, onChoose: () 
 @Composable
 private fun FitGraph(r: EqFit.Result, fitTo: Double) {
     val p = LocalPalette.current
-    Canvas(Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(16.dp)).background(p.ground)) {
-        val pad = 8.dp.toPx()
+    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        val pad = 4.dp.toPx()
         val w = size.width - 2 * pad
         val h = size.height - 2 * pad
         val range = max(6.0, (r.wanted.maxOf { abs(it) } + 1.0).coerceAtMost(18.0))

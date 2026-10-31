@@ -95,7 +95,6 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         Gap(14.dp)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Chip(if (fx.enabled) "Effects on" else "Effects off", fx.enabled, onClick = { set { it.copy(enabled = !it.enabled) } })
@@ -347,53 +346,40 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
 }
 
 @Composable
-private fun Group(title: String) {
-    Gap(28.dp)
-    Txt(title, 21.sp, LocalPalette.current.text, bold = true)
-    Gap(10.dp)
-}
+private fun Group(title: String) = SectionLabel(title)
 
 /** What's being listened on, so effects fit it. */
 @Composable
 private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick: (Listener) -> Unit) {
     val p = LocalPalette.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .padding(top = 12.dp, bottom = 12.dp),
-    ) {
-        Row(Modifier.padding(start = 14.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Image(
                 painterResource(if (phone || current == Listener.Speaker) R.drawable.ic_speaker else R.drawable.ic_headphones),
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
                 colorFilter = ColorFilter.tint(p.text),
             )
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Txt("Listening on", 13.sp, p.sub, maxLines = 1)
-                Txt(name, 16.sp, p.text, bold = true, maxLines = 1)
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Txt(name, 17.sp, p.text, maxLines = 1)
+                Txt("Listening on", 14.sp, p.sub, maxLines = 1)
             }
         }
         if (phone) {
             Txt(
                 "Effects keep to what the phone's speaker can play. Speaker bass is made for it.",
-                13.sp, p.sub, modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp),
+                14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, top = 6.dp),
             )
         } else {
-            Gap(10.dp)
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            Gap(4.dp)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 38.dp)) {
                 Listener.entries.filter { it != Listener.PhoneSpeaker }.forEach { l ->
                     Chip(l.label, current == l, onClick = { onPick(l) }, on = Surface.Card)
                 }
             }
             Txt(
                 "Bass and treble effects ask no more than this kind of driver can give, and crossfeed is for headphones.",
-                13.sp, p.sub, modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp),
+                14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, top = 4.dp),
             )
         }
     }
@@ -419,43 +405,28 @@ private fun EffectCard(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .animateContentSize(Motion.flow()),
-    ) {
+    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 64.dp)
                 .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onExpand)
-                .padding(start = 18.dp, end = if (onToggle != null) 4.dp else 14.dp, top = 8.dp, bottom = 8.dp),
+                .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt(title, 17.sp, p.text, bold = on, maxLines = 1)
-                Txt(summary, 14.sp, if (on && !resting) p.text else p.sub, maxLines = 2)
+                Txt(title, 17.sp, p.text, maxLines = 1)
+                Txt(summary, 14.sp, if (on && !resting) p.text else p.sub, maxLines = 1)
             }
             if (onToggle != null) {
                 OnOffDot(on, R.drawable.ic_check, title, onToggle)
             } else if (mode != null) {
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    Modifier
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(if (on) p.primary else p.ground)
-                        .padding(horizontal = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Txt(mode, 13.sp, if (on) p.onPrimary else p.sub, bold = true, maxLines = 1)
-                }
+                Spacer(Modifier.width(12.dp))
+                Txt(mode, 15.sp, if (on) p.text else p.sub, maxLines = 1)
             }
         }
         if (expanded) {
-            Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 16.dp)) {
+            Column(Modifier.padding(top = 2.dp, bottom = 18.dp)) {
                 Txt(about, 14.sp, p.sub)
                 notes.forEach { n ->
                     Gap(6.dp)

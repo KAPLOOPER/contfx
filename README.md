@@ -1,6 +1,6 @@
 # Continuum Kit
 
-The utilities I actually use, in one place, all in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
+The utilities I actually use, in one place, all in the Continuum design language: liquid black ink on one flat surface, Flow springs and the Libron typeface. No root needed.
 
 *Formerly Continuum FX: it outgrew the name once it was more than sound. It's the same app underneath, so it updates over the old one and keeps everything you've set up.*
 
@@ -12,7 +12,7 @@ The utilities I actually use, in one place, all in the Continuum design language
 
 The ink rule holds across the app too. The drop under the page's title and the dock are the app's ink: an update, or an app that sent you here, drips out of the drop on a neck and spreads into a card where it sits (and gathers back into it when it goes), and messages bud off the top of the dock, hang on a thread of ink and sink back in. Empty places rest the same way everywhere: the title's drop, one sentence and at most one thing to do.
 
-Controls are ink too. Choosing a chip spreads ink out from your finger, turning the label as it reaches it, and unchoosing drains it back; a switch's dot swells into its socket, a little past it and back, before the tick surfaces; the power button floods from its centre; and *Hold to compare* fills from where you're holding for as long as you hold. You feel the ink as well as see it: a light tick when a drop separates (a tab chosen, a card torn free, a neck snapping) or merges back, a detent as a swipe hands over to the next page, and the toggle feel when a switch fills or drains. Ink that moves by itself stays silent. The icons are Continuum's own, drawn in one hand: round 2-wide strokes, soft filled shapes for media, and a drop where ink would gather (a bell's clapper, a notification's badge, a phone's ear and mouth pieces).
+Everything else sits on one flat surface: no cards, boxes or borders, just space and small spaced-out labels to group things. Choices are their words, the chosen one bright with a small drop under it (the mark the page title wears); buttons are words with an icon; a switch is a small dim dot that swells into a ticked drop. Controls are ink too. Choosing a chip spreads ink out from your finger, turning the label as it reaches it, and unchoosing drains it back; a switch's dot swells into its socket, a little past it and back, before the tick surfaces; the power button floods from its centre; and *Hold to compare* fills from where you're holding for as long as you hold. You feel the ink as well as see it: a light tick when a drop separates (a tab chosen, a card torn free, a neck snapping) or merges back, a detent as a swipe hands over to the next page, and the toggle feel when a switch fills or drains. Ink that moves by itself stays silent. The icons are Continuum's own, drawn in one hand: round 2-wide strokes, soft filled shapes for media, and a drop where ink would gather (a bell's clapper, a notification's badge, a phone's ear and mouth pieces).
 
 ## Continuum Keyboard
 

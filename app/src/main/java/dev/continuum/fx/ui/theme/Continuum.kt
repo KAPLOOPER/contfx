@@ -108,6 +108,8 @@ fun Txt(
         style = TextStyle(
             color = color,
             fontSize = size,
+            // Room between lines: Libron's descenders and ascenders crowd at its natural spacing.
+            lineHeight = size * 1.38f,
             fontFamily = if (mono) FontFamily.Monospace else Libron,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
             textAlign = align,

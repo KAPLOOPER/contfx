@@ -420,12 +420,12 @@ private fun SpeakerMap(
             Canvas(Modifier.size(side)) {
                 val c = Offset(size.width / 2f, size.height / 2f)
                 val stroke = Stroke(width = 1.5.dp.toPx())
-                for (d in listOf(1f, 2f, 4f)) drawCircle(p.ground, radiusFor(d), c, style = stroke)
+                for (d in listOf(1f, 2f, 4f)) drawCircle(p.surface, radiusFor(d), c, style = stroke)
                 // You: a head, and a drop for the nose, facing the front.
                 drawCircle(p.sub, 13.dp.toPx(), c)
                 drawCircle(p.sub, 4.5.dp.toPx(), c + Offset(0f, -14.dp.toPx()))
                 // Each speaker's line to you, faint.
-                for (sp in live) drawLine(p.ground, c, position(sp), strokeWidth = 1.dp.toPx())
+                for (sp in live) drawLine(p.surface, c, position(sp), strokeWidth = 1.dp.toPx())
             }
             live.forEach { sp ->
                 key(sp.role) {
@@ -455,7 +455,7 @@ private fun SpeakerMap(
                     Modifier
                         .align(Alignment.TopStart)
                         .clip(RoundedCornerShape(50))
-                        .background(p.ground)
+                        .background(p.surface)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
                     Txt("${sp.role.short} · ${angleText(sp.angle)} · ${"%.1f".format(sp.distance)} m", 13.sp, p.text, maxLines = 1)

@@ -70,9 +70,9 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
         Gap(18.dp)
 
         if (!k.selected) {
-            Txt("Set it up", 21.sp, p.text, bold = true)
+            SectionLabel("Set it up", top = 0.dp)
             Gap(10.dp)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+            Column(Modifier.fillMaxWidth()) {
                 SetupStep(1, k.installed, "Install it", "Continuum Keyboard is its own app, installed and kept up to date from here.") {
                     PillButton("Install", actions::installKeyboard, icon = R.drawable.ic_import, primary = true, on = Surface.Card)
                 }
@@ -87,7 +87,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
         }
 
         if (k.installed) {
-            Txt("Settings", 21.sp, p.text, bold = true)
+            SectionLabel("Settings", top = 0.dp)
             Gap(10.dp)
             val pages = listOf(
                 "look" to "Look",
@@ -120,9 +120,9 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
 @Composable
 private fun SetupStep(number: Int, done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
     val p = LocalPalette.current
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp)) {
         Box(
-            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.live else p.ground),
+            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.live else p.surface),
             contentAlignment = Alignment.Center,
         ) {
             if (done) {
@@ -132,7 +132,7 @@ private fun SetupStep(number: Int, done: Boolean, title: String, body: String, a
             }
         }
         Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt(title, 17.sp, p.text, bold = true)
+            Txt(title, 17.sp, p.text)
             Txt(body, 14.sp, p.sub)
             if (!done) {
                 Gap(10.dp)

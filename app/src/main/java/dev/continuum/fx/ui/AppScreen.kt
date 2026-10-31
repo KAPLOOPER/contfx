@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,7 +63,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -100,10 +100,6 @@ import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
-import dev.continuum.fx.ui.components.Touch
-import dev.continuum.fx.ui.components.notes
-import dev.continuum.fx.ui.components.rememberSpread
-import dev.continuum.fx.ui.components.spreadInk
 import dev.continuum.fx.ui.components.squash
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
@@ -308,7 +304,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         }
                         .verticalScroll(scrolls.getValue(state.section))
                         .navigationBarsPadding()
-                        .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 120.dp),
+                        .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 120.dp),
                 ) {
                     UpdateCard(
                         update = state.update,
@@ -328,9 +324,9 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                                 if (from != null) OpenedFromRow(from, state.library, actions)
                             }
                             StatusLine(state)
-                            Gap(14.dp)
+                            Gap(12.dp)
                             ModeRow(actions)
-                            Gap(20.dp)
+                            Gap(32.dp)
                             SoundContent(state, store, actions)
                         }
                         Section.Effects -> EffectsContent(state, actions)
@@ -366,30 +362,25 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
     var fitting by rememberSaveable { mutableStateOf(false) }
     Column {
+        SectionLabel("EQ", top = 0.dp)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             library.profiles.forEach { pr ->
                 Chip(pr.name, pr.id == library.activeId, onClick = { store.select(pr.id) })
             }
-            PillButton("Import", actions::importFile, icon = R.drawable.ic_import, height = 38.dp)
-            PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste, height = 38.dp)
-            PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune, height = 38.dp)
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            PillButton("Import", actions::importFile, icon = R.drawable.ic_import)
+            PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste)
+            PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune)
         }
         if (fitting) {
             Gap(12.dp)
             FitCard(actions)
         }
-        val output by OutputWatcher.current.collectAsState()
-        output?.let { device ->
-            Gap(12.dp)
-            OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
-        }
-        Gap(8.dp)
-        AppsRow(library, actions)
-        Gap(16.dp)
+        Gap(18.dp)
 
         val comparing by EngineStatus.comparing.collectAsState()
         EqGraph(
@@ -409,6 +400,12 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 }
             },
         )
+        Gap(14.dp)
+        val output by OutputWatcher.current.collectAsState()
+        output?.let { device ->
+            OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
+        }
+        AppsRow(library, actions)
         Gap(18.dp)
 
         PreampSection(
@@ -419,14 +416,11 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
             onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
         )
-        Gap(14.dp)
+        Gap(10.dp)
         PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
-        Gap(26.dp)
 
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Txt("Filters", 21.sp, p.text, bold = true)
-            Spacer(Modifier.width(8.dp))
-            Txt("${profile.bands.size}", 17.sp, p.sub, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            SectionLabel("Filters · ${profile.bands.size}", modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
                 val newIndex = profile.bands.size
                 store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
@@ -454,10 +448,9 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                     selected = -1
                 },
             )
-            Gap(8.dp)
         }
         Gap(14.dp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row {
             PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
             PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
         }
@@ -480,12 +473,13 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
     val profile = library.active
     val linked = library.devices[device.key] == profile.id
     val other = library.profileFor(device.key)?.takeIf { it.id != profile.id }
+    val source = remember { MutableInteractionSource() }
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            .heightIn(min = 64.dp)
+            .clickable(interactionSource = source, indication = null, role = Role.Switch) { onLink(!linked) }
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
@@ -494,18 +488,18 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
             modifier = Modifier.size(22.dp),
             colorFilter = ColorFilter.tint(p.text),
         )
-        Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
-            Txt(device.name, 16.sp, p.text, bold = true, maxLines = 1)
+        Column(Modifier.weight(1f).padding(start = 16.dp, end = 8.dp)) {
+            Txt(device.name, 17.sp, p.text, maxLines = 1)
             Txt(
                 when {
                     linked -> "${profile.name} comes on by itself here"
                     other != null -> "${other.name} comes on by itself here"
                     else -> "Link this EQ to come on whenever you use it"
                 },
-                13.sp, p.sub, maxLines = 2,
+                14.sp, p.sub, maxLines = 1,
             )
         }
-        Chip(if (linked) "Linked" else "Link", linked, onClick = { onLink(!linked) }, on = Surface.Card)
+        OnOffDot(linked, R.drawable.ic_check, "Link ${profile.name} to ${device.name}") { onLink(!linked) }
     }
 }
 
@@ -514,19 +508,17 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
 private fun ModeRow(actions: AppActions) {
     val p = LocalPalette.current
     val mode by EngineSettings.mode.collectAsState()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row {
         Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) })
-        Chip("Direct · no capture", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) })
+        Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) })
     }
     Gap(6.dp)
     Txt(
         when (mode) {
-            EngineMode.Capture ->
-                "Records what apps play and plays it back through the EQ: exact filters, but Android shows its screen-capture prompt and icon, and apps that block capture play as they are."
-            EngineMode.Direct ->
-                "Puts the EQ on each app's own sound: no capture prompt or icon, less battery and delay, and apps that block capture are included. Filters are matched by 96 fine bands, to within a fraction of a decibel."
+            EngineMode.Capture -> "Records what apps play and plays it back through the EQ, with exact filters. Android shows its capture icon."
+            EngineMode.Direct -> "Puts the EQ on each app's own sound: no capture icon, less battery and delay, within a fraction of a decibel."
         },
-        14.sp, p.sub,
+        15.sp, p.sub,
     )
 }
 
@@ -569,17 +561,16 @@ private fun PreampSection(
         InkSlider(
             value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
             onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
-            track = p.surface,
+            track = p.line,
             fill = p.text,
         )
-        Gap(6.dp)
+        Gap(4.dp)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Chip(if (eqEnabled) "EQ on" else "EQ off", eqEnabled, onToggleEq)
-            PillButton("Auto preamp", onAuto, height = 38.dp)
+            PillButton("Auto preamp", onAuto)
             if (canCompare) ComparePill()
         }
     }
@@ -597,22 +588,17 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val source = remember { MutableInteractionSource() }
     val flipped = polarity != Polarity.Normal
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .animateContentSize(Motion.flow()),
-    ) {
+    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .heightIn(min = 64.dp)
                 .clickable(interactionSource = source, indication = null) { open = !open }
-                .padding(start = 18.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt("Polarity", 17.sp, p.text, bold = flipped, maxLines = 1)
+                Txt("Polarity", 17.sp, p.text, maxLines = 1)
                 Txt(
                     when {
                         flipped && direct -> "Needs Capture mode to turn the sound over"
@@ -621,23 +607,14 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
                         polarity == Polarity.RightInverted -> "The right channel turned over"
                         else -> "As recorded"
                     },
-                    14.sp, if (flipped && !direct) p.text else p.sub, maxLines = 2,
+                    14.sp, if (flipped && !direct) p.text else p.sub, maxLines = 1,
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (flipped) p.primary else p.ground)
-                    .padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Txt(polarity.label, 13.sp, if (flipped) p.onPrimary else p.sub, bold = true, maxLines = 1)
-            }
+            Spacer(Modifier.width(12.dp))
+            Txt(polarity.label, 15.sp, if (flipped) p.text else p.sub, maxLines = 1)
         }
         if (open) {
-            Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 16.dp)) {
+            Column(Modifier.padding(bottom = 12.dp)) {
                 Txt(
                     "Some earphones are built or wired so that a push in the recording comes out as a pull. Inverted turns " +
                         "the sound over so they push the right way round. Left only and Right only mend one channel wired " +
@@ -659,7 +636,7 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
                     )
                 }
                 Gap(10.dp)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
                     Polarity.entries.forEach { pol ->
                         Chip(pol.label, polarity == pol, onClick = { onPick(pol) }, on = Surface.Card)
                     }
@@ -680,16 +657,12 @@ internal fun ComparePill() {
     val view = LocalView.current
     val comparing by EngineStatus.comparing.collectAsState()
     DisposableEffect(Unit) { onDispose { EngineStatus.comparing.value = false } }
-    val touch = remember { Touch() }
-    // Ink spreads from your finger for as long as you hold, and drains when you let go.
-    val spread = rememberSpread(comparing, touch, feel = false)
-    Box(
+    // While you hold, the word brightens and a drop swells under it, as a chosen word's does.
+    val drop by animateFloatAsState(if (comparing) 1f else 0f, if (comparing) Motion.flow() else Motion.snap(), label = "compare")
+    Column(
         Modifier
             .squash(source, pill = true)
-            .height(38.dp)
-            .clip(RoundedCornerShape(50))
-            .background(p.surface)
-            .notes(touch)
+            .heightIn(min = 44.dp)
             .pointerInput(Unit) {
                 detectTapGestures(onPress = { pos ->
                     val press = PressInteraction.Press(pos)
@@ -705,13 +678,23 @@ internal fun ComparePill() {
             .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = "Hold to hear without the EQ"
-            },
-        contentAlignment = Alignment.Center,
+            }
+            .padding(end = 16.dp, top = 6.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        Txt("Hold to compare", 15.sp, p.text, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
-        Box(Modifier.matchParentSize().clearAndSetSemantics {}.spreadInk(spread).background(p.primary), contentAlignment = Alignment.Center) {
-            Txt("Hold to compare", 15.sp, p.onPrimary, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
-        }
+        Txt("Hold to compare", 16.sp, androidx.compose.ui.graphics.lerp(p.sub, p.text, drop), maxLines = 1)
+        Gap(6.dp)
+        Box(
+            Modifier
+                .size(width = 16.dp, height = 5.dp)
+                .graphicsLayer {
+                    scaleX = drop
+                    scaleY = drop.coerceAtMost(1f)
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                }
+                .clip(RoundedCornerShape(50))
+                .background(p.text),
+        )
     }
 }
 
@@ -726,32 +709,15 @@ private fun BandCard(
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val textColor = if (band.enabled) p.text else p.sub
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .animateContentSize(Motion.flow()),
-    ) {
+    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(60.dp)
-                .clickable(interactionSource = source, indication = null, onClick = onToggle)
-                .padding(start = 12.dp, end = 4.dp),
+                .height(56.dp)
+                .clickable(interactionSource = source, indication = null, onClick = onToggle),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .width(42.dp)
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (band.enabled) p.primary else p.line),
-                contentAlignment = Alignment.Center,
-            ) {
-                Txt(band.type.shortLabel, 13.sp, if (band.enabled) p.onPrimary else p.text, bold = true)
-            }
-            Spacer(Modifier.width(12.dp))
+            Txt(band.type.shortLabel, 14.sp, if (band.enabled) p.text else p.sub, bold = true, modifier = Modifier.width(36.dp))
             Txt(Fmt.freq(band.frequency), 17.sp, textColor, modifier = Modifier.weight(1f), maxLines = 1)
             if (band.type.usesGain) {
                 Txt(Fmt.db(band.gainDb), 16.sp, textColor, maxLines = 1)
@@ -761,11 +727,8 @@ private fun BandCard(
             OnOffDot(band.enabled, R.drawable.ic_check, "Filter on") { onChange(band.copy(enabled = !band.enabled)) }
         }
         if (expanded) {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+            Column(Modifier.padding(start = 36.dp, bottom = 16.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                     listOf(
                         FilterType.PEAK, FilterType.LOW_SHELF, FilterType.HIGH_SHELF,
                         FilterType.LOW_PASS, FilterType.HIGH_PASS, FilterType.NOTCH,
@@ -801,7 +764,7 @@ internal fun SliderField(label: String, valueText: String, value: Float, onChang
             Txt(label, 15.sp, p.sub, modifier = Modifier.weight(1f))
             Txt(valueText, 15.sp, p.text)
         }
-        InkSlider(value = value, onChange = onChange, track = p.ground, fill = p.text)
+        InkSlider(value = value, onChange = onChange, track = p.line, fill = p.text)
     }
 }
 

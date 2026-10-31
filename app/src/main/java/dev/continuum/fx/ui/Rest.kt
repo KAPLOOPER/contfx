@@ -50,3 +50,23 @@ internal fun Rest(
         }
     }
 }
+
+/**
+ * A section's name, small and spaced out like the app's name above the titles: on one flat
+ * surface, space and these labels are what group things, not boxes.
+ */
+@Composable
+internal fun SectionLabel(text: String, modifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 34.dp) {
+    val p = LocalPalette.current
+    androidx.compose.foundation.text.BasicText(
+        text.uppercase(),
+        modifier.padding(top = top, bottom = 6.dp),
+        style = androidx.compose.ui.text.TextStyle(
+            color = p.sub.copy(alpha = 0.8f),
+            fontSize = 11.sp,
+            fontFamily = dev.continuum.fx.ui.theme.Libron,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            letterSpacing = 2.4.sp,
+        ),
+    )
+}

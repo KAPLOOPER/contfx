@@ -126,13 +126,12 @@ fun EqGraph(
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(230.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(p.surface),
+            .height(230.dp),
     ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        val padX = with(density) { 18.dp.toPx() }
+        // Just enough for an end dot: the graph sits on the page, aligned with everything else.
+        val padX = with(density) { 8.dp.toPx() }
         val top = with(density) { 20.dp.toPx() }
         val bottom = with(density) { 32.dp.toPx() }
         val plotW = w - 2 * padX
@@ -205,16 +204,16 @@ fun EqGraph(
                 shape.lineTo(padX + plotW, py0)
                 shape.lineTo(padX + plotW, floor)
                 shape.close()
-                drawPath(shape, p.line)
+                drawPath(shape, p.surface)
             }
 
             val grid = with(density) { 1.dp.toPx() }
             listOf(100.0, 1000.0, 10000.0).forEach { f ->
                 val x = xOf(f)
-                drawLine(p.line, Offset(x, top), Offset(x, top + plotH), strokeWidth = grid)
+                drawLine(p.surface, Offset(x, top), Offset(x, top + plotH), strokeWidth = grid)
             }
             val zero = yOf(0.0, range)
-            drawLine(p.line, Offset(padX, zero), Offset(padX + plotW, zero), strokeWidth = grid * 1.5f)
+            drawLine(p.line, Offset(padX, zero), Offset(padX + plotW, zero), strokeWidth = grid)
 
             val path = Path()
             for (i in 0 until POINTS) {
@@ -233,7 +232,7 @@ fun EqGraph(
                 val isSel = i == selected
                 val radius = with(density) { (if (isSel) 11.dp else 7.dp).toPx() }
                 drawCircle(if (b.enabled) p.text else p.sub, radius, c)
-                if (isSel) drawCircle(p.surface, radius * 0.42f, c)
+                if (isSel) drawCircle(p.ground, radius * 0.42f, c)
             }
         }
 

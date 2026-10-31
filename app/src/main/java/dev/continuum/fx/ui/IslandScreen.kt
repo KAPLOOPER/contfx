@@ -1,5 +1,6 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.foundation.layout.heightIn
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.background
@@ -67,7 +68,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         IslandStatusLine(state)
         Gap(22.dp)
 
-        Txt("Try it", 21.sp, p.text, bold = true)
+        SectionLabel("Try it", top = 0.dp)
         Gap(2.dp)
         Txt(
             if (state.islandLive) "Send a sample to the island and watch the ink move."
@@ -94,33 +95,33 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         Gap(28.dp)
 
-        Txt("Show in the island", 21.sp, p.text, bold = true)
+        SectionLabel("Show in the island", top = 0.dp)
         Gap(10.dp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
-            ToggleRow("Music and video", "Artwork and playing bars; open it for controls.", prefs.media) {
+        Column(Modifier.fillMaxWidth()) {
+            ToggleRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
                 actions.updateIsland { it.copy(media = !it.media) }
             }
-            ToggleRow("Calls", "Incoming calls drip down to answer; ongoing calls keep a timer.", prefs.calls) {
+            ToggleRow("Calls", "Drip down to answer, then a timer", prefs.calls) {
                 actions.updateIsland { it.copy(calls = !it.calls) }
             }
-            ToggleRow("Timers", "Countdowns and stopwatches from your clock app.", prefs.timers) {
+            ToggleRow("Timers", "Countdowns and stopwatches", prefs.timers) {
                 actions.updateIsland { it.copy(timers = !it.timers) }
             }
             ToggleRow(
                 "Notifications",
-                "New messages drip down with their buttons, Reply included. Swipe sideways to clear, up to tuck away.",
+                "Drip down with their buttons, Reply too",
                 prefs.notifications,
             ) {
                 actions.updateIsland { it.copy(notifications = !it.notifications) }
             }
             ToggleRow(
                 "One-time codes",
-                "Sign-in codes from messages and emails drip down large, with Copy, and Continuum Keyboard offers them in its strip. Kept for five minutes, in memory only.",
+                "Large, with Copy, and in the keyboard",
                 prefs.codes,
             ) {
                 actions.updateIsland { it.copy(codes = !it.codes) }
             }
-            ToggleRow("Alarms", "Your next alarm, and alarms and timers as they ring, with Snooze and Stop.", prefs.alarms) {
+            ToggleRow("Alarms", "Your next alarm, and Snooze and Stop", prefs.alarms) {
                 actions.updateIsland { it.copy(alarms = !it.alarms) }
             }
             if (prefs.alarms) {
@@ -128,7 +129,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                        .padding(bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } }, on = Surface.Card)
@@ -138,8 +139,8 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             val eventsOn = prefs.events && state.privileges.calendar
             ToggleRow(
                 "Calendar events",
-                if (prefs.events && !state.privileges.calendar) "Needs calendar access. Tap to allow it."
-                else "Your next event from 15 minutes before, counting down, with Join for video calls.",
+                if (prefs.events && !state.privileges.calendar) "Needs calendar access: tap to allow"
+                else "From 15 minutes before, with Join",
                 eventsOn,
             ) {
                 when {
@@ -148,19 +149,19 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     else -> actions.requestCalendar()
                 }
             }
-            ToggleRow("Downloads and live updates", "Progress, directions, deliveries and rides while they're happening.", prefs.live) {
+            ToggleRow("Downloads and live updates", "Progress, directions, deliveries, rides", prefs.live) {
                 actions.updateIsland { it.copy(live = !it.live) }
             }
-            ToggleRow("Sound mode", "Ring, vibrate or silent, for a moment when you switch.", prefs.sound) {
+            ToggleRow("Sound mode", "Ring, vibrate or silent as you switch", prefs.sound) {
                 actions.updateIsland { it.copy(sound = !it.sound) }
             }
-            ToggleRow("Headphones", "Headphones, speakers and the car as they connect.", prefs.headphones) {
+            ToggleRow("Headphones", "Headphones, speakers and the car", prefs.headphones) {
                 actions.updateIsland { it.copy(headphones = !it.headphones) }
             }
-            ToggleRow("Charging and battery", "Plugging in, wireless charging, running low and fully charged.", prefs.battery) {
+            ToggleRow("Charging and battery", "Plugging in, running low, fully charged", prefs.battery) {
                 actions.updateIsland { it.copy(battery = !it.battery) }
             }
-            ToggleRow("Pull a drop", "Hold the island and drag down for your recent notifications. Swipe one away to clear it.", prefs.pull) {
+            ToggleRow("Pull a drop", "Hold and drag down for recent ones", prefs.pull) {
                 actions.updateIsland { it.copy(pull = !it.pull) }
             }
         }
@@ -169,12 +170,12 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         PopupsSection(state, actions)
         Gap(28.dp)
 
-        Txt("Always on", 21.sp, p.text, bold = true)
+        SectionLabel("Always on", top = 0.dp)
         Gap(2.dp)
         Txt("Kept in the island all the time, beside music, calls and timers.", 15.sp, p.sub)
         Gap(10.dp)
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
-            ToggleRow("Time", "Always in the island. With nothing else on, the date sits opposite.", prefs.alwaysTime) {
+        Column(Modifier.fillMaxWidth()) {
+            ToggleRow("Time", "With nothing else on, the date as well", prefs.alwaysTime) {
                 actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
             }
             if (prefs.alwaysTime) {
@@ -182,7 +183,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                        .padding(bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     listOf(
@@ -196,8 +197,8 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             }
             ToggleRow(
                 "Battery",
-                if (prefs.batteryRing) "Your charge as a ring round the camera, so it takes no room: green while charging, red when low. Tap the island for details."
-                else "An ink battery on the far right with your charge inside it. Tap the island for details.",
+                if (prefs.batteryRing) "A ring round the camera: green charging, red low"
+                else "An ink battery on the far right",
                 prefs.alwaysBattery,
             ) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
@@ -206,7 +207,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                    .padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Chip("Ring round the camera", prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = true) } }, on = Surface.Card)
@@ -218,7 +219,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         PlacementSection(prefs, actions)
         Gap(28.dp)
 
-        Txt("How it moves", 21.sp, p.text, bold = true)
+        SectionLabel("How it moves", top = 0.dp)
         Gap(4.dp)
         Txt(
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
@@ -261,7 +262,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     fun pct(v: Float) = "${Math.round(v * 100)}%"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Txt("Placement", 21.sp, p.text, bold = true, modifier = Modifier.weight(1f))
+        SectionLabel("Placement", modifier = Modifier.weight(1f), top = 0.dp)
         if (prefs.placed) PillButton("Reset", { place { it.unplaced() } }, height = 36.dp)
     }
     Gap(2.dp)
@@ -271,13 +272,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
         15.sp, p.sub,
     )
     Gap(10.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .background(p.surface)
-            .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
-    ) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         val y = prefs.offsetY
         SliderField(
             "Up and down",
@@ -332,26 +327,24 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
     val prefs = state.island
     val priv = state.privileges
     val context = LocalContext.current
-    Txt("Android's pop-ups", 21.sp, p.text, bold = true)
+    SectionLabel("Android's pop-ups", top = 0.dp)
     Gap(2.dp)
     Txt("Stop the usual banner appearing as well as the island.", 15.sp, p.sub)
     Gap(10.dp)
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(p.surface).padding(vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth()) {
         ToggleRow(
             "Only the island",
-            "Android's banners stay away while the island shows notifications. Calls ring in the island, " +
-                "alarms open full screen, and everything still goes to your notification shade. " +
-                "Banners come back whenever the island is off.",
+            "No banners while the island shows them; the shade keeps everything",
             prefs.hidePopups,
         ) { actions.updateIsland { it.copy(hidePopups = !it.hidePopups) } }
         if (prefs.hidePopups && !prefs.notifications) {
             Txt(
                 "Turn on Notifications above too, or nothing will show new messages.",
-                14.sp, p.sub, modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                14.sp, p.sub, modifier = Modifier.padding(bottom = 10.dp),
             )
         }
         if (prefs.hidePopups && !priv.popups) {
-            Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp)) {
+            Column(Modifier.padding(top = 4.dp, bottom = 12.dp)) {
                 Txt(
                     "Android needs one more permission before the island can switch its banners off. Grant it once:",
                     14.sp, p.text,
@@ -362,7 +355,7 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
                     ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
                     ShizukuState.NOT_RUNNING -> "Use Shizuku"
                 }
-                PillButton(label, actions::grantPopupsWithShizuku, primary = true, on = Surface.Card)
+                PillButton(label, actions::grantPopupsWithShizuku, primary = true)
                 Gap(10.dp)
                 Txt("Or from a computer:", 14.sp, p.sub)
                 Txt(Privileges.popupsAdbCommand(context.packageName), 13.sp, p.text, mono = true)
@@ -383,12 +376,13 @@ internal fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () ->
                 InkFeel.toggle(view, !on)
                 onToggle()
             }
-            .padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            .heightIn(min = 64.dp)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Txt(title, 17.sp, p.text, maxLines = 1)
-            Txt(body, 14.sp, p.sub)
+            Txt(body, 14.sp, p.sub, maxLines = 2)
         }
         OnOffDot(on, R.drawable.ic_check, title, onToggle)
     }

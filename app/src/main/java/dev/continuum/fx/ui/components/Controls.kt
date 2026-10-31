@@ -1,5 +1,11 @@
 package dev.continuum.fx.ui.components
 
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import androidx.compose.animation.animateColorAsState
 import androidx.annotation.DrawableRes
 import android.os.SystemClock
 import androidx.compose.animation.core.spring
@@ -88,9 +94,17 @@ fun Modifier.squash(source: MutableInteractionSource, pill: Boolean = false): Mo
     }
 }
 
+/**
+ * What a control sits on. The app is one flat surface now, so [Card] reads as [Ground]; [Ink] is
+ * the black of the dock and the island.
+ */
 enum class Surface { Ground, Card, Ink }
 
-/** Flat, fully rounded button. Primary is a solid fill; otherwise one tone off its background. */
+/**
+ * A button that's just its word (and icon), on the surface it sits on: no shape, no border. It
+ * presses in like everything else. [primary] sets the word in bold. [height] is the least it
+ * takes up, so it's always easy to hit; the space after it keeps the next one apart.
+ */
 @Composable
 fun PillButton(
     text: String,
@@ -103,30 +117,20 @@ fun PillButton(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    val bg: Color
-    val fg: Color
-    when {
-        primary && on == Surface.Ink -> { bg = p.onInk; fg = p.ink }
-        primary -> { bg = p.primary; fg = p.onPrimary }
-        on == Surface.Ink -> { bg = p.inkTonal; fg = p.onInk }
-        on == Surface.Card -> { bg = p.ground; fg = p.text }
-        else -> { bg = p.surface; fg = p.text }
-    }
+    val fg = if (on == Surface.Ink) p.onInk else p.text
     Row(
         modifier
             .squash(source, pill = true)
-            .height(height)
-            .clip(RoundedCornerShape(50))
-            .background(bg)
+            .heightIn(min = height)
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 18.dp),
+            .padding(end = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (icon != null) {
             Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(fg))
         }
-        Txt(text, 16.sp, fg, maxLines = 1)
+        Txt(text, 16.sp, fg, bold = primary, maxLines = 1)
     }
 }
 
@@ -147,11 +151,7 @@ fun IconBubble(
     val target = if (pressed || active) 1f else 0f
     val bubble by animateFloatAsState(target, if (pressed) Motion.snap() else Motion.flow(), label = "bubble")
     val tint = if (on == Surface.Ink) p.onInk else p.text
-    val bubbleColor = when (on) {
-        Surface.Ink -> p.inkTonal
-        Surface.Card -> p.ground
-        Surface.Ground -> p.surface
-    }
+    val bubbleColor = if (on == Surface.Ink) p.inkTonal else p.surface
     Box(
         modifier
             .size(size)
@@ -251,40 +251,48 @@ internal fun Modifier.spreadInk(spread: Spread): Modifier = drawWithContent {
 }
 
 /**
- * A choice. Choosing it spreads ink out from your finger, turning the label as it reaches it;
- * unchoosing drains it back.
+ * A choice: just its word, on the surface. The chosen one is bright, with a small drop under it,
+ * the same mark the page title wears; choosing swells the drop in under the word (a little past
+ * and back), and choosing another draws it away. Felt when your finger did it.
  */
 @Composable
 fun Chip(label: String, selected: Boolean, onClick: () -> Unit, on: Surface = Surface.Ground) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val touch = remember { Touch() }
-    val spread = rememberSpread(selected, touch)
-    val restBg = when (on) {
-        Surface.Card -> p.ground
-        Surface.Ink -> p.inkTonal
-        Surface.Ground -> p.surface
+    val view = LocalView.current
+    val bright = if (on == Surface.Ink) p.onInk else p.text
+    val dim = if (on == Surface.Ink) p.onInkSub else p.sub
+    val fg by animateColorAsState(if (selected) bright else dim, Motion.flow(), label = "choice")
+    val drop = remember { Animatable(if (selected) 1f else 0f) }
+    LaunchedEffect(selected) {
+        val target = if (selected) 1f else 0f
+        if (drop.targetValue == target) return@LaunchedEffect
+        if (touch.recent() != null) InkFeel.toggle(view, selected)
+        drop.animateTo(target, if (selected) SWELL else Motion.snap())
     }
-    val selBg = if (on == Surface.Ink) p.onInk else p.primary
-    val selFg = if (on == Surface.Ink) p.ink else p.onPrimary
-    val restFg = if (on == Surface.Ink) p.onInk else p.text
-    Box(
+    Column(
         Modifier
-            .squash(source, pill = true)
-            .height(38.dp)
-            .clip(RoundedCornerShape(50))
-            .background(restBg)
             .notes(touch)
-            .selectable(selected, interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .selectable(selected, interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp)
+            .padding(end = 16.dp, top = 6.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        Txt(label, 15.sp, restFg, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
+        Txt(label, 16.sp, fg, maxLines = 1, modifier = Modifier.squash(source, pill = true))
+        Spacer(Modifier.height(6.dp))
         Box(
-            Modifier.matchParentSize().clearAndSetSemantics {}.spreadInk(spread).background(selBg),
-            contentAlignment = Alignment.Center,
-        ) {
-            Txt(label, 15.sp, selFg, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp))
-        }
+            Modifier
+                .size(width = 16.dp, height = 5.dp)
+                .graphicsLayer {
+                    val s = drop.value.coerceAtLeast(0f)
+                    scaleX = s
+                    scaleY = s.coerceAtMost(1.2f)
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
+                .clip(RoundedCornerShape(50))
+                .background(bright),
+        )
     }
 }
 
@@ -318,8 +326,8 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
 }
 
 /**
- * Small round switch for a filter: a drop swells into the empty socket, a little past it and
- * back, and the tick surfaces once it's there; off, the drop shrinks away.
+ * A switch: off, a small dim dot; on, it swells into a drop (a little past, then back) and the
+ * tick surfaces; off again, it shrinks back to the dot. No socket, no border: just the ink.
  */
 @Composable
 fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onClick: () -> Unit) {
@@ -343,17 +351,17 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.squash(source).size(30.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.matchParentSize().clip(CircleShape).background(p.ground))
             Box(
                 Modifier
                     .matchParentSize()
                     .graphicsLayer {
-                        val s = dot.value.coerceAtLeast(0f)
+                        // From the 9 dp dot to the full 30 dp drop.
+                        val s = 0.3f + 0.7f * dot.value.coerceAtLeast(0f)
                         scaleX = s
                         scaleY = s
                     }
                     .clip(CircleShape)
-                    .background(p.primary),
+                    .background(lerp(p.line, p.primary, dot.value.coerceIn(0f, 1f))),
             )
             Image(
                 painterResource(checkIcon),

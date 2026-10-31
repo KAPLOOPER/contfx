@@ -1,5 +1,6 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.foundation.layout.heightIn
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -128,23 +129,18 @@ internal fun AppsRow(library: Library, actions: AppActions) {
     val playing by EngineStatus.processingPackages.collectAsState()
     val mode by EngineSettings.mode.collectAsState()
     val source = remember { MutableInteractionSource() }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(p.surface)
-            .animateContentSize(dev.continuum.fx.ui.theme.Motion.flow()),
-    ) {
+    Column(Modifier.fillMaxWidth().animateContentSize(dev.continuum.fx.ui.theme.Motion.flow())) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .heightIn(min = 64.dp)
                 .clickable(interactionSource = source, indication = null, role = Role.Button) { open = !open }
-                .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(painterResource(R.drawable.ic_music), contentDescription = null, modifier = Modifier.size(22.dp), colorFilter = ColorFilter.tint(p.text))
-            Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
-                Txt("Apps", 16.sp, p.text, bold = true, maxLines = 1)
+            Column(Modifier.weight(1f).padding(start = 16.dp, end = 8.dp)) {
+                Txt("Apps", 17.sp, p.text, maxLines = 1)
                 val names = remember(linked) { linked.map { appLabel(context, it) } }
                 Txt(
                     when {
@@ -153,10 +149,10 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                         names.size == 2 -> "${names[0]} and ${names[1]} use ${profile.name}"
                         else -> "${names[0]}, ${names[1]} and ${names.size - 2} more use ${profile.name}"
                     },
-                    13.sp, p.sub, maxLines = 2,
+                    14.sp, p.sub, maxLines = 1,
                 )
             }
-            Chip(if (open) "Done" else "Choose", open, onClick = { open = !open }, on = Surface.Card)
+            Txt(if (open) "Done" else "Choose", 16.sp, p.text, maxLines = 1)
         }
         if (open) {
             val list = (playing + heard + known + library.apps.keys).distinct()
@@ -164,13 +160,12 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                 Txt(
                     if (mode == EngineMode.Direct) "Each app plays through its own EQ, side by side."
                     else "Capture mixes everything first, so an app's own EQ is used while it's what's playing.",
-                    13.sp, p.sub, modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 4.dp),
+                    14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, bottom = 4.dp),
                 )
                 if (list.isEmpty()) {
                     Rest(
                         "Apps show up here once they've played something through the EQ.",
-                        modifier = Modifier.padding(horizontal = 18.dp),
-                        on = Surface.Card,
+                        modifier = Modifier.padding(start = 38.dp),
                     )
                 }
                 list.forEach { pkg ->
@@ -184,7 +179,7 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                             Modifier
                                 .fillMaxWidth()
                                 .clickable(interactionSource = rowSource, indication = null, role = Role.Switch, onClick = toggle)
-                                .padding(start = 18.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                                .padding(start = 38.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AppIcon(pkg)
@@ -213,17 +208,15 @@ internal fun AppsRow(library: Library, actions: AppActions) {
 @Composable
 internal fun BackupSection(actions: AppActions) {
     val p = LocalPalette.current
-    Txt("Backup", 21.sp, p.text, bold = true)
-    Gap(2.dp)
+    SectionLabel("Backup", top = 0.dp)
     Txt(
         "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
             "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
         15.sp, p.sub,
     )
-    Gap(12.dp)
+    Gap(4.dp)
     Row {
-        PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_share, height = 40.dp)
-        Spacer(Modifier.width(8.dp))
-        PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_import, height = 40.dp)
+        PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_share)
+        PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_import)
     }
 }

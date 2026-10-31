@@ -99,7 +99,7 @@ internal fun angleText(a: Float): String {
 private fun dbText(x: Float): String {
     val r = (x * 2).roundToInt() / 2f
     val s = if (r % 1f == 0f) r.toInt().toString() else r.toString()
-    return if (r > 0) "+$s dB" else if (r < 0) "−${s.removePrefix("-")} dB" else "0 dB"
+    return if (r > 0) "+$s dB" else if (r < 0) "−${s.removePrefix("-")} dB" else "±0 dB"
 }
 
 /** The other half of a pair, mirrored across the middle. */
@@ -212,6 +212,7 @@ private fun SetupEditor(s: SpatialSetup) {
     fun set(transform: (SpatialSetup) -> SpatialSetup) = SpatialStore.updateSetup(s.id, transform)
     var selected by remember(s.id) { mutableStateOf<SpeakerRole?>(SpeakerRole.FrontLeft) }
     var mirror by rememberSaveable { mutableStateOf(true) }
+    var fine by rememberSaveable { mutableStateOf(false) }
 
     Txt("Hold a speaker and drag it where you like it: round you, or in and out.", 14.sp, p.text)
     Spacer(Modifier.size(10.dp))
@@ -285,6 +286,10 @@ private fun SetupEditor(s: SpatialSetup) {
         SliderField("Decay", "%.2f s".format(s.decay), (s.decay - 0.1f) / 1.4f) { v -> set { it.copy(decay = ((0.1f + v * 1.4f) * 20).roundToInt() / 20f) } }
     }
     Txt("The tail is the room's echo after the reflections. Leave it low for a dry, close sound.", 13.sp, p.sub)
+
+    Spacer(Modifier.size(6.dp))
+    More(fine, { fine = !fine }, label = "Head, bass and mix")
+    if (!fine) return
 
     if (s.layout != SpatialLayout.Stereo) {
         Spacer(Modifier.size(14.dp))

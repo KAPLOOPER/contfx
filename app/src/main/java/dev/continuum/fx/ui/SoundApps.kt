@@ -152,7 +152,7 @@ internal fun AppsRow(library: Library, actions: AppActions) {
                     14.sp, p.sub, maxLines = 1,
                 )
             }
-            Txt(if (open) "Done" else "Choose", 16.sp, p.text, maxLines = 1)
+            Chevron(open, p.sub)
         }
         if (open) {
             val list = (playing + heard + known + library.apps.keys).distinct()

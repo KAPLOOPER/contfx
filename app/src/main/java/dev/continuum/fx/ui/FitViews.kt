@@ -1,5 +1,8 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -57,6 +60,7 @@ internal fun FitCard(actions: AppActions) {
         } else null
     }
     fun options(transform: (EqFit.Options) -> EqFit.Options) = FitStore.update { it.copy(options = transform(it.options)) }
+    var tuning by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth()) {
         SectionLabel("Make an EQ from a measurement", top = 4.dp)
@@ -72,7 +76,10 @@ internal fun FitCard(actions: AppActions) {
         Spacer(Modifier.size(4.dp))
         Txt("Text files of frequency and level, as REW, squig.link and AutoEQ write them.", 13.sp, p.sub)
 
-        Spacer(Modifier.size(14.dp))
+        Spacer(Modifier.size(6.dp))
+        More(tuning, { tuning = !tuning }, label = "How it fits")
+        if (tuning) {
+        Spacer(Modifier.size(8.dp))
         Txt("Filters", 15.sp, p.sub)
         Spacer(Modifier.size(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -94,6 +101,7 @@ internal fun FitCard(actions: AppActions) {
         }
         Spacer(Modifier.size(4.dp))
         Txt("Above this the difference counts for less and less: couplers stop agreeing with ears up there, and every fit of an earphone differs.", 13.sp, p.sub)
+        }
 
         preview?.let { r ->
             Spacer(Modifier.size(14.dp))

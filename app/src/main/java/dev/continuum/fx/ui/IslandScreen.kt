@@ -1,5 +1,9 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.heightIn
 import android.os.Build
 import android.view.WindowManager
@@ -45,7 +49,7 @@ import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Txt
 import kotlin.math.abs
 
-private fun islandOn(state: UiState) = state.island.enabled && state.privileges.islandReady
+internal fun islandOn(state: UiState) = state.island.enabled && state.privileges.islandReady
 
 @Composable
 private fun IslandStatusLine(state: UiState) {
@@ -64,6 +68,8 @@ private fun IslandStatusLine(state: UiState) {
 internal fun IslandContent(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val prefs = state.island
+    var showMore by rememberSaveable { mutableStateOf(false) }
+    var aboutInk by rememberSaveable { mutableStateOf(false) }
     Column {
         IslandStatusLine(state)
         Gap(22.dp)
@@ -136,6 +142,8 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } }, on = Surface.Card)
                 }
             }
+            More(showMore, { showMore = !showMore })
+            if (showMore) {
             val eventsOn = prefs.events && state.privileges.calendar
             ToggleRow(
                 "Calendar events",
@@ -163,6 +171,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             }
             ToggleRow("Pull a drop", "Hold and drag down for recent ones", prefs.pull) {
                 actions.updateIsland { it.copy(pull = !it.pull) }
+            }
             }
         }
         Gap(28.dp)
@@ -219,9 +228,8 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         PlacementSection(prefs, actions)
         Gap(28.dp)
 
-        SectionLabel("How it moves", top = 0.dp)
-        Gap(4.dp)
-        Txt(
+        More(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves")
+        if (aboutInk) Txt(
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
                 "pinches off a second bubble when two things are running, and drips alerts down from the camera. " +
                 "Hold it and drag down to pull a drop out on a stretchy neck: let go early and it springs back, " +
@@ -259,6 +267,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     }
     fun frac(v: Float, lo: Float, hi: Float) = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
     fun dpText(v: Float) = if (v % 1f == 0f) "${v.toInt()} dp" else "$v dp"
+    var sizing by rememberSaveable { mutableStateOf(false) }
     fun pct(v: Float) = "${Math.round(v * 100)}%"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -293,6 +302,8 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
             },
             frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX),
         ) { t -> place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) } }
+        More(sizing, { sizing = !sizing }, label = "Size and shape")
+        if (sizing) {
         val c = prefs.cameraSize
         SliderField(
             "Camera size",
@@ -317,6 +328,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
             frac(prefs.width, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX),
         ) { t -> place { it.copy(width = value(t, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX, 1f, 0f)) } }
         Txt("Size scales everything together; height and width shape the pill around what's in it.", 13.sp, p.sub)
+        }
     }
 }
 

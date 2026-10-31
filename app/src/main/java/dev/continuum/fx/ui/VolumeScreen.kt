@@ -69,7 +69,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private fun volumeOn(state: UiState, prefs: VolumePrefs) = prefs.enabled && state.privileges.volumeService
+internal fun volumeOn(state: UiState, prefs: VolumePrefs) = prefs.enabled && state.privileges.volumeService
 
 @Composable
 internal fun VolumeContent(state: UiState, actions: AppActions) {
@@ -257,7 +257,7 @@ private fun StreamControl(s: VolStream, lv: Level, ringer: Int, muted: Boolean, 
             InkSlider(
                 value = lv.fraction,
                 onChange = { f -> VolumeModel.set(s, lv.indexAt(f)) },
-                track = p.line,
+                track = p.sub.copy(alpha = 0.35f),
                 fill = if (muted) p.sub else p.text,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
             )
@@ -280,7 +280,7 @@ private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Flo
             Txt(label, 17.sp, p.text, modifier = Modifier.weight(1f), maxLines = 1)
             Txt("${(volume * 100f).toInt()}%", 14.sp, p.sub, maxLines = 1)
         }
-        InkSlider(value = volume, onChange = onChange, track = p.line, fill = p.text, modifier = Modifier.fillMaxWidth())
+        InkSlider(value = volume, onChange = onChange, track = p.sub.copy(alpha = 0.35f), fill = p.text, modifier = Modifier.fillMaxWidth())
     }
 }
 

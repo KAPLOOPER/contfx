@@ -18,7 +18,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import dev.continuum.fx.R
 
-/** The Continuum palette. Ink is always pure black; the ground changes with the system theme. */
+/**
+ * The Continuum palette. Ink is always pure black; the ground changes with the system theme.
+ *
+ * Colour means one thing each, and nothing is coloured for decoration:
+ *  - [text] / [primary] (white on dark): on, or chosen.
+ *  - [live] (green): happening right now (charging, a call, a boost in use).
+ *  - [danger] (red): needs you (an error, something that stopped).
+ * Everything else is the ground, the ink and greys.
+ */
 data class Palette(
     val ground: Color,
     val surface: Color,

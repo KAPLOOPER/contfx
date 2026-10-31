@@ -2,8 +2,10 @@ package dev.continuum.fx.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +35,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.onSizeChanged
+import dev.continuum.fx.ui.Fmt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.audio.LiveAudio
@@ -56,9 +61,11 @@ private const val POINTS = 220
 private const val BANDS = 56
 
 /**
- * Frequency response of the active profile. Each filter is a dot you can drag:
- * sideways changes its frequency, up and down changes its gain. While processing, the
- * music itself moves behind the curve as a soft liquid spectrum.
+ * Frequency response of the active profile, the centre of the Sound page: it runs edge to edge
+ * ([inset] is the page margin its labels keep to). Each filter is a dot: drag it sideways for
+ * frequency and up and down for gain, and pinch with two fingers to narrow or widen it (Q).
+ * The touched filter's values sit right beside its dot. While processing, the music itself
+ * moves behind the curve as a soft liquid spectrum.
  */
 @Composable
 fun EqGraph(
@@ -67,6 +74,8 @@ fun EqGraph(
     onSelect: (Int) -> Unit,
     onMove: (index: Int, frequency: Double, gainDb: Double) -> Unit,
     modifier: Modifier = Modifier,
+    onQ: (index: Int, q: Double) -> Unit = { _, _ -> },
+    inset: Dp = 0.dp,
     live: Boolean = false,
     /** Held to compare: the curve drains flat, as the sound does. */
     comparing: Boolean = false,
@@ -122,16 +131,19 @@ fun EqGraph(
     val latestRange = rememberUpdatedState(range)
     val latestSelect = rememberUpdatedState(onSelect)
     val latestMove = rememberUpdatedState(onMove)
+    val latestQ = rememberUpdatedState(onQ)
+    val latestSelected = rememberUpdatedState(selected)
 
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(230.dp),
+            .height(300.dp),
     ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
-        // Just enough for an end dot: the graph sits on the page, aligned with everything else.
-        val padX = with(density) { 8.dp.toPx() }
+        val insetPx = with(density) { inset.toPx() }
+        // Just enough for an end dot: the curve runs nearly to the screen's edges.
+        val padX = with(density) { 12.dp.toPx() }
         val top = with(density) { 20.dp.toPx() }
         val bottom = with(density) { 32.dp.toPx() }
         val plotW = w - 2 * padX
@@ -166,23 +178,54 @@ fun EqGraph(
             Modifier
                 .matchParentSize()
                 .pointerInput(w, h) {
-                    var dragging = -1
-                    detectDragGestures(
-                        onDragStart = { pos ->
-                            dragging = nearest(pos)
-                            if (dragging >= 0) latestSelect.value(dragging)
-                        },
-                        onDragEnd = { dragging = -1 },
-                        onDragCancel = { dragging = -1 },
-                    ) { change, _ ->
-                        if (dragging >= 0) {
-                            change.consume()
-                            latestMove.value(dragging, freqOf(change.position.x), dbOf(change.position.y, latestRange.value))
+                    // One finger on a dot drags it; two fingers pinch the touched (or chosen)
+                    // filter's width; a touch that starts away from the dots is left to the page.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val target = nearest(down.position)
+                        var mode = 0 // 0 undecided, 1 dragging, 2 pinching
+                        var moved = false
+                        var band = -1
+                        var q0 = 1.0
+                        var d0 = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val held = event.changes.filter { it.pressed }
+                            if (held.isEmpty()) break
+                            if (held.size >= 2) {
+                                if (mode != 2) {
+                                    band = if (target >= 0) target else latestSelected.value
+                                    if (band < 0 || band >= latestProfile.value.bands.size) continue
+                                    mode = 2
+                                    q0 = latestProfile.value.bands[band].q
+                                    d0 = (held[0].position - held[1].position).getDistance()
+                                    latestSelect.value(band)
+                                }
+                                val d = (held[0].position - held[1].position).getDistance()
+                                // Fingers apart widens the filter (lower Q); together narrows it.
+                                if (d0 > 1f && d > 1f) latestQ.value(band, (q0 * d0 / d).coerceIn(EqLimits.MIN_Q, EqLimits.MAX_Q))
+                                event.changes.forEach { it.consume() }
+                                continue
+                            }
+                            if (mode == 2) {
+                                event.changes.forEach { it.consume() }
+                                continue
+                            }
+                            val c = held[0]
+                            if (!moved && (c.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                            if (target < 0) continue
+                            if (mode == 0 && moved) {
+                                mode = 1
+                                latestSelect.value(target)
+                            }
+                            if (mode == 1) {
+                                c.consume()
+                                latestMove.value(target, freqOf(c.position.x), dbOf(c.position.y, latestRange.value))
+                            }
                         }
+                        // A tap: choose the dot under it, or none.
+                        if (mode == 0 && !moved) latestSelect.value(target)
                     }
-                }
-                .pointerInput(w, h) {
-                    detectTapGestures { pos -> latestSelect.value(nearest(pos)) }
                 },
         ) {
             // The music, behind everything: a smooth liquid outline over the band levels.
@@ -242,19 +285,48 @@ fun EqGraph(
                 Txt(label, 12.sp, p.sub)
             }
         }
-        Box(Modifier.offset { IntOffset((padX + 4f).roundToInt(), (top - 2f).roundToInt()) }) {
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top - 2f).roundToInt()) }) {
             Txt("+${range.roundToInt()}", 12.sp, p.sub)
         }
         if (shape < 0.98f) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 14.dp, end = 18.dp)
+                    .padding(top = 14.dp, end = inset)
                     .graphicsLayer { alpha = (1f - shape).coerceIn(0f, 1f) },
             ) { Txt("Original · matched loudness", 12.sp, p.text) }
         }
-        Box(Modifier.offset { IntOffset((padX + 4f).roundToInt(), (top + plotH - with(density) { 16.dp.toPx() }).roundToInt()) }) {
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top + plotH - with(density) { 16.dp.toPx() }).roundToInt()) }) {
             Txt("−${range.roundToInt()}", 12.sp, p.sub)
+        }
+
+        // The touched filter's values, right beside its dot, following it as it moves.
+        if (selected in profile.bands.indices) {
+            val b = profile.bands[selected]
+            val dx = xOf(b.frequency)
+            val dy = dotY(selected, profile, range, shape)
+            var readoutW by remember { mutableIntStateOf(0) }
+            var readoutH by remember { mutableIntStateOf(0) }
+            val gap = with(density) { 18.dp.toPx() }
+            Row(
+                Modifier
+                    .offset {
+                        val x = (dx - readoutW / 2f).coerceIn(insetPx, w - insetPx - readoutW)
+                        // Above the dot, unless that would leave the graph.
+                        val above = dy - gap - readoutH
+                        val y = if (above >= 0f) above else dy + gap
+                        IntOffset(x.roundToInt(), y.roundToInt())
+                    }
+                    .onSizeChanged {
+                        readoutW = it.width
+                        readoutH = it.height
+                    },
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Txt(Fmt.freq(b.frequency), 13.sp, p.text, maxLines = 1)
+                if (b.type.usesGain) Txt(Fmt.db(b.gainDb), 13.sp, p.text, maxLines = 1)
+                Txt("Q ${Fmt.q(b.q)}", 13.sp, p.sub, maxLines = 1)
+            }
         }
     }
 }

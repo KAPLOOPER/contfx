@@ -61,7 +61,7 @@ private fun pct(x: Double) = "${(x * 100).roundToInt()}%"
 private fun db1(x: Double): String {
     val r = (x * 10).roundToInt() / 10.0
     val s = if (r % 1.0 == 0.0) r.toInt().toString() else r.toString()
-    return if (r > 0) "+$s dB" else if (r < 0) "−${s.removePrefix("-")} dB" else "0 dB"
+    return if (r > 0) "+$s dB" else if (r < 0) "−${s.removePrefix("-")} dB" else "±0 dB"
 }
 
 /**

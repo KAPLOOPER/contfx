@@ -1,5 +1,10 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
@@ -234,6 +239,21 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     }
     val dockRect = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
+    // While you scroll down to read, the dock draws back into a drop in the corner; scrolling up,
+    // reaching the top, changing page or tapping the drop brings it back out.
+    var dockTucked by remember { mutableStateOf(false) }
+    LaunchedEffect(state.section) { dockTucked = false }
+    val tuckOnScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (consumed.y < -6f) dockTucked = true
+                else if (consumed.y > 6f) dockTucked = false
+                if (available.y > 0f) dockTucked = false
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+
     CompositionLocalProvider(LocalSeeds provides seeds) {
     Box(Modifier.fillMaxSize().background(p.ground)) {
         Column(Modifier.fillMaxSize()) {
@@ -255,6 +275,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     .weight(1f)
                     .fillMaxWidth()
                     .clipToBounds()
+                    .nestedScroll(tuckOnScroll)
                     .pointerInput(Unit) {
                         // Swiping the page sideways turns the pivot, the titles following the finger.
                         val tracker = VelocityTracker()
@@ -303,6 +324,10 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             alpha = (1f - abs(shift) * 1.3f).coerceIn(0f, 1f)
                         }
                         .verticalScroll(scrolls.getValue(state.section))
+                        // On a tablet or an open foldable, a comfortable reading width, kept to
+                        // the left edge the titles start from.
+                        .wrapContentWidth(Alignment.Start)
+                        .widthIn(max = CONTENT_MAX + 48.dp)
                         .navigationBarsPadding()
                         .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 120.dp),
                 ) {
@@ -349,7 +374,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
 
         SeedOverlay(seeds)
         DockMessage(state.message, dockRect, actions::dismissMessage)
-        Dock(state, actions, Modifier.align(Alignment.BottomCenter)) { dockRect.value = it }
+        Dock(state, actions, Modifier.align(Alignment.BottomEnd), tucked = dockTucked && !state.setupOpen, onUntuck = { dockTucked = false }) { dockRect.value = it }
     }
     }
 }
@@ -361,6 +386,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
     var fitting by rememberSaveable { mutableStateOf(false) }
+    var filtersOpen by rememberSaveable { mutableStateOf(false) }
     Column {
         SectionLabel("EQ", top = 0.dp)
         Row(
@@ -389,6 +415,14 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             comparing = comparing && state.running && library.eqEnabled,
             selected = selected,
             onSelect = { selected = it },
+            // Edge to edge: the centre of the page.
+            modifier = Modifier.bleed(24.dp),
+            inset = 24.dp,
+            onQ = { i, q ->
+                store.updateActive { pr ->
+                    pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j != i) b else b.copy(q = Fmt.roundQ(q)) })
+                }
+            },
             onMove = { i, f, g ->
                 store.updateActive { pr ->
                     pr.copy(bands = pr.bands.mapIndexed { j, b ->
@@ -419,15 +453,35 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         Gap(10.dp)
         PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
 
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            SectionLabel("Filters · ${profile.bands.size}", modifier = Modifier.weight(1f))
+        // The filters, folded into one line: the graph is where you shape the sound; this is
+        // for exact numbers and filter types.
+        val filtersSource = remember { MutableInteractionSource() }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp)
+                .heightIn(min = 56.dp)
+                .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Txt(
+                when (profile.bands.size) {
+                    0 -> "No filters"
+                    1 -> "1 filter"
+                    else -> "${profile.bands.size} filters"
+                },
+                17.sp, p.text, maxLines = 1,
+            )
+            Spacer(Modifier.width(8.dp))
+            Chevron(filtersOpen, p.sub)
+            Spacer(Modifier.weight(1f))
             IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
                 val newIndex = profile.bands.size
                 store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
                 selected = newIndex
+                filtersOpen = true
             })
         }
-        Gap(8.dp)
         Rest(
             "${profile.name} has no filters, so music plays as it is. Add one with +, or bring in an EQ from squig.link or AutoEQ.",
             visible = profile.bands.isEmpty(),
@@ -435,19 +489,21 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             icon = R.drawable.ic_import,
             onAction = actions::importFile,
         )
-        profile.bands.forEachIndexed { i, band ->
-            BandCard(
-                band = band,
-                expanded = selected == i,
-                onToggle = { selected = if (selected == i) -1 else i },
-                onChange = { nb ->
-                    store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
-                },
-                onRemove = {
-                    store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
-                    selected = -1
-                },
-            )
+        if (filtersOpen) {
+            profile.bands.forEachIndexed { i, band ->
+                BandCard(
+                    band = band,
+                    expanded = selected == i,
+                    onToggle = { selected = if (selected == i) -1 else i },
+                    onChange = { nb ->
+                        store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
+                    },
+                    onRemove = {
+                        store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
+                        selected = -1
+                    },
+                )
+            }
         }
         Gap(14.dp)
         Row {
@@ -561,7 +617,7 @@ private fun PreampSection(
         InkSlider(
             value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
             onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
-            track = p.line,
+            track = p.sub.copy(alpha = 0.35f),
             fill = p.text,
         )
         Gap(4.dp)
@@ -764,7 +820,7 @@ internal fun SliderField(label: String, valueText: String, value: Float, onChang
             Txt(label, 15.sp, p.sub, modifier = Modifier.weight(1f))
             Txt(valueText, 15.sp, p.text)
         }
-        InkSlider(value = value, onChange = onChange, track = p.line, fill = p.text)
+        InkSlider(value = value, onChange = onChange, track = p.sub.copy(alpha = 0.35f), fill = p.text)
     }
 }
 
@@ -773,26 +829,45 @@ internal fun SliderField(label: String, valueText: String, value: Float, onChang
  * sheet rather than opening a separate panel: the same ink, reshaped.
  */
 @Composable
-private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modifier, onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {}) {
+private fun Dock(
+    state: UiState,
+    actions: AppActions,
+    modifier: Modifier = Modifier,
+    tucked: Boolean = false,
+    onUntuck: () -> Unit = {},
+    onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+) {
     val p = LocalPalette.current
-    val screenHeight = LocalConfiguration.current.screenHeightDp
-    val openHeight = (screenHeight - 120).coerceIn(420, 660).dp
-    val height by animateDpAsState(if (state.setupOpen) openHeight else 76.dp, Motion.flow(), label = "dockHeight")
+    val config = LocalConfiguration.current
+    val openHeight = (config.screenHeightDp - 120).coerceIn(420, 660).dp
+    val height by animateDpAsState(
+        when {
+            state.setupOpen -> openHeight
+            tucked -> 60.dp
+            else -> 76.dp
+        },
+        Motion.flow(), label = "dockHeight",
+    )
     val side by animateDpAsState(if (state.setupOpen) 8.dp else 12.dp, Motion.flow(), label = "dockSide")
+    // Tucked, it gathers towards the corner into a round drop; its full width is the screen's
+    // (to a comfortable reading width on large screens).
+    val full = minOf(config.screenWidthDp.dp, CONTENT_MAX + 24.dp) - side * 2
+    val width by animateDpAsState(if (tucked) 60.dp else full, Motion.flow(), label = "dockWidth")
     val shape = RoundedCornerShape(38.dp)
     Box(
         modifier
             .navigationBarsPadding()
             .padding(start = side, end = side, bottom = 10.dp)
-            .fillMaxWidth()
+            .width(width)
             .height(height)
             .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
             .then(if (p.dark) Modifier.border(1.dp, p.edge, shape) else Modifier)
             .clip(shape)
             .background(p.ink),
     ) {
-        Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
+        Crossfade(targetState = Triple(state.setupOpen, state.section, tucked), label = "dockContent") { (open, section, small) ->
             when {
+                small -> TuckedDock(state, section, onUntuck)
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Volume -> VolumeSetupSheet(state, actions)
                 open && (section == Section.Sound || section == Section.Effects) -> SetupSheet(state, actions)
@@ -801,6 +876,34 @@ private fun Dock(state: UiState, actions: AppActions, modifier: Modifier = Modif
                 section == Section.Keyboard -> KeyboardDockBar(state, actions)
                 else -> DockBar(state, actions)
             }
+        }
+    }
+}
+
+/** The dock, tucked into a drop: what it's for, and whether it's on. Tap to bring it back. */
+@Composable
+private fun TuckedDock(state: UiState, section: Section, onUntuck: () -> Unit) {
+    val p = LocalPalette.current
+    val volume by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
+    val (icon, on) = when (section) {
+        Section.Sound, Section.Effects -> R.drawable.ic_power to state.running
+        Section.Island -> R.drawable.ic_island to islandOn(state)
+        Section.Volume -> R.drawable.ic_volume to volumeOn(state, volume)
+        Section.Keyboard -> R.drawable.ic_keyboard to state.keyboard.selected
+    }
+    val source = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onUntuck)
+            .semantics { contentDescription = "Show the dock" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.squash(source).size(44.dp).clip(CircleShape).background(if (on) p.onInk else p.ink),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp), colorFilter = ColorFilter.tint(if (on) p.ink else p.onInk))
         }
     }
 }
@@ -935,11 +1038,12 @@ internal fun StepRow(
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Box(
-            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.live else p.inkTonal),
+            // Done is "on", so white with a tick, as a switch is; green is kept for what's live.
+            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.onInk else p.inkTonal),
             contentAlignment = Alignment.Center,
         ) {
             if (done) {
-                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.onLive))
+                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.ink))
             } else {
                 Txt("$number", 15.sp, p.onInk, bold = true)
             }

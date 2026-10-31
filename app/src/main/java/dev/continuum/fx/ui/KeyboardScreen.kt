@@ -1,5 +1,10 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -97,13 +102,19 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                 "words" to "Learned words",
                 "about" to "About",
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                pages.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { (page, label) ->
-                            PillButton(label, { actions.openKeyboardSettings(page) }, Modifier.weight(1f))
-                        }
-                        if (row.size == 1) Box(Modifier.weight(1f))
+            // Each opens a page of the keyboard's settings: rows that lead somewhere end in an arrow.
+            Column {
+                pages.forEach { (page, label) ->
+                    val source = remember(page) { MutableInteractionSource() }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable(interactionSource = source, indication = null, role = Role.Button) { actions.openKeyboardSettings(page) },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Txt(label, 17.sp, p.text, modifier = Modifier.weight(1f), maxLines = 1)
+                        Chevron(null, p.sub)
                     }
                 }
             }
@@ -122,11 +133,11 @@ private fun SetupStep(number: Int, done: Boolean, title: String, body: String, a
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp)) {
         Box(
-            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.live else p.surface),
+            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.primary else p.surface),
             contentAlignment = Alignment.Center,
         ) {
             if (done) {
-                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.onLive))
+                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.onPrimary))
             } else {
                 Txt("$number", 15.sp, p.text, bold = true)
             }

@@ -1,5 +1,24 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
+import dev.continuum.fx.R
+import dev.continuum.fx.ui.theme.Motion
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,3 +89,58 @@ internal fun SectionLabel(text: String, modifier: Modifier = Modifier, top: andr
         ),
     )
 }
+
+/** Lets something run past the page's side margins of [by] each, to the screen's edges. */
+internal fun Modifier.bleed(by: Dp): Modifier = layout { measurable, constraints ->
+    val extra = by.roundToPx() * 2
+    val width = constraints.maxWidth + extra
+    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-extra / 2, 0) }
+}
+
+/**
+ * The quiet line at the end of a group that shows the rest of it: the finer settings stay out
+ * of the way until asked for. Its arrow turns as it opens.
+ */
+@Composable
+internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", modifier: Modifier = Modifier) {
+    val p = LocalPalette.current
+    val source = remember { MutableInteractionSource() }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onToggle),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Txt(if (open) "Less" else label, 15.sp, p.sub, maxLines = 1)
+        Spacer(Modifier.width(6.dp))
+        Chevron(open, p.sub)
+    }
+}
+
+/**
+ * The one sign that a row leads somewhere: pointing right for a deeper page, or down (and up
+ * once open) for something that opens in place. A dot is always a switch; a word, a value.
+ */
+@Composable
+internal fun Chevron(open: Boolean?, color: Color) {
+    val turn by animateFloatAsState(
+        when (open) {
+            null -> -90f
+            true -> 180f
+            false -> 0f
+        },
+        Motion.flow(),
+        label = "chevron",
+    )
+    Image(
+        painterResource(R.drawable.ic_chevron_down),
+        contentDescription = null,
+        modifier = Modifier.size(18.dp).rotate(turn),
+        colorFilter = ColorFilter.tint(color),
+    )
+}
+
+/** The widest the page's content grows on large screens: a comfortable line length. */
+internal val CONTENT_MAX = 600.dp

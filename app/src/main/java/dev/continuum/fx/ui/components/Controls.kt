@@ -361,7 +361,8 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
                         scaleY = s
                     }
                     .clip(CircleShape)
-                    .background(lerp(p.line, p.primary, dot.value.coerceIn(0f, 1f))),
+                    // Off: a translucent grey that reads on light and dark grounds alike.
+                    .background(lerp(p.sub.copy(alpha = 0.45f), p.primary, dot.value.coerceIn(0f, 1f))),
             )
             Image(
                 painterResource(checkIcon),

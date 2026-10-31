@@ -10,18 +10,23 @@ import kotlin.math.roundToInt
 /** Number formatting and slider mappings for the EQ controls. */
 object Fmt {
 
+    /**
+     * Frequencies to the precision they're set to, always with the same number of figures in each
+     * range, so a value being dragged doesn't jump about. (Libron's digits are all one width.)
+     */
     fun freq(f: Double): String = when {
-        f >= 10000 -> "${(f / 1000).roundToInt()} kHz"
-        f >= 1000 -> String.format(Locale.US, "%.1f kHz", f / 1000)
+        f >= 10000 -> String.format(Locale.US, "%.1f kHz", f / 1000)
+        f >= 1000 -> String.format(Locale.US, "%.2f kHz", f / 1000)
         f >= 100 -> "${f.roundToInt()} Hz"
-        else -> String.format(Locale.US, "%.1f Hz", f).replace(".0 Hz", " Hz")
+        else -> String.format(Locale.US, "%.1f Hz", f)
     }
 
+    /** Always signed, ± for zero, so the figures stay put as the value crosses it. */
     fun db(d: Double): String {
         val sign = when {
             d > 0.05 -> "+"
             d < -0.05 -> "−"
-            else -> ""
+            else -> "±"
         }
         return sign + String.format(Locale.US, "%.1f", abs(d)) + " dB"
     }

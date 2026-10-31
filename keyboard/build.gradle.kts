@@ -8,7 +8,7 @@ plugins {
 // installs as an update (including over the old FUTO-based builds). Local builds are 1.
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
-// Signed with the same key as Continuum FX, so updates install over the top.
+// Signed with the same key as Continuum Kit, so updates install over the top.
 val signingPassword: String? = System.getenv("SIGNING_PASSWORD")?.takeIf { it.isNotBlank() }
 
 android {

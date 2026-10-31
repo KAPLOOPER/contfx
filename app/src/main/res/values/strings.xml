@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Continuum FX</string>
+    <string name="app_name">Continuum Kit</string>
     <string name="import_eq">Import EQ</string>
     <string name="island_service_label">Continuum island</string>
     <string name="island_listener_label">Continuum island</string>

@@ -49,7 +49,7 @@ class ContinuumApp : Application() {
             "Audio processing",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Shown while Continuum FX is processing other apps' audio"
+            description = "Shown while Continuum Kit is processing other apps' audio"
             setShowBadge(false)
         }
         val updates = NotificationChannel(
@@ -57,7 +57,7 @@ class ContinuumApp : Application() {
             "Updates",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Says when Continuum FX has updated itself"
+            description = "Says when Continuum Kit has updated itself"
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(channel, updates))

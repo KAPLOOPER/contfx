@@ -11,11 +11,11 @@
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
-    <!-- One-time codes from Continuum FX: only granted when both apps are signed with the same key. -->
+    <!-- One-time codes from Continuum Kit: only granted when both apps are signed with the same key. -->
     <uses-permission android:name="dev.continuum.fx.permission.ONE_TIME_CODES" />
 
     <!-- To name your password manager in settings: autofill services' apps are visible. And to
-         reach Continuum FX for one-time codes. -->
+         reach Continuum Kit for one-time codes. -->
     <queries>
         <intent>
             <action android:name="android.service.autofill.AutofillService" />

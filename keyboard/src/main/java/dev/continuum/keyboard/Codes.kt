@@ -7,8 +7,8 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * One-time codes from Continuum FX, which sees them arrive in your notifications. The keyboard
- * has no internet access and can't read notifications; Continuum FX hands it the latest fresh
+ * One-time codes from Continuum Kit, which sees them arrive in your notifications. The keyboard
+ * has no internet access and can't read notifications; Continuum Kit hands it the latest fresh
  * code over Android's own channel between apps, open only to apps signed with the same key.
  */
 object Codes {
@@ -16,10 +16,10 @@ object Codes {
 
     private val URI: Uri = Uri.parse("content://dev.continuum.fx.codes/latest")
 
-    /** How long a code is offered for (as Continuum FX does). */
+    /** How long a code is offered for (as Continuum Kit does). */
     const val FRESH_MS = 5 * 60_000L
 
-    /** The fresh code, if Continuum FX has one (and lets us read it). */
+    /** The fresh code, if Continuum Kit has one (and lets us read it). */
     fun read(context: Context): Offer? = try {
         context.contentResolver.query(URI, null, null, null, null)?.use { c ->
             if (!c.moveToFirst()) return@use null
@@ -27,7 +27,7 @@ object Codes {
             offer.takeIf { System.currentTimeMillis() - it.at < FRESH_MS && it.code.isNotBlank() }
         }
     } catch (_: Exception) {
-        // Continuum FX isn't installed, or this build can't read from it.
+        // Continuum Kit isn't installed, or this build can't read from it.
         null
     }
 

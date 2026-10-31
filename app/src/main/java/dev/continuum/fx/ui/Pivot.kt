@@ -126,7 +126,7 @@ internal fun PivotHeader(
             Box(Modifier.size(7.dp).clip(CircleShape).background(p.text))
             Spacer(Modifier.width(9.dp))
             BasicText(
-                "CONTINUUM FX",
+                "CONTINUUM KIT",
                 style = TextStyle(color = p.sub, fontSize = 12.sp, fontFamily = Libron, fontWeight = FontWeight.Bold, letterSpacing = 2.6.sp),
             )
         }

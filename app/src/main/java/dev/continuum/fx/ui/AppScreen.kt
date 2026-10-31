@@ -315,7 +315,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         title = { "Build ${it.build} is ready" },
                         subtitle = "Your settings and permissions stay as they are.",
                         actionLabel = "Update now",
-                        installingNote = "Installing. Continuum FX closes for a moment while it updates, then it's back as it was.",
+                        installingNote = "Installing. Continuum Kit closes for a moment while it updates, then it's back as it was.",
                         onAction = actions::installUpdate,
                         onAllow = actions::allowInstalls,
                         onDismiss = actions::dismissUpdate,
@@ -889,7 +889,7 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
         Gap(4.dp)
         Txt(
             if (direct) "Direct mode works without root or screen capture: the EQ goes on each app's own sound."
-            else "Continuum FX works without root: it captures what other apps play, processes it and plays it back.",
+            else "Continuum Kit works without root: it captures what other apps play, processes it and plays it back.",
             15.sp, p.onInkSub,
         )
         Gap(8.dp)

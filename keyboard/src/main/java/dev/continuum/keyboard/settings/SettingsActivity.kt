@@ -266,7 +266,7 @@ class SettingsActivity : ComponentActivity() {
                     }
                     Toggle(
                         g, "One-time codes",
-                        "Sign-in codes from your messages and emails, offered in the strip as they arrive. They come from Continuum FX on this phone; the keyboard still never goes online.",
+                        "Sign-in codes from your messages and emails, offered in the strip as they arrive. They come from Continuum Kit on this phone; the keyboard still never goes online.",
                         prefs.codes,
                     ) { prefs.codes = it }
                     val manager = remember(tick) { autofillServiceName() }
@@ -323,12 +323,12 @@ class SettingsActivity : ComponentActivity() {
                         )
                         Spacer(Modifier.height(12.dp))
                         // No internet here, so the keyboard can't look for updates itself: this opens
-                        // the releases in your browser, and Continuum FX's Keyboard tab installs them.
+                        // the releases in your browser, and Continuum Kit's Keyboard tab installs them.
                         Pill("Check for updates on GitHub", g.surface, g.text, { openReleases() })
                         Spacer(Modifier.height(6.dp))
                         Txt(
                             "Opens the keyboard's builds in your browser: anything above build ${BuildConfig.BUILD_NUMBER} is newer. " +
-                                "Continuum FX's Keyboard tab also checks for them, and installs them over this one.",
+                                "Continuum Kit's Keyboard tab also checks for them, and installs them over this one.",
                             13.sp, g.sub,
                         )
                         Spacer(Modifier.height(10.dp))
@@ -419,7 +419,7 @@ private fun Toggle(g: Ground, title: String, body: String?, initial: Boolean, on
             .pointerInput(Unit) {
                 detectTapGestures {
                     on = !on
-                    // The same feel as Continuum FX's switches: ink filling, or draining.
+                    // The same feel as Continuum Kit's switches: ink filling, or draining.
                     view.performHapticFeedback(
                         when {
                             Build.VERSION.SDK_INT >= 34 -> if (on) HapticFeedbackConstants.TOGGLE_ON else HapticFeedbackConstants.TOGGLE_OFF

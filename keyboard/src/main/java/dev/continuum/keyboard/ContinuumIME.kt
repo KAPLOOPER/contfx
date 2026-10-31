@@ -164,7 +164,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { onClipboardChanged() }
 
-    // ---- One-time codes from Continuum FX. ----
+    // ---- One-time codes from Continuum Kit. ----
     private var codeOffer: Codes.Offer? = null
     /** Codes already typed or set aside, so they aren't offered again. */
     private val usedCodes = HashSet<String>()
@@ -806,7 +806,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         }
     }
 
-    /** Looks for a fresh code from Continuum FX, off the main thread, and shows it if it fits. */
+    /** Looks for a fresh code from Continuum Kit, off the main thread, and shows it if it fits. */
     private fun readCode(refresh: Boolean) {
         if (!prefs.codes) {
             codeOffer = null

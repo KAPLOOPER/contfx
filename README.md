@@ -1,9 +1,11 @@
-# Continuum FX
+# Continuum Kit
 
-The **Continuum** toolkit for Android, built in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
+The utilities I actually use, in one place, all in the Continuum design language: liquid black ink, Flow springs, flat surfaces and the Libron typeface. No root needed.
 
-- **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ, an EQ of its own for any app, and backup of everything.
-- **Effects:** analog bass, punch, speaker bass, tube warmth, an exciter, hi-res detail, stage, crossfeed, dynamics, loudness and Bluetooth care, on top of the EQ.
+*Formerly Continuum FX: it outgrew the name once it was more than sound. It's the same app underneath, so it updates over the old one and keeps everything you've set up.*
+
+- **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ or fits one from your own measurement and target, an EQ of its own for any app, and backup of everything.
+- **Effects:** spatial audio with speakers you place, analog bass, punch, speaker bass, tube warmth, an exciter, hi-res detail, stage, crossfeed, dynamics, loudness and Bluetooth care, on top of the EQ.
 - **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
@@ -22,7 +24,7 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 - **Delete swiping:** drag left from delete to select whole words, lift to delete them.
 - **Clipboard and emoji:** clipboard history kept from 1 hour to forever, with pins and a paste suggestion in the strip. Long copies (up to about a million characters) are kept whole in files of their own and shown by their start, so a huge prompt costs no more than a word, and pasted in pieces so nothing is lost; every emoji your phone can draw, with Frequent and skin tones.
 - **Scan text:** take a picture, tap the lines you want, and they're typed where you were.
-- **One-time codes:** when Continuum FX's island sees a sign-in code arrive, the strip offers it (with the app it came from) the next time you're in an empty field: anywhere for the first minute and a half, then only in fields that ask for a code. One tap types it; the keyboard still has no internet, it asks Continuum FX on the phone, and only apps signed by the same key may ask.
+- **One-time codes:** when Continuum Kit's island sees a sign-in code arrive, the strip offers it (with the app it came from) the next time you're in an empty field: anywhere for the first minute and a half, then only in fields that ask for a code. One tap types it; the keyboard still has no internet, it asks Continuum Kit on the phone, and only apps signed by the same key may ask.
 - **Passwords:** logins from your password manager (Keyguard, Bitwarden, Proton Pass or any autofill service with inline suggestions) as chips in the strip when you tap a login field, sized to the strip. Settings shows which password manager is filling and takes you to choose one; switch the chips off and it uses its own pop-up instead.
 - **Edit panel:** arrows that keep going while held, jumps by word and to either end of the line, *Select* to grow a selection with the same arrows, Select all, Copy, Cut, Paste, Undo and Redo.
 - Caps lock shows a bar under the shift arrow, so it never reads as a one-letter shift.
@@ -87,7 +89,7 @@ then switch on *Continuum island* in accessibility settings. The **Try it** butt
 - **Hold to compare:** hear the music without the EQ, at matched loudness, so the louder of the two can't win just by being louder. The curve drains flat while you hold.
 - **EQ per device:** link an EQ to your headphones, speaker, car or USB DAC, and it comes on by itself whenever they connect.
 - **Polarity:** turn the sound over for earphones that come out the wrong way round (a push in the recording arriving as a pull), or mend one channel wired backwards. It's saved with the EQ, stays on with the EQ switched off, and goes into shared files as Equalizer APO's `Copy: L=-1*L R=-1*R`. Capture mode only: Direct mode's effect can raise and lower the sound but not turn it over.
-- **EQ per app:** give an app its own EQ (a podcast app a voice EQ, say). In Direct mode each app plays through its own, side by side; in Capture mode, where everything is mixed first, an app's own EQ is used while it's what's playing. A music player's **Equalizer** button opens Continuum FX and offers that app one.
+- **EQ per app:** give an app its own EQ (a podcast app a voice EQ, say). In Direct mode each app plays through its own, side by side; in Capture mode, where everything is mixed first, an app's own EQ is used while it's what's playing. A music player's **Equalizer** button opens Continuum Kit and offers that app one.
 - **Backup:** everything you've set up (EQs and their links, effects, island, volume panel, each app's volume) in one file, to keep or move to a new phone.
 - **Quick Settings tiles:** *Continuum EQ* (on or off, showing which EQ is playing) and *Island*.
 - Changes glide in over 10 ms, so dragging a band never clicks, and apps that start playing are picked up within moments.
@@ -114,7 +116,7 @@ In **Capture** mode every effect is real signal processing on the captured sound
 
 ## Sound: how it works without root
 
-Android doesn't let ordinary apps add effects to other apps' sound, so Continuum FX takes the same route as [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP):
+Android doesn't let ordinary apps add effects to other apps' sound, so Continuum Kit takes the same route as [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP):
 
 1. It **captures** what other apps play, using Android's playback capture API (Android 10+).
 2. It runs that audio through the **parametric EQ** and a safety limiter.
@@ -145,17 +147,17 @@ Android doesn't let ordinary apps add effects to other apps' sound, so Continuum
 ## Importing from squig.link
 
 1. On any squig.link site, build your EQ and use the **parametric EQ export** to download the `.txt` file.
-2. Open the file with Continuum FX (*Open with* or *Share*), or tap **Import** in the app and pick it.
+2. Open the file with Continuum Kit (*Open with* or *Share*), or tap **Import** in the app and pick it.
    You can also copy the text and tap **Paste**.
 
 Any file in the Equalizer APO parametric format works, including AutoEQ's `ParametricEQ.txt`. Supported filter types: peak (`PK`), low and high shelves (`LS`/`LSC`/`LSQ`, `HS`/`HSC`/`HSQ`), low and high pass, notch, band pass and all pass, with `Q` or `BW Oct`. **Share** exports the current profile in the same format.
 
 ## Updates
 
-Continuum FX updates itself. It checks this repository's releases when you open it (at most every six hours), and **Check for updates** at the bottom of any tab checks straight away. When a newer build is out, a card at the top offers **Update now**: it downloads the APK and installs it over the top, keeping your settings, profiles and permissions.
+Continuum Kit updates itself. It checks this repository's releases when you open it (at most every six hours), and **Check for updates** at the bottom of any tab checks straight away. When a newer build is out, a card at the top offers **Update now**: it downloads the APK and installs it over the top, keeping your settings, profiles and permissions.
 
 - With **Shizuku** running, the update installs without a prompt.
-- Otherwise Android asks you to confirm; the first time, it also asks you to allow Continuum FX to install apps. Once the app has installed an update itself, Android 12 and later can let later ones through without asking.
+- Otherwise Android asks you to confirm; the first time, it also asks you to allow Continuum Kit to install apps. Once the app has installed an update itself, Android 12 and later can let later ones through without asking.
 
 Every build is signed with the same key and numbered by its build, so each one installs as an update rather than needing a reinstall. Android refuses any update signed with a different key, so a tampered APK can't replace this one.
 
@@ -191,7 +193,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 
 ## Credits and licences
 
-- Continuum FX is licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
+- Continuum Kit is licensed under the **GNU GPL v3.0** (see `LICENSE`), keeping it compatible with the GPL audio engines it builds on.
 - Continuum Keyboard (`keyboard/`) is original code, also under the GPL v3.0, with an additional permission to use Google's ML Kit text recognition (see `keyboard/README.md`). Its word data comes from wordfreq (CC BY-SA 4.0), SCOWL and the Google Books Ngram data via SymSpell (CC BY 3.0); emoji data from Emojibase (MIT).
 - The volume panel's key handling, Shizuku helper, per-app volume sessions and boost scale are adapted from [Volume++](https://github.com/noel-digital-fan/volume_plus_plus) by noel-digital-fan (MIT). See `THIRD_PARTY_NOTICES.md`.
 - The rootless approach (capture, then silence the originals through a per-session effect) follows [RootlessJamesDSP](https://github.com/ThePBone/RootlessJamesDSP) by Tim Schneeberger.

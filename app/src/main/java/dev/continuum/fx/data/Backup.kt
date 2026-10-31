@@ -54,13 +54,13 @@ object Backup {
     /** Reads [text] as a backup, or says why it isn't one. */
     fun read(text: String): Result<Contents> = runCatching {
         val o = JSONObject(text)
-        require(o.optString("format") == FORMAT) { "That file isn't a Continuum FX backup." }
-        require(o.optInt("version") in 1..VERSION) { "That backup is from a newer Continuum FX. Update first." }
+        require(o.optString("format") == FORMAT) { "That file isn't a Continuum Kit backup." }
+        require(o.optInt("version") in 1..VERSION) { "That backup is from a newer Continuum Kit. Update first." }
         val prefs = o.getJSONObject("prefs")
         val eqs = prefs.optJSONObject("library")?.optJSONObject("library_v1")?.optString("v")
             ?.let { runCatching { JSONObject(it).getJSONArray("profiles").length() }.getOrNull() } ?: 0
         Contents(prefs, o.optLong("created"), eqs)
-    }.recoverCatching { e -> throw IllegalArgumentException(e.message?.takeIf { e is IllegalArgumentException } ?: "That file isn't a Continuum FX backup.") }
+    }.recoverCatching { e -> throw IllegalArgumentException(e.message?.takeIf { e is IllegalArgumentException } ?: "That file isn't a Continuum Kit backup.") }
 
     /**
      * Replaces every setting with the backup's, all at once (each file is written before anything

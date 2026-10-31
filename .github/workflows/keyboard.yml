@@ -28,7 +28,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # The run number is the build number, so each build installs over the last one.
-      # Signed with the same key as Continuum FX.
+      # Signed with the same key as Continuum Kit.
       - name: Test and build
         shell: bash
         env:

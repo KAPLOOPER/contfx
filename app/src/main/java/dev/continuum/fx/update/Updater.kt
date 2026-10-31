@@ -36,7 +36,7 @@ sealed interface UpdateState {
     data class Available(val release: Release) : UpdateState
     data class Downloading(val release: Release, val progress: Float) : UpdateState
     data class Installing(val release: Release) : UpdateState
-    /** Android needs "Install unknown apps" switched on for Continuum FX first. */
+    /** Android needs "Install unknown apps" switched on for Continuum Kit first. */
     data class NeedsPermission(val release: Release) : UpdateState
     data class Failed(val message: String, val release: Release?) : UpdateState
 }
@@ -118,7 +118,7 @@ abstract class UpdateChannel(
         installing = release
         state.value = UpdateState.Installing(release)
         if (Privileges.shizukuState() == ShizukuState.READY) {
-            // Through Shizuku it installs without a prompt, and marks Continuum FX as the
+            // Through Shizuku it installs without a prompt, and marks Continuum Kit as the
             // installer, so later updates can go through quietly on Android 12+ too.
             val ok = withContext(Dispatchers.IO) { installWithShizuku(context, apk) }
             if (ok) {
@@ -196,7 +196,7 @@ abstract class UpdateChannel(
             connectTimeout = 15_000
             readTimeout = 30_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "ContinuumFX/${BuildConfig.BUILD_NUMBER}")
+            setRequestProperty("User-Agent", "ContinuumKit/${BuildConfig.BUILD_NUMBER}")
             setRequestProperty("Accept", "application/vnd.github+json")
         }
 
@@ -299,8 +299,8 @@ abstract class UpdateChannel(
     }
 }
 
-/** Continuum FX itself. */
-object Updater : UpdateChannel("app", Regex("""build-(\d+)"""), "ContinuumFX") {
+/** Continuum Kit itself. */
+object Updater : UpdateChannel("app", Regex("""build-(\d+)"""), "ContinuumKit") {
 
     /** The installer's confirmation screen, for the activity to show while it's in front. */
     val confirm = MutableStateFlow<Intent?>(null)

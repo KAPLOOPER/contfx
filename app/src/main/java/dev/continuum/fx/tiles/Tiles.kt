@@ -52,7 +52,7 @@ abstract class ContinuumTile : TileService() {
         tile.updateTile()
     }
 
-    /** Opens Continuum FX (at [action]) and folds the shade away. */
+    /** Opens Continuum Kit (at [action]) and folds the shade away. */
     @SuppressLint("StartActivityAndCollapseDeprecated")
     protected fun openApp(action: String? = null) {
         val intent = Intent(this, MainActivity::class.java)

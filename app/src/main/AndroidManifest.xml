@@ -5,7 +5,7 @@
     <!-- Lets Continuum Keyboard (signed with the same key, and only it) read a fresh one-time code. -->
     <permission
         android:name="dev.continuum.fx.permission.ONE_TIME_CODES"
-        android:label="Read one-time codes from Continuum FX"
+        android:label="Read one-time codes from Continuum Kit"
         android:protectionLevel="signature" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

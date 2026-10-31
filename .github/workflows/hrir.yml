@@ -38,4 +38,4 @@ jobs:
         run: |
           gh release delete heads --yes --cleanup-tag 2>/dev/null || true
           gh release create heads out/* --prerelease --title "Head data (SADIE II)" \
-            --notes "Converted SADIE II dummy-head HRIRs for Continuum FX's spatial audio. Source: University of York, Apache 2.0."
+            --notes "Converted SADIE II dummy-head HRIRs for Continuum Kit's spatial audio. Source: University of York, Apache 2.0."

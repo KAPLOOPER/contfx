@@ -121,7 +121,7 @@ private fun UpdateCardBody(
                 is UpdateState.Installing ->
                     Txt(installingNote, 14.sp, p.onInk)
                 is UpdateState.NeedsPermission -> {
-                    Txt("Android needs your OK first: allow Continuum FX to install apps, then come back.", 14.sp, p.onInk)
+                    Txt("Android needs your OK first: allow Continuum Kit to install apps, then come back.", 14.sp, p.onInk)
                     Gap(12.dp)
                     PillButton("Allow", onAllow, primary = true, on = Surface.Ink)
                 }
@@ -146,7 +146,7 @@ internal fun UpdateFooter(state: UiState, actions: AppActions) {
         else -> "Check for updates"
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Txt("Continuum FX · build ${state.build}", 14.sp, p.sub, maxLines = 1, modifier = Modifier.weight(1f))
+        Txt("Continuum Kit · build ${state.build}", 14.sp, p.sub, maxLines = 1, modifier = Modifier.weight(1f))
         Spacer(Modifier.width(8.dp))
         PillButton(label, actions::checkForUpdates, height = 38.dp)
     }

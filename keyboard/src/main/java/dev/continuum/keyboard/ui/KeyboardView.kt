@@ -44,7 +44,7 @@ sealed class Strip {
     /** Something just copied, ready to paste. */
     data class Paste(val preview: String, val image: Boolean) : Strip()
 
-    /** A one-time code that just arrived (from Continuum FX), ready to type. */
+    /** A one-time code that just arrived (from Continuum Kit), ready to type. */
     data class Code(val code: String, val app: String) : Strip()
 
     /** Left clear for autofill chips. */

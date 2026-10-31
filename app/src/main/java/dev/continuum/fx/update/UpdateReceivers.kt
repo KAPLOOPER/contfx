@@ -63,7 +63,7 @@ class UpdatedReceiver : BroadcastReceiver() {
             )
             val note = NotificationCompat.Builder(context, ContinuumApp.CHANNEL_UPDATES)
                 .setSmallIcon(R.drawable.ic_stat_ink)
-                .setContentTitle("Continuum FX updated")
+                .setContentTitle("Continuum Kit updated")
                 .setContentText("Now on build ${BuildConfig.BUILD_NUMBER}. Your settings are as you left them.")
                 .setContentIntent(open)
                 .setAutoCancel(true)

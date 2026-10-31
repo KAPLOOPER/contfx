@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity(), AppActions {
         if (granted) {
             IslandSettings.update { it.copy(events = true) }
         } else {
-            message.value = "Calendar access wasn't allowed. You can allow it in Continuum FX's app info."
+            message.value = "Calendar access wasn't allowed. You can allow it in Continuum Kit's app info."
         }
         refresh()
     }
@@ -746,7 +746,7 @@ class MainActivity : ComponentActivity(), AppActions {
         store.flush()
         val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date())
         try {
-            saveBackupFile.launch("Continuum FX backup $date.json")
+            saveBackupFile.launch("Continuum Kit backup $date.json")
         } catch (_: Exception) {
             message.value = "Couldn't open a place to save it."
         }
@@ -788,7 +788,7 @@ class MainActivity : ComponentActivity(), AppActions {
                 }
             }
             val contents = result.getOrElse {
-                message.value = it.message ?: "That file isn't a Continuum FX backup."
+                message.value = it.message ?: "That file isn't a Continuum Kit backup."
                 return@launch
             }
             // Processing lets go first, so nothing is left running on the old settings.

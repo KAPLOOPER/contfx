@@ -77,11 +77,11 @@ jobs:
       - name: Name the APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/ContinuumFX-build${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/ContinuumKit-build${{ github.run_number }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ContinuumFX-build${{ github.run_number }}
+          name: ContinuumKit-build${{ github.run_number }}
           path: dist/*.apk
 
       # Every push to main also publishes a pre-release, so the APK can be
@@ -91,7 +91,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Continuum FX · build ${{ github.run_number }}
+          name: Continuum Kit · build ${{ github.run_number }}
           prerelease: true
           body_path: notes.md
           files: dist/*.apk

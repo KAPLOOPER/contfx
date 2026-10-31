@@ -217,7 +217,7 @@ internal fun BackupSection(actions: AppActions) {
     Gap(2.dp)
     Txt(
         "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
-            "the volume panel and each app's volume. Restoring replaces what's here, and Continuum FX restarts to load it.",
+            "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
         15.sp, p.sub,
     )
     Gap(12.dp)

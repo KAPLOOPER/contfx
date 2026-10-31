@@ -8,6 +8,8 @@ on:
       - 'keyboard/**'
       - '.github/workflows/keyboard.yml'
       - '.gitmodules'
+      - '.github/workflows/hrir.yml'
+      - 'tools/**'
       - '**.md'
   pull_request:
   workflow_dispatch:

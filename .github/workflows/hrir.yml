@@ -1,0 +1,34 @@
+name: Head data
+
+# Run by hand: fetches the SADIE II dummy heads (University of York, Apache 2.0) and converts
+# them into the app's head files, left as an artifact to be checked and committed.
+on:
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch
+        run: |
+          mkdir -p dl && cd dl
+          for f in D1_HRIR_SOFA.zip D2_HRIR_SOFA.zip LICENSE.txt "SADIE II V2-2 README.pdf"; do
+            curl -fsSL --retry 3 -o "$f" "https://zenodo.org/records/12092466/files/${f// /%20}?download=1"
+          done
+          for z in D1 D2; do mkdir -p $z && unzip -q ${z}_HRIR_SOFA.zip -d $z && find $z -type f | sed 's/^/  /'; done
+      - name: Convert
+        run: |
+          pip install --quiet numpy scipy h5py pypdf
+          python -c "import pypdf; r=pypdf.PdfReader('dl/SADIE II V2-2 README.pdf'); print('\n'.join(p.extract_text() for p in r.pages)[:4000])"
+          D1=$(find dl/D1 -iname '*48K*.sofa' | head -1); D2=$(find dl/D2 -iname '*48K*.sofa' | head -1)
+          echo "D1=$D1 D2=$D2"
+          python tools/hrir/convert.py out d1="$D1" d2="$D2"
+          cp dl/LICENSE.txt out/SADIE-II-LICENSE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heads
+          path: out/

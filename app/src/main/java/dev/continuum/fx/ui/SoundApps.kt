@@ -70,7 +70,7 @@ private fun appIcon(context: Context, pkg: String, px: Int): Bitmap? = try {
 }
 
 @Composable
-private fun AppIcon(pkg: String) {
+internal fun AppIcon(pkg: String) {
     val context = LocalContext.current
     val px = with(LocalDensity.current) { 26.dp.roundToPx() }
     val bmp = remember(pkg) { appIcon(context, pkg, px) }

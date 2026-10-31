@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
 import dev.continuum.fx.audio.FxEnvironment
 import dev.continuum.fx.audio.FxStore
+import dev.continuum.fx.audio.EngineStatus
+import dev.continuum.fx.audio.SpatialStore
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.audio.onNames
 import dev.continuum.fx.dsp.DynamicsMode
@@ -79,7 +81,8 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         open = if (open == key) null else key
     }
     fun set(transform: (FxSettings) -> FxSettings) = FxStore.update(transform)
-    val names = fx.onNames()
+    val spaces by SpatialStore.state.collectAsState()
+    val names = fx.onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
 
     Column {
         val status = when {
@@ -96,7 +99,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Chip(if (fx.enabled) "Effects on" else "Effects off", fx.enabled, onClick = { set { it.copy(enabled = !it.enabled) } })
-            if (state.running && fx.anyOn) ComparePill()
+            if (state.running && (fx.anyOn || spaces.enabled)) ComparePill()
         }
         if (ctx.direct) {
             Gap(8.dp)
@@ -209,6 +212,33 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         }
 
         Group("Space")
+        val nowThrough by EngineStatus.spatialSetup.collectAsState()
+        val spatialRest = when {
+            ctx.direct -> "Resting · needs Capture"
+            !ctx.onHeadphones(fx) -> "Resting · for headphones"
+            else -> null
+        }
+        // While it places the sound, crossfeed and stage would only blur it.
+        val spatialPlacing = spaces.enabled && fx.enabled && spatialRest == null
+        EffectCard(
+            "Spatial audio",
+            spatialSummary(spaces, if (state.running) nowThrough else null, spatialRest),
+            expanded = open == "spatial", onExpand = { expand("spatial") },
+            on = spaces.enabled, onToggle = { SpatialStore.update { it.copy(enabled = !it.enabled) } },
+            resting = spaces.enabled && spatialRest != null,
+            about = "Your music from speakers placed around you in a room, as they'd reach your ears: each speaker heard " +
+                "through a measured head, and a few reflections off the walls to put the sound out in front of you rather " +
+                "than inside your head. Every part is yours to set, and each app can have its own setup: a cinema for the " +
+                "video player, a pair of monitors for music.",
+            notes = listOfNotNull(
+                if (ctx.direct) "Capture mode only: Direct mode's effect can't mix the two ears." else null,
+                if (!ctx.direct && !ctx.onHeadphones(fx)) "For headphones: it comes on by itself when they're what's playing." else null,
+                "Crossfeed and Stage step aside while it's on.",
+            ),
+        ) {
+            SpatialContent()
+        }
+        Gap(8.dp)
         EffectCard(
             "Stage",
             when (fx.stage) {
@@ -219,6 +249,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             },
             expanded = open == "stage", onExpand = { expand("stage") },
             on = fx.stage != StageMode.Off, mode = fx.stage.label,
+            resting = spatialPlacing && fx.stage != StageMode.Off,
             about = "Only what differs between your ears is widened, so whatever's in the middle (usually the voice) stays " +
                 "exactly there. Each adds a gentle smile of low end and air, and nothing to the mids.",
             notes = listOfNotNull(if (ctx.direct) FxAvailability.directNote("stage") else null),
@@ -232,13 +263,14 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         EffectCard(
             "Crossfeed",
             when {
+                fx.crossfeedOn && spatialPlacing -> "Resting · Spatial audio places the sound"
                 fx.crossfeedOn && crossRest != null -> if (ctx.direct) "Resting · needs Capture" else "Resting · for headphones"
                 fx.crossfeedOn -> "Strength ${pct(fx.crossfeed)}"
                 else -> "Headphones that sound like speakers"
             },
             expanded = open == "crossfeed", onExpand = { expand("crossfeed") },
             on = fx.crossfeedOn, onToggle = { set { it.copy(crossfeedOn = !it.crossfeedOn) } },
-            resting = fx.crossfeedOn && crossRest != null,
+            resting = fx.crossfeedOn && (crossRest != null || spatialPlacing),
             about = "On headphones each ear hears only its own side, so hard-panned sounds sit inside your head. Crossfeed lets " +
                 "each ear hear a little of the other, softened and a fraction late, as it would from speakers in front of you. " +
                 "Easier on long listens, and anything in the middle is left exactly as it was.",

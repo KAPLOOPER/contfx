@@ -1,0 +1,7 @@
+Head-related impulse responses: SADIE II Database, University of York.
+D1 (Neumann KU100) as ku100.hrir, D2 (KEMAR) as kemar.hrir.
+Copyright 2018, University of York. Licensed under the Apache License, Version 2.0
+(see SADIE-II-LICENSE.txt). https://www.york.ac.uk/sadie-project/
+
+Changed for Continuum FX by tools/hrir/convert.py: diffuse-field equalised, made minimum phase
+with each ear's delay kept apart, cut to 192 taps and put on a regular grid of directions.

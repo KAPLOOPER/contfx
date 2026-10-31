@@ -1,5 +1,12 @@
 package dev.continuum.fx.audio
 
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.Executors
+import dev.continuum.fx.dsp.StageMode
+import dev.continuum.fx.dsp.SpatialSetup
+import dev.continuum.fx.dsp.SpatialLibrary
+import dev.continuum.fx.dsp.Spatial
+import android.content.Context
 import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -29,6 +36,7 @@ import kotlin.math.pow
  * The original copies are silenced separately by [SessionWatcher].
  */
 class AudioEngine(
+    private val context: Context,
     private val projection: MediaProjection,
     private val onFailure: (String) -> Unit,
 ) {
@@ -38,6 +46,18 @@ class AudioEngine(
     private val eq = ParametricEq(channels = 2, sampleRate = sampleRate.toDouble())
     private val chain = FxChain(sampleRate.toDouble())
     private val limiter = Limiter(sampleRate.toDouble())
+    private val spatial = Spatial(sampleRate.toDouble())
+
+    /** Spatial plans take a moment to build: done here, never on the audio thread. */
+    private val planner = Executors.newSingleThreadExecutor { r -> Thread(r, "ContinuumSpatial") }
+    @Volatile
+    private var spatialSetup: SpatialSetup? = null
+    private val spatialGeneration = AtomicInteger()
+
+    /** Whether the spatial stage is in the chain (from switching on until its fade-out ends). */
+    @Volatile
+    private var spatialWanted = false
+    private var spatialEngaged = false
 
     @Volatile
     private var running = false
@@ -51,8 +71,13 @@ class AudioEngine(
      * [compare] is held the EQ and effects step aside but their overall loudness stays, so the two
      * can be judged on sound alone: otherwise whichever is louder tends to win.
      */
-    fun setSound(library: Library, fx: FxSettings, ctx: FxContext, compare: Boolean, playing: List<String>) {
+    fun setSound(library: Library, fx: FxSettings, ctx: FxContext, compare: Boolean, playing: List<String>, spaces: SpatialLibrary) {
         val c = ctx.copy(direct = false)
+        // Spatial audio is for headphones, and steps aside with the other effects while comparing.
+        val space = if (!compare && fx.enabled && ctx.onHeadphones(fx)) spaces.setupFor(playing) else null
+        setSpatial(space)
+        // It places the sound itself: crossfeed and stage would only blur it.
+        val effects = if (space != null) fx.copy(crossfeedOn = false, stage = StageMode.Off) else fx
         val tone = FxTone.bands(fx, c)
         val playingProfile = library.profileForPlaying(playing)
         val profile = if (library.eqEnabled) playingProfile else null
@@ -70,8 +95,32 @@ class AudioEngine(
             limiter.soft = false
         } else {
             eq.setProfile(both, polarity)
-            chain.set(fx, c)
+            chain.set(effects, c)
             limiter.soft = fx.enabled && fx.dynamics == DynamicsMode.Pure
+        }
+    }
+
+    private fun setSpatial(setup: SpatialSetup?) {
+        if (setup == spatialSetup) return
+        spatialSetup = setup
+        EngineStatus.spatialSetup.value = setup?.name
+        val generation = spatialGeneration.incrementAndGet()
+        if (setup == null) {
+            spatial.set(null)
+            return
+        }
+        spatialWanted = true
+        planner.execute {
+            // Dragging a speaker asks for a new plan many times a second: build only the latest.
+            if (spatialGeneration.get() != generation) return@execute
+            val head = Heads.get(context, setup.head) ?: return@execute
+            val plan = try {
+                Spatial.plan(head, setup)
+            } catch (_: Exception) {
+                return@execute
+            }
+            // A newer setup came along while this one was building.
+            if (spatialGeneration.get() == generation) spatial.set(plan)
         }
     }
 
@@ -150,10 +199,28 @@ class AudioEngine(
             val frames = read / 2
             eq.process(buffer, frames)
             chain.process(buffer, frames)
+            spatialStage(buffer, frames)
             boost(buffer, frames)
             limiter.process(buffer, frames)
             if (LiveAudio.listening.value) LiveAudio.tap.push(buffer, frames, 2)
             out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
+        }
+    }
+
+    /**
+     * The spatial stage, while it's wanted or still fading out. It delays the sound by a few
+     * milliseconds while in, so it's only in the chain when needed.
+     */
+    private fun spatialStage(buffer: FloatArray, frames: Int) {
+        if (!spatialEngaged) {
+            if (!spatialWanted) return
+            spatial.clearOutput()
+            spatialEngaged = true
+        }
+        spatial.process(buffer, frames)
+        if (!spatial.busy && spatialSetup == null) {
+            spatialEngaged = false
+            spatialWanted = false
         }
     }
 
@@ -188,6 +255,7 @@ class AudioEngine(
 
     fun stop() {
         running = false
+        planner.shutdownNow()
         try {
             record?.stop()
         } catch (_: Exception) {

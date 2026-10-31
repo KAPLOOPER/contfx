@@ -70,8 +70,8 @@ class CaptureService : Service() {
             }, main)
             projection = mp
 
-            val eng = AudioEngine(mp) { message -> main.post { fail(message) } }
-            eng.setSound(app.store.library, FxStore.state.value, FxEnvironment.context.value, false, emptyList())
+            val eng = AudioEngine(this, mp) { message -> main.post { fail(message) } }
+            eng.setSound(app.store.library, FxStore.state.value, FxEnvironment.context.value, false, emptyList(), SpatialStore.state.value)
             eng.start()
             engine = eng
 
@@ -82,8 +82,13 @@ class CaptureService : Service() {
                 app.store.state.map { it.active.name }.distinctUntilChanged().collect { name -> main.post { updateNotification(name) } }
             }
             scope.launch {
-                combine(app.store.state, FxStore.state, FxEnvironment.context, EngineStatus.comparing, EngineStatus.processingPackages) { lib, fx, ctx, compare, playing ->
-                    { eng.setSound(lib, fx, ctx, compare, playing) }
+                combine(
+                    combine(app.store.state, FxStore.state, FxEnvironment.context) { lib, fx, ctx -> Triple(lib, fx, ctx) },
+                    EngineStatus.comparing,
+                    EngineStatus.processingPackages,
+                    SpatialStore.state,
+                ) { (lib, fx, ctx), compare, playing, spaces ->
+                    { eng.setSound(lib, fx, ctx, compare, playing, spaces) }
                 }.collect { it() }
             }
             EngineStatus.error.value = null
@@ -102,6 +107,7 @@ class CaptureService : Service() {
     override fun onDestroy() {
         scope.cancel()
         EngineStatus.comparing.value = false
+        EngineStatus.spatialSetup.value = null
         watcher?.stop()
         watcher = null
         engine?.stop()

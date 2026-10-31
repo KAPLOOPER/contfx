@@ -31,11 +31,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Material Icons
+## SADIE II
 
-The phone, end-call and music-note glyphs (`ic_call`, `ic_call_end`, `ic_music`) use
-paths from Google's [Material Icons](https://github.com/google/material-design-icons),
-licensed under the Apache License 2.0.
+Spatial audio's head-related impulse responses (`app/src/main/assets/heads/`) are the D1
+(Neumann KU100) and D2 (KEMAR) measurements of the
+[SADIE II database](https://www.york.ac.uk/sadie-project/), Copyright 2018, University of
+York, licensed under the Apache License 2.0 (`app/src/main/assets/heads/SADIE-II-LICENSE.txt`).
+They were changed by `tools/hrir/convert.py`: diffuse-field equalised, made minimum phase
+with each ear's delay kept apart, shortened and put on a regular grid of directions.
 
 ## Libron
 

@@ -7,6 +7,7 @@ import dev.continuum.fx.audio.EngineSettings
 import dev.continuum.fx.audio.EngineStatus
 import dev.continuum.fx.audio.FxEnvironment
 import dev.continuum.fx.audio.FxStore
+import dev.continuum.fx.audio.SpatialStore
 import dev.continuum.fx.audio.HeardApps
 import dev.continuum.fx.audio.OutputWatcher
 import dev.continuum.fx.island.IslandRepository
@@ -35,6 +36,7 @@ class ContinuumApp : Application() {
         IslandSettings.init(this)
         EngineSettings.init(this)
         FxStore.init(this)
+        SpatialStore.init(this)
         HeardApps.init(this)
         VolumeSettings.init(this)
         VolumeModel.start(this)

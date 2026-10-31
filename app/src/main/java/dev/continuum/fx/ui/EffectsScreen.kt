@@ -224,7 +224,12 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             "Spatial audio",
             spatialSummary(spaces, if (state.running) nowThrough else null, spatialRest),
             expanded = open == "spatial", onExpand = { expand("spatial") },
-            on = spaces.enabled, onToggle = { SpatialStore.update { it.copy(enabled = !it.enabled) } },
+            on = spaces.enabled,
+            onToggle = {
+                // Switching it on opens it: the speakers are the point.
+                if (!spaces.enabled) open = "spatial"
+                SpatialStore.update { it.copy(enabled = !it.enabled) }
+            },
             resting = spaces.enabled && spatialRest != null,
             about = "Your music from speakers placed around you in a room, as they'd reach your ears: each speaker heard " +
                 "through a measured head, and a few reflections off the walls to put the sound out in front of you rather " +

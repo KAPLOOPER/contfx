@@ -165,22 +165,26 @@ class SpatialTest {
     fun theUpmixSendsEachPartWhereItBelongs() {
         val up = Upmix(256, 48000.0)
         val layout = SpatialSetup.defaultSpeakers(SpatialLayout.Surround5)
-        up.configure(layout, 1f)
+        up.configure(layout, 1f, 0f)
         val rnd = Random(9)
         fun energies(make: () -> Pair<Float, Float>): DoubleArray {
             up.reset()
-            val e = DoubleArray(layout.size)
+            val e = DoubleArray(layout.size + 2)
             val a = FloatArray(256)
             val b = FloatArray(256)
             val out = Array(layout.size) { FloatArray(256) }
+            val ears = Array(2) { FloatArray(256) }
             repeat(200) { blk ->
                 for (i in 0 until 256) {
                     val (x, y) = make()
                     a[i] = x
                     b[i] = y
                 }
-                up.process(a, b, out)
-                if (blk > 20) for (s in layout.indices) for (v in out[s]) e[s] += v.toDouble() * v
+                up.process(a, b, out, ears)
+                if (blk > 20) {
+                    for (s in layout.indices) for (v in out[s]) e[s] += v.toDouble() * v
+                    for (s in 0..1) for (v in ears[s]) e[layout.size + s] += v.toDouble() * v
+                }
             }
             val sum = e.sum()
             return DoubleArray(e.size) { e[it] / sum }
@@ -195,8 +199,53 @@ class SpatialTest {
         val wide = energies { rnd.nextFloat() - 0.5f to rnd.nextFloat() - 0.5f }
         println("  space: " + names.zip(wide.toList()).joinToString { "${it.first} ${"%.2f".format(it.second)}" })
         assertTrue("surrounds get the space", wide[3] + wide[4] > 0.4)
-        // And the total power is kept.
-        up.reset()
+        // Partly shared sound (a wide mix) mustn't collapse into the centre speaker.
+        val partly = energies { val c = rnd.nextFloat() - 0.5f; c + (rnd.nextFloat() - 0.5f) * 0.8f to c + (rnd.nextFloat() - 0.5f) * 0.8f }
+        println("  partly shared: " + names.zip(partly.toList()).joinToString { "${it.first} ${"%.2f".format(it.second)}" })
+        assertTrue("centre takes under half", partly[2] < 0.5)
+        // With all the space straight to the ears, none of it reaches the speakers.
+        up.configure(layout, 1f, 1f)
+        val open = energies { rnd.nextFloat() - 0.5f to rnd.nextFloat() - 0.5f }
+        println("  space to the ears: " + open.joinToString { "%.2f".format(it) })
+        assertTrue("ears get the space", open[5] + open[6] > 0.8)
+    }
+
+    /**
+     * How alike the ears are, allowing for one hearing it up to 1 ms later (the interaural
+     * cross-correlation): 1 is the same, 0 unrelated. Lower sounds wider.
+     */
+    private fun correlation(a: FloatArray, b: FloatArray, from: Int): Double {
+        var aa = 0.0
+        var bb = 0.0
+        for (i in from until a.size - 48) {
+            aa += a[i].toDouble() * a[i]
+            bb += b[i].toDouble() * b[i]
+        }
+        var best = 0.0
+        for (lag in -48..48) {
+            var ab = 0.0
+            for (i in from until a.size - 48) ab += a[i].toDouble() * b[i + lag]
+            best = maxOf(best, abs(ab) / sqrt(aa * bb))
+        }
+        return best
+    }
+
+    @Test
+    fun wideMixesStayWide() {
+        val rnd = Random(4)
+        val noise = { rnd.nextFloat() - 0.5f to rnd.nextFloat() - 0.5f }
+        val closed = run(SpatialSetup.STUDIO.copy(space = 0f), 1.5) { noise() }
+        val open = run(SpatialSetup.STUDIO, 1.5) { noise() }
+        // Where the speakers' crosstalk closes things in most: below about 1.5 kHz.
+        fun band(x: FloatArray): FloatArray {
+            val hp = Bq(Design.highPass(300.0, 48000.0))
+            val lp = Bq(Design.lowPass(1500.0, 48000.0))
+            return FloatArray(x.size) { lp.run(hp.run(x[it].toDouble())).toFloat() }
+        }
+        val c0 = correlation(band(closed.first), band(closed.second), 24000)
+        val c1 = correlation(band(open.first), band(open.second), 24000)
+        println("  ears alike: ${"%.2f".format(c0)} through the speakers alone, ${"%.2f".format(c1)} with half the space straight through")
+        assertTrue("wider with the space kept", c1 < c0 - 0.02)
     }
 
     @Test

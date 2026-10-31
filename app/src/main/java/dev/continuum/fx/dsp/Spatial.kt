@@ -9,7 +9,7 @@ import kotlin.math.pow
  * speaker heard at both ears through the room and the measured head, plus a quiet tail.
  *
  * Works in blocks of [BLOCK] samples, so it delays the sound by that (5 ms) whenever it's in
- * use, plus another block for the surround layouts' upmix. A new setup with the same speakers
+ * use, plus another block when the mix is split into sources and space. A new setup with the same speakers
  * fades its filters in over a block; a different layout dips to the plain sound and back.
  */
 internal class Spatial(private val sampleRate: Double) {
@@ -22,10 +22,12 @@ internal class Spatial(private val sampleRate: Double) {
         internal val tailDelay: Int,
     ) {
         internal val speakers get() = setup.speakers.size
-        internal val upmix get() = setup.layout != SpatialLayout.Stereo
+
+        /** Whether the mix is split into sources and space first (it costs a block of delay). */
+        internal val decompose get() = setup.layout != SpatialLayout.Stereo || setup.space > 0.005f
 
         /** Plans that can follow each other with just a filter crossfade. */
-        internal fun sameShape(o: Plan) = o.setup.layout == setup.layout && o.setup.bassHz == setup.bassHz
+        internal fun sameShape(o: Plan) = o.setup.layout == setup.layout && o.setup.bassHz == setup.bassHz && o.decompose == decompose
     }
 
     private val convolver = Convolver(BLOCK, MAX_SPEAKERS, MAX_PARTITIONS)
@@ -67,6 +69,12 @@ internal class Spatial(private val sampleRate: Double) {
     private val ears = Array(2) { FloatArray(BLOCK) }
     private val tailL = FloatArray(BLOCK)
     private val tailR = FloatArray(BLOCK)
+    private val bypass = Array(2) { FloatArray(BLOCK) }
+
+    // The space that skips the speakers waits for their direct sound, as the bass does.
+    private val spaceRingL = FloatArray(LOW_RING)
+    private val spaceRingR = FloatArray(LOW_RING)
+    private var spacePos = 0
 
     // The bass waits as long as the speakers' direct sound takes.
     private val lowRingL = FloatArray(LOW_RING)
@@ -163,7 +171,7 @@ internal class Spatial(private val sampleRate: Double) {
             next.sameShape(now) && !swapping -> {
                 active = next
                 convolver.set(next.filters)
-                upmix.configure(next.setup.speakers, next.setup.width)
+                upmix.configure(next.setup.speakers, next.setup.width, next.setup.space)
                 configureTail(next)
                 lowDelayNext = lowDelayFor(next)
             }
@@ -191,7 +199,7 @@ internal class Spatial(private val sampleRate: Double) {
         convolver.reset()
         convolver.set(plan.filters)
         upmix.reset()
-        upmix.configure(plan.setup.speakers, plan.setup.width)
+        upmix.configure(plan.setup.speakers, plan.setup.width, plan.setup.space)
         tail.reset()
         configureTail(plan)
         val hz = plan.setup.bassHz
@@ -205,12 +213,14 @@ internal class Spatial(private val sampleRate: Double) {
         }
         lowRingL.fill(0f)
         lowRingR.fill(0f)
+        spaceRingL.fill(0f)
+        spaceRingR.fill(0f)
         lowDelay = lowDelayFor(plan)
         lowDelayNext = lowDelay
         wetTarget = 1f
     }
 
-    private fun lowDelayFor(plan: Plan) = (plan.directDelay + if (plan.upmix) BLOCK else 0).coerceIn(0, LOW_RING - BLOCK - 1)
+    private fun lowDelayFor(plan: Plan) = (plan.directDelay + if (plan.decompose) BLOCK else 0).coerceIn(0, LOW_RING - BLOCK - 1)
 
     private fun configureTail(plan: Plan) {
         val room = plan.setup.room
@@ -248,13 +258,27 @@ internal class Spatial(private val sampleRate: Double) {
         }
 
         val n = plan.speakers
-        if (plan.upmix) {
-            upmix.process(hl, hr, feeds)
+        if (plan.decompose) {
+            upmix.process(hl, hr, feeds, bypass)
         } else {
             System.arraycopy(hl, 0, feeds[0], 0, BLOCK)
             System.arraycopy(hr, 0, feeds[1], 0, BLOCK)
+            bypass[0].fill(0f)
+            bypass[1].fill(0f)
         }
         convolver.process(feeds, n, ears)
+
+        // The space that skips the speakers, in at the moment their direct sound arrives.
+        val spaceDelay = plan.directDelay.coerceIn(0, LOW_RING - BLOCK - 1)
+        for (s in 0 until BLOCK) {
+            spaceRingL[spacePos] = bypass[0][s]
+            spaceRingR[spacePos] = bypass[1][s]
+            var rd = spacePos - spaceDelay
+            if (rd < 0) rd += LOW_RING
+            ears[0][s] += spaceRingL[rd]
+            ears[1][s] += spaceRingR[rd]
+            spacePos = (spacePos + 1) % LOW_RING
+        }
 
         val tailDb = setup.tailDb
         if (tailDb != null) {

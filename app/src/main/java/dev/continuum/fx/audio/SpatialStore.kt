@@ -89,6 +89,7 @@ object SpatialStore {
         put("tail", s.tail.toDouble())
         put("decay", s.decay.toDouble())
         put("width", s.width.toDouble())
+        put("space", s.space.toDouble())
         put("centre", s.centreDb.toDouble())
         put("surround", s.surroundDb.toDouble())
         put("bass", s.bassHz)
@@ -142,6 +143,7 @@ object SpatialStore {
             tail = o.optDouble("tail", d.tail.toDouble()).toFloat().coerceIn(0f, 1f),
             decay = o.optDouble("decay", d.decay.toDouble()).toFloat().coerceIn(0.1f, 2f),
             width = o.optDouble("width", 1.0).toFloat().coerceIn(0.5f, 1.5f),
+            space = o.optDouble("space", d.space.toDouble()).toFloat().coerceIn(0f, 1f),
             centreDb = o.optDouble("centre", 0.0).toFloat().coerceIn(-12f, 9f),
             surroundDb = o.optDouble("surround", 0.0).toFloat().coerceIn(-12f, 9f),
             bassHz = o.optInt("bass", d.bassHz).coerceIn(0, 300),

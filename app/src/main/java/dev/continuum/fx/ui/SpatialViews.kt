@@ -1,10 +1,15 @@
 package dev.continuum.fx.ui
 
+import dev.continuum.fx.ui.theme.Motion
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -124,8 +129,8 @@ private fun place(list: List<Speaker>, s: Speaker, mirror: Boolean): List<Speake
 internal fun spatialSummary(lib: SpatialLibrary, playingName: String?, resting: String?): String = when {
     !lib.enabled -> "Speakers around you, in a room you choose"
     resting != null -> resting
-    playingName != null -> "Now through $playingName"
-    else -> "${lib.default.name} · ${lib.default.layout.label}"
+    playingName != null -> "Now through $playingName · tap to place the speakers"
+    else -> "${lib.default.name} · tap to place the speakers"
 }
 
 /**
@@ -158,9 +163,9 @@ internal fun SpatialContent() {
         return
     }
 
-    SetupHeader(lib, editing)
-    Spacer(Modifier.size(12.dp))
     SetupEditor(editing)
+    Spacer(Modifier.size(18.dp))
+    SetupHeader(lib, editing)
     Spacer(Modifier.size(14.dp))
     Txt("Apps", 15.sp, p.sub)
     AppLinks(lib, editing.id, editing.name)
@@ -208,30 +213,19 @@ private fun SetupEditor(s: SpatialSetup) {
     var selected by remember(s.id) { mutableStateOf<SpeakerRole?>(SpeakerRole.FrontLeft) }
     var mirror by rememberSaveable { mutableStateOf(true) }
 
-    Txt("Speakers", 15.sp, p.sub)
-    Spacer(Modifier.size(6.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        SpatialLayout.entries.forEach { l -> Chip(l.label, s.layout == l, onClick = { set { it.withLayout(l) } }, on = Surface.Card) }
-    }
-    if (s.layout != SpatialLayout.Stereo) {
-        Spacer(Modifier.size(6.dp))
-        Txt(
-            "Android mixes surround down to stereo before any app can capture it, so the centre and surrounds are drawn back out of the mix: what's the same in both channels to the speakers either side of where it sits, the space around it to the surrounds.",
-            13.sp, p.sub,
-        )
-    }
+    Txt("Hold a speaker and drag it where you like it: round you, or in and out.", 14.sp, p.text)
     Spacer(Modifier.size(10.dp))
     SpeakerMap(s, selected, mirror, onSelect = { selected = it }) { next -> set { it.copy(speakers = next) } }
     Spacer(Modifier.size(8.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Txt("Drag a speaker to move it. Nearer the middle is closer.", 13.sp, p.sub, modifier = Modifier.weight(1f))
+        Txt("Nearer the middle is closer.", 13.sp, p.sub, modifier = Modifier.weight(1f))
         Chip(if (mirror) "Pairs mirrored" else "Pairs free", mirror, onClick = { mirror = !mirror }, on = Surface.Card)
     }
 
     val sp = s.speakers.firstOrNull { it.role == selected }
     if (sp != null) {
         Spacer(Modifier.size(10.dp))
-        Txt("${sp.role.label} · ${angleText(sp.angle)}", 17.sp, p.text)
+        Txt("${sp.role.label} · ${angleText(sp.angle)} · ${"%.1f".format(sp.distance)} m", 17.sp, p.text)
         fun change(next: Speaker) = set { it.copy(speakers = place(it.speakers, next, mirror)) }
         val hSpan = SpatialSetup.MAX_HEIGHT - SpatialSetup.MIN_HEIGHT
         SliderField("Height", if (sp.height.roundToInt() == 0) "ear level" else "${sp.height.roundToInt()}° ${if (sp.height > 0) "up" else "down"}", (sp.height - SpatialSetup.MIN_HEIGHT) / hSpan) { v ->
@@ -244,6 +238,28 @@ private fun SetupEditor(s: SpatialSetup) {
             change(sp.copy(levelDb = ((-12f + v * 18f) * 2).roundToInt() / 2f))
         }
     }
+
+    Spacer(Modifier.size(14.dp))
+    Txt("Layout", 15.sp, p.sub)
+    Spacer(Modifier.size(6.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        SpatialLayout.entries.forEach { l -> Chip(l.label, s.layout == l, onClick = { set { it.withLayout(l) } }, on = Surface.Card) }
+    }
+    if (s.layout != SpatialLayout.Stereo) {
+        Spacer(Modifier.size(6.dp))
+        Txt(
+            "Android mixes surround down to stereo before any app can capture it, so the centre and surrounds are drawn back out of the mix: clearly placed sounds (a lead voice) to the speakers either side of where they sit, the space around them to the surrounds. Anything only partly shared stays left and right, so the front stays wide.",
+            13.sp, p.sub,
+        )
+    }
+
+    Spacer(Modifier.size(14.dp))
+    Txt("Width", 15.sp, p.sub)
+    SliderField("Space kept wide", "${(s.space * 100).roundToInt()}%", s.space) { v -> set { it.copy(space = (v * 20).roundToInt() / 20f) } }
+    Txt(
+        "Speakers in front of you narrow a mix: each ear hears both. This much of its space (reverb, ambience, everything that differs between the channels) goes straight to your ears instead, as wide as plain headphones, while voices and instruments still come from the speakers.",
+        13.sp, p.sub,
+    )
 
     Spacer(Modifier.size(14.dp))
     Txt("Room", 15.sp, p.sub)
@@ -355,49 +371,49 @@ private fun SpeakerMap(
             Modifier
                 .size(side)
                 .pointerInput(s.id, s.layout, sidePx) {
-                    detectTapGestures { at -> nearest(at)?.let { latestSelect(it.role) } }
-                }
-                .pointerInput(s.id, s.layout, sidePx) {
-                    detectDragGestures(
-                        onDragStart = { at ->
-                            nearest(at)?.let {
-                                dragging = it.role
-                                latestSelect(it.role)
+                    // A speaker is picked up only when the touch starts on it: anywhere else on
+                    // the map, the page scrolls as usual.
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val hit = nearest(down.position) ?: return@awaitEachGesture
+                        latestSelect(hit.role)
+                        val start = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                            ?: return@awaitEachGesture
+                        dragging = hit.role
+                        // The drop lifts off the floor.
+                        InkFeel.split(view)
+                        fun moveTo(at: Offset) {
+                            val sp = live.first { it.role == hit.role }
+                            val v = at - Offset(sidePx / 2f, sidePx / 2f)
+                            var angle = Math.toDegrees(atan2(v.x.toDouble(), -v.y.toDouble())).toFloat()
+                            angle = (angle / 5f).roundToInt() * 5f
+                            if (latestMirror) {
+                                angle = when {
+                                    hit.role == SpeakerRole.Centre -> 0f
+                                    hit.role.left == true -> angle.coerceIn(-175f, -5f)
+                                    hit.role.left == false -> angle.coerceIn(5f, 175f)
+                                    else -> angle
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            if (dragging != null) latestChange(live)
-                            dragging = null
-                        },
-                        onDragCancel = {
-                            if (dragging != null) latestChange(live)
-                            dragging = null
-                        },
-                    ) { change, _ ->
-                        val role = dragging ?: return@detectDragGestures
-                        change.consume()
-                        val sp = live.first { it.role == role }
-                        val v = change.position - Offset(sidePx / 2f, sidePx / 2f)
-                        var angle = Math.toDegrees(atan2(v.x.toDouble(), -v.y.toDouble())).toFloat()
-                        angle = (angle / 5f).roundToInt() * 5f
-                        if (latestMirror) {
-                            angle = when {
-                                role == SpeakerRole.Centre -> 0f
-                                role.left == true -> angle.coerceIn(-175f, -5f)
-                                role.left == false -> angle.coerceIn(5f, 175f)
-                                else -> angle
+                            val f = ((hypot(v.x, v.y) / (sidePx / 2f) - 0.26f) / 0.68f).coerceIn(0f, 1f)
+                            val distance = (fractionToDistance(f) * 10).roundToInt() / 10f
+                            if ((angle / 15f).roundToInt() != (sp.angle / 15f).roundToInt()) InkFeel.detent(view)
+                            live = place(live, sp.copy(angle = angle, distance = distance), latestMirror)
+                            // Heard while dragging, a few times a second; settled when you let go.
+                            val now = System.currentTimeMillis()
+                            if (now - lastPush > 140) {
+                                lastPush = now
+                                latestChange(live)
                             }
                         }
-                        val f = ((hypot(v.x, v.y) / (sidePx / 2f) - 0.26f) / 0.68f).coerceIn(0f, 1f)
-                        val distance = (fractionToDistance(f) * 10).roundToInt() / 10f
-                        if ((angle / 15f).roundToInt() != (sp.angle / 15f).roundToInt()) InkFeel.detent(view)
-                        live = place(live, sp.copy(angle = angle, distance = distance), latestMirror)
-                        // Heard while dragging, a few times a second; settled when you let go.
-                        val now = System.currentTimeMillis()
-                        if (now - lastPush > 140) {
-                            lastPush = now
-                            latestChange(live)
+                        moveTo(start.position)
+                        val finished = drag(start.id) { change ->
+                            change.consume()
+                            moveTo(change.position)
                         }
+                        latestChange(live)
+                        if (finished) InkFeel.merge(view)
+                        dragging = null
                     }
                 },
         ) {
@@ -415,16 +431,34 @@ private fun SpeakerMap(
                 key(sp.role) {
                     val at = position(sp)
                     val on = sp.role == selected
+                    // Held, the drop swells under your finger, so it shows past it.
+                    val swell by animateFloatAsState(if (dragging == sp.role) 1.45f else 1f, Motion.flow(), label = "swell")
                     Box(
                         Modifier
                             .offset { IntOffset((at.x - dropPx / 2f).roundToInt(), (at.y - dropPx / 2f).roundToInt()) }
                             .size(30.dp)
+                            .graphicsLayer {
+                                scaleX = swell
+                                scaleY = swell
+                            }
                             .clip(CircleShape)
                             .background(if (on) p.primary else p.text),
                         contentAlignment = Alignment.Center,
                     ) {
                         Txt(sp.role.short, 12.sp, if (on) p.onPrimary else p.ground, bold = true, maxLines = 1)
                     }
+                }
+            }
+            // Where the held speaker is, as you move it.
+            live.firstOrNull { it.role == dragging }?.let { sp ->
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .clip(RoundedCornerShape(50))
+                        .background(p.ground)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Txt("${sp.role.short} · ${angleText(sp.angle)} · ${"%.1f".format(sp.distance)} m", 13.sp, p.text, maxLines = 1)
                 }
             }
         }

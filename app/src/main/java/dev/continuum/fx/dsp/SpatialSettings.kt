@@ -91,6 +91,11 @@ data class SpatialSetup(
     val decay: Float = 0.3f,
     /** How far the stereo mix is spread across the front speakers, 0.5 to 1.5. */
     val width: Float = 1f,
+    /**
+     * How much of the mix's space (its reverb and ambience) goes straight to the ears, as wide as
+     * plain headphones, rather than through the speakers, 0 to 1.
+     */
+    val space: Float = 0.5f,
     val centreDb: Float = 0f,
     val surroundDb: Float = 0f,
     /** Below this, sound skips the room and the head and stays exactly as it was; 0 for never. */
@@ -142,7 +147,7 @@ data class SpatialSetup(
         val CINEMA = SpatialSetup(
             id = "cinema", name = "Cinema", layout = SpatialLayout.Surround7,
             speakers = defaultSpeakers(SpatialLayout.Surround7, 2.5f),
-            room = RoomKind.Living, reflections = 0.4f, tail = 0.2f, decay = 0.4f, centreDb = 1.5f,
+            room = RoomKind.Living, reflections = 0.35f, tail = 0.15f, decay = 0.35f, space = 0.35f,
         )
     }
 }

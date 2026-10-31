@@ -6,9 +6,11 @@ What it does to the measurements:
   1. Diffuse-field equalisation: the average response over every direction is divided out, so a
      sound from everywhere at once comes out flat. Placing a speaker then changes where it is,
      not how the music sounds, and the headphone EQ stays in charge of tone.
-  2. Onset alignment: each response's arrival time (from a -20 dB threshold at 8x resolution) is
-     taken out and stored on its own, so responses can be blended between measured directions
-     without smearing, and the time difference between the ears is put back exactly.
+  2. Minimum phase plus delay: each response becomes its minimum-phase version (same magnitude,
+     all its energy as early as possible) and a delay, found by cross-correlating the two. That
+     lets responses blend between measured directions without smearing, with the time between
+     the ears put back exactly. (A threshold onset is fooled by the slight pre-ringing these
+     equalised responses have.)
   3. A regular grid: the nearest measured direction to each grid point, elevations -45 to 90.
 
 Run by .github/workflows/hrir.yml:  python convert.py <out dir> <name>=<sofa file> ...
@@ -25,7 +27,7 @@ from scipy.signal import resample_poly
 
 FS = 48000
 TAPS = 192
-ONSET = 6
+ONSET = 0
 NFFT = 4096
 
 def text(v):
@@ -101,21 +103,34 @@ def diffuse_field_inverse(ir):
         f"{int(f)}:{db[np.searchsorted(freqs, f)] - ref:+.1f}" for f in (100, 250, 1000, 2500, 4000, 8000, 12000, 16000)))
     return min_phase(10 ** (db / 20), 512)
 
-def onset(x):
-    up = resample_poly(x, 8, 1)
-    a = np.abs(up)
-    i = int(np.argmax(a >= 0.1 * a.max()))
-    return i / 8.0
+def min_phase_of(x, n):
+    """The minimum-phase response with x's magnitude, n taps long."""
+    m = 4096
+    mag = np.abs(np.fft.rfft(x, m))
+    h = min_phase(np.maximum(mag, 1e-6 * mag.max()), n)
+    return h
 
-def shift(x, s, n):
-    """x advanced by s samples (fractional), cut to n with a fade at the end."""
-    m = 1 << int(np.ceil(np.log2(len(x) + 64)))
-    X = np.fft.rfft(x, m)
-    k = np.arange(len(X))
-    y = np.fft.irfft(X * np.exp(2j * np.pi * k * s / m), m)[:n]
-    fade = 32
-    y[-fade:] *= 0.5 * (1 + np.cos(np.linspace(0, np.pi, fade)))
-    return y
+def lowpass(x, hz):
+    from scipy.signal import butter, sosfiltfilt
+    return sosfiltfilt(butter(4, hz / (FS / 2), output="sos"), x)
+
+def delay_of(x, h):
+    """How far x lags its minimum-phase version h, in samples (to an eighth)."""
+    padded = np.zeros(len(x))
+    padded[:min(len(h), len(x))] = h[:len(x)]
+    a = resample_poly(lowpass(x, 3000.0), 8, 1)
+    b = resample_poly(lowpass(padded, 3000.0), 8, 1)
+    c = np.correlate(a, b, mode="full")
+    lag = int(np.argmax(c)) - (len(b) - 1)
+    return lag / 8.0
+
+def iacc_itd(l, r):
+    """The time between the ears from the cross-correlation of the two below 1.5 kHz, in us."""
+    a = resample_poly(lowpass(l, 1500.0), 8, 1)
+    b = resample_poly(lowpass(r, 1500.0), 8, 1)
+    c = np.correlate(b, a, mode="full")
+    lag = int(np.argmax(c)) - (len(a) - 1)
+    return lag / 8.0 / FS * 1e6
 
 def grid():
     rows = []
@@ -152,19 +167,19 @@ def convert(name, path, out):
         row = []
         for az, i in pts:
             l, r = eq[i, 0], eq[i, 1]
-            ol, orr = onset(l), onset(r)
-            first = min(ol, orr)
-            # Both ears keep their own timing relative to the first; the first lands at ONSET.
-            hl = shift(l, ol - ONSET, TAPS)
-            hr = shift(r, orr - ONSET, TAPS)
+            hl = min_phase_of(l, TAPS)
+            hr = min_phase_of(r, TAPS)
+            dl, dr = delay_of(l, hl), delay_of(r, hr)
             for full, h in ((l, hl), (r, hr)):
                 lost.append(1 - (h ** 2).sum() / max((full ** 2).sum(), 1e-20))
-            row.append((az, ol - ONSET, orr - ONSET, hl, hr))
+            row.append((az, dl, dr, hl, hr))
         cut.append((el, row))
-    print(f"  energy beyond {TAPS} taps: median {np.median(lost) * 100:.2f}%, worst {max(lost) * 100:.2f}%")
-    side = [p for el, row in cut if el == 0 for p in row if p[0] == 90.0][0]
-    print(f"  ears' time difference at 90 deg left: {(side[2] - side[1]) / FS * 1e6:.0f} us")
-
+    print(f"  energy beyond {TAPS} taps (minimum phase): median {np.median(lost) * 100:.2f}%, worst {max(lost) * 100:.2f}%")
+    print("  time between the ears on the horizontal plane (us, positive: left ear first), stored vs cross-correlation:")
+    level = [p for el, row in cut if el == 0 for p in row]
+    for az, dl, dr, hl, hr in level[::3]:
+        i = [i for a, i in [q for e, q in picked if e == 0][0] if a == az][0]
+        print(f"    {int(az):4d}: {(dr - dl) / FS * 1e6:6.0f}  {iacc_itd(eq[i, 0], eq[i, 1]):6.0f}")
     scale = max(max(np.abs(p[3]).max(), np.abs(p[4]).max()) for _, row in cut for p in row) / 32767.0
     dst = os.path.join(out, f"{name}.hrir")
     with open(dst, "wb") as f:

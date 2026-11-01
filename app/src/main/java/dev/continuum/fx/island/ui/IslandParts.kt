@@ -748,7 +748,13 @@ internal fun NoteDrip(n: NoteInfo) {
                 CopyCode(code)
             } else {
                 Column(Modifier.weight(1f)) {
-                    Txt(n.appName, 11.sp, InkColors.sub, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (n.missed) {
+                            RedMark(10.dp)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Txt(if (n.missed) "Missed call · ${n.appName}" else n.appName, 11.sp, InkColors.sub, maxLines = 1)
+                    }
                     if (n.title.isNotBlank()) Txt(n.title, 15.sp, InkColors.on, bold = true, maxLines = 1)
                     if (n.text.isNotBlank()) Txt(n.text, 13.sp, InkColors.sub, maxLines = 1)
                 }

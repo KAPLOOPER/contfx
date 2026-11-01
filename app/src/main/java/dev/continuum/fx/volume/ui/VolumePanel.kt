@@ -5,6 +5,9 @@ import android.media.AudioManager
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
+import dev.continuum.fx.island.ui.glint
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -155,6 +158,18 @@ fun VolumePanel(
     val level = snap[stream]
     val target = dragFraction ?: level.fraction
     LaunchedEffect(target) { fill.animateTo(target, spring(dampingRatio = 0.5f, stiffness = 260f)) }
+    // Reaching full, the top of the liquid glints.
+    val full = target >= 0.999f
+    val wasFull = remember { booleanArrayOf(full) }
+    val fullGlint = remember { Animatable(1f) }
+    LaunchedEffect(full) {
+        val reached = full && !wasFull[0]
+        wasFull[0] = full
+        if (reached && visible) {
+            fullGlint.snapTo(0f)
+            fullGlint.animateTo(1f, tween(600, easing = LinearEasing))
+        }
+    }
     val boostMax = prefs.boostSteps.coerceAtLeast(1)
     val boostShown by animateFloatAsState(
         if (stream == VolStream.Media) boostSteps / boostMax.toFloat() else 0f,
@@ -303,11 +318,18 @@ fun VolumePanel(
             }
             clipPath(clip) {
                 drawPath(surface, liquid)
-                // Above 100%, the boost fills the top in green.
+                // Above 100%, the boost fills the top in green, with a drop of ink for each step.
                 if (extraH > 0.5f) {
                     drawRect(InkColors.live, Offset(inner.left, innerTop), Size(inner.width, (fullY - innerTop + px(2f)).coerceAtLeast(0f)))
+                    val steps = if (stream == VolStream.Media) boostSteps else 0
+                    if (steps > 0) {
+                        val each = (fullY - innerTop) / steps
+                        val r = min(px(2.4f), each * 0.3f)
+                        for (i in 0 until steps) drawCircle(InkColors.ink.copy(alpha = 0.6f), r, Offset((inner.left + inner.right) / 2f, fullY - each * (i + 0.5f)))
+                    }
                 }
             }
+            glint(Offset(capsule.center.x, fullY + px(4f)), px(30f), fullGlint.value, InkColors.on)
             // The stream's icon, dark where the liquid covers it and light where it doesn't.
             val iconSize = px(22f)
             val iconTop = innerBottom - px(14f) - iconSize

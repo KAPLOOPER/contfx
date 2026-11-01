@@ -92,6 +92,7 @@ class CaptureService : Service() {
                 }.collect { it() }
             }
             EngineStatus.error.value = null
+            EngineStatus.since.value = android.os.SystemClock.elapsedRealtime()
             EngineStatus.running.value = true
         } catch (t: Throwable) {
             fail(t.message ?: "Couldn't start audio capture.")

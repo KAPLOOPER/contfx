@@ -19,6 +19,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.theme.Mark
+import dev.continuum.fx.island.ui.dropsLine
+import androidx.compose.ui.text.drawText
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -92,8 +95,8 @@ fun EqGraph(
     val levels = remember { FloatArray(BANDS) }
     var spectrumFrame by remember { mutableIntStateOf(0) }
     DisposableEffect(live) {
-        LiveAudio.listening.value = live
-        onDispose { LiveAudio.listening.value = false }
+        val release = if (live) LiveAudio.listen() else null
+        onDispose { release?.invoke() }
     }
     LaunchedEffect(live) {
         var size = LiveAudio.fftSize
@@ -147,6 +150,8 @@ fun EqGraph(
         lift.animateTo(if (holding >= 0) 1f else 0f, if (holding >= 0) spring(dampingRatio = 0.55f, stiffness = 300f) else Motion.snap())
     }
     val measurer = rememberTextMeasurer()
+    // And rows of tiny drops run out from it to the edges, its numbers on ink where they land.
+    val guide by animateFloatAsState(if (holding >= 0) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 300f), label = "guide")
 
     BoxWithConstraints(
         modifier
@@ -297,6 +302,33 @@ fun EqGraph(
 
             val held = lastHeld[0]
             val up = lift.value
+            if (guide > 0.01f && held in profile.bands.indices) {
+                val b = profile.bands[held]
+                val c = Offset(xOf(b.frequency), dotY(held, profile, range, shape))
+                val k = guide.coerceIn(0f, 1f)
+                val ink = p.primary.copy(alpha = 0.75f)
+                val gap = with(density) { 5.dp.toPx() }
+                val dotR = with(density) { 1.1.dp.toPx() }
+                val leftEnd = insetPx
+                val bottomEnd = top + plotH + with(density) { 14.dp.toPx() }
+                dropsLine(c, Offset(c.x - (c.x - leftEnd) * k, c.y), ink, gap, dotR)
+                dropsLine(c, Offset(c.x, c.y + (bottomEnd - c.y) * k), ink, gap, dotR)
+                val a = ((k - 0.6f) / 0.4f).coerceIn(0f, 1f)
+                if (a > 0f) {
+                    val tagStyle = TextStyle(color = p.onPrimary, fontSize = 9.5.sp, fontFamily = Mark, letterSpacing = 1.3.sp, fontFeatureSettings = "tnum, case")
+                    val padX = with(density) { 7.dp.toPx() }
+                    val tagH = with(density) { 16.dp.toPx() }
+                    fun tag(text: String, x: Float, cy: Float, centred: Boolean) {
+                        val t = measurer.measure(text.uppercase(), tagStyle)
+                        val w = t.size.width + padX * 2
+                        val left = if (centred) (x - w / 2f).coerceIn(insetPx, size.width - insetPx - w) else x
+                        drawRoundRect(p.primary, Offset(left, cy - tagH / 2f), androidx.compose.ui.geometry.Size(w, tagH), androidx.compose.ui.geometry.CornerRadius(tagH / 2f), alpha = a)
+                        drawText(t, topLeft = Offset(left + padX, cy - t.size.height / 2f), alpha = a)
+                    }
+                    if (b.type.usesGain) tag(Fmt.db(b.gainDb), leftEnd, c.y, centred = false)
+                    tag(Fmt.freq(b.frequency), c.x, bottomEnd, centred = true)
+                }
+            }
             if (up > 0.02f && held in profile.bands.indices) {
                 val b = profile.bands[held]
                 val c = Offset(xOf(b.frequency), dotY(held, profile, range, shape))

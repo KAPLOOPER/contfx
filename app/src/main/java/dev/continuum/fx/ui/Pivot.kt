@@ -1,5 +1,13 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import dev.continuum.fx.island.ui.glint
+
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
@@ -105,6 +113,8 @@ internal object PivotMath {
 internal fun PivotHeader(
     titles: List<String>,
     pivot: PivotState,
+    /** Small exact notes above the app's name. */
+    notes: (@Composable () -> Unit)? = null,
     onSelect: (slot: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -120,7 +130,20 @@ internal fun PivotHeader(
     val gap = px(22f)
     val x0 = px(24f)
 
+    // As a page arrives, its title's drop glints.
+    val glintU = remember { Animatable(1f) }
+    LaunchedEffect(pivot.contentSlot) {
+        delay(80)
+        snapshotFlow { pivot.slot.isRunning }.first { !it }
+        glintU.snapTo(0f)
+        glintU.animateTo(1f, tween(700, easing = LinearEasing))
+    }
+
     Column(modifier) {
+        if (notes != null) {
+            notes()
+            Spacer(Modifier.height(14.dp))
+        }
         // The app's name above, small and spaced out, as Windows Phone did; the drop is Continuum's.
         Row(Modifier.padding(start = 25.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(p.text))
@@ -188,6 +211,9 @@ internal fun PivotHeader(
                 val left = m - (m - (x(base) + px(2f))) * (1f - f) * REACH
                 val rightEdge = m + dw + ((x(base + 1) + px(2f)) - m) * f * REACH
                 drawDrop(p.text, left, rightEdge - left, textH - px(3f), dw, h)
+            }
+            Canvas(Modifier.matchParentSize()) {
+                glint(Offset(x0 + px(2f) + px(30f), textH - px(3f) + px(4.5f)), px(13f), glintU.value, p.text)
             }
         }
     }

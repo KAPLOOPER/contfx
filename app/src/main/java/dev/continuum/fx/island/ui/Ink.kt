@@ -13,6 +13,26 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.min
 import kotlin.math.pow
 
@@ -199,4 +219,93 @@ internal fun DrawScope.neckSlant(a: Rect, b: Rect, x1: Float, x2: Float, k: Floa
         close()
     }
     drawPath(path, color)
+}
+
+// ---- Accents: what else the ink can do ----
+
+/**
+ * A drop pulled four ways, as a sparkle is. [p] is how round: 2 is a circle, and smaller pulls
+ * it out into four points (0.42 a sparkle, 0.6 a fuller star). Written into [into] and returned.
+ */
+internal fun inkStar(cx: Float, cy: Float, r: Float, p: Float, rot: Float = 0f, into: Path = Path()): Path {
+    into.reset()
+    val k = p.coerceAtLeast(0.2f)
+    for (i in 0..72) {
+        val th = i / 72f * 2f * PI.toFloat()
+        val c = abs(cos(th))
+        val s = abs(sin(th))
+        val rr = r / (c.pow(k) + s.pow(k)).pow(1f / k)
+        val a = th + rot
+        val x = cx + rr * cos(a)
+        val y = cy + rr * sin(a)
+        if (i == 0) into.moveTo(x, y) else into.lineTo(x, y)
+    }
+    into.close()
+    return into
+}
+
+/** How far a drop is pulled out at [u] through its glint (0 → 1): out quickly, then round again. */
+internal fun glintPull(u: Float): Float = when {
+    u <= 0f || u >= 1f -> 0f
+    u < 0.22f -> u / 0.22f
+    else -> (1f - (u - 0.22f) / 0.5f).coerceAtLeast(0f)
+}
+
+/** A glint over [center]: a sparkle of ink that flares out to [radius] and is gone, [u] 0 → 1. */
+internal fun DrawScope.glint(center: Offset, radius: Float, u: Float, color: Color, alpha: Float = 1f) {
+    if (u <= 0f || u >= 1f) return
+    val e = sin(PI.toFloat() * u)
+    drawPath(inkStar(center.x, center.y, radius * e, 0.42f, u * 0.9f), color, alpha = alpha * e.coerceIn(0f, 1f))
+}
+
+/** The one colour: what needs you is marked with a drop of red, pulled into a star, with a drip. */
+internal val MarkRed = Color(0xFFE5342E)
+
+/** The red mark in a box [size] wide, its drip hanging below; [sway] (0..1) lets the drip move. */
+internal fun DrawScope.redMark(origin: Offset, size: Float, sway: Float) {
+    val cx = origin.x + size / 2f
+    val r = size / 2f
+    val cy = origin.y + r * 0.82f
+    drawPath(inkStar(cx, cy, r * (1f + 0.05f * sin(sway * 2f * PI.toFloat())), 0.6f), MarkRed)
+    val tail = Path().apply {
+        moveTo(cx - r * 0.13f, cy + r * 0.25f)
+        lineTo(cx + r * 0.13f, cy + r * 0.25f)
+        lineTo(cx, cy + r * (2.3f + 0.2f * sin(sway * 2f * PI.toFloat() + 1f)))
+        close()
+    }
+    drawPath(tail, MarkRed)
+}
+
+/** The red mark as a piece of a row, with its drip moving very slightly. */
+@Composable
+internal fun RedMark(size: Dp = 20.dp, modifier: Modifier = Modifier) {
+    val sway by rememberInfiniteTransition(label = "mark").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(3200, easing = LinearEasing)), label = "markSway",
+    )
+    Canvas(modifier.size(size, size * 1.5f)) { redMark(Offset.Zero, this.size.width, sway) }
+}
+
+/** A halo: a thin ring of ink floating, tilted, over a drop; [k] grows it in (0 → 1). */
+internal fun DrawScope.halo(center: Offset, rx: Float, ry: Float, k: Float, color: Color, stroke: Float) {
+    if (k <= 0.01f) return
+    rotate(-9f, center) {
+        drawOval(
+            color,
+            topLeft = Offset(center.x - rx * k, center.y - ry * k),
+            size = Size(rx * 2f * k, ry * 2f * k),
+            alpha = k.coerceIn(0f, 1f),
+            style = Stroke(stroke),
+        )
+    }
+}
+
+/** A row of tiny drops from [from] to [to]: a dotted line, in ink. */
+internal fun DrawScope.dropsLine(from: Offset, to: Offset, color: Color, gap: Float, radius: Float) {
+    val len = (to - from).getDistance()
+    val n = (len / gap).toInt()
+    if (n <= 0) return
+    for (i in 1..n) {
+        val t = i / n.toFloat()
+        drawCircle(color, radius, Offset(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t))
+    }
 }

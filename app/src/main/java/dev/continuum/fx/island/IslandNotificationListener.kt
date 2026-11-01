@@ -263,6 +263,8 @@ class IslandNotificationListener : NotificationListenerService() {
             actions = actionsOf(n),
             clearable = sbn.isClearable,
             code = code,
+            // Notification.CATEGORY_MISSED_CALL, by its value: it only has a name from Android 11.
+            missed = n.category == "missed_call",
         )
         recent[sbn.key] = info
         while (recent.size > IslandRepository.MAX_RECENT * 2) {

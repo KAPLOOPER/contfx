@@ -67,6 +67,10 @@ import dev.continuum.fx.island.Upcoming
 import dev.continuum.fx.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.geometry.Offset
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -176,6 +180,7 @@ fun IslandRoot(
     val eventDemo by IslandRepository.eventDemo.collectAsState()
     val liveRaw by IslandRepository.live.collectAsState()
     val soundRaw by IslandRepository.sound.collectAsState()
+    val listening by IslandRepository.listenerActive.collectAsState()
     val output by OutputWatcher.current.collectAsState()
     val bounds by rememberUpdatedState(onBounds)
 
@@ -661,11 +666,21 @@ fun IslandRoot(
     val dripDx = remember { Animatable(0f) }
     val sideLatch = remember { NeckLatch() }
     val dripP = remember { Animatable(0f) }
+    // A drop that drips in falls as a drop, glints as it lands, then spreads into its card.
+    val landSpread = remember { Animatable(0f) }
+    val landGlint = remember { Animatable(1f) }
     LaunchedEffect(dripVisible) {
         if (dripVisible) {
             if (!dripFromPull) {
-                dripP.animateTo(1.5f, tween(260, easing = LinearOutSlowInEasing))
-                dripP.animateTo(1f, Motion.flow())
+                landSpread.snapTo(0f)
+                dripP.animateTo(1.12f, tween(240, easing = LinearOutSlowInEasing))
+                launch {
+                    landGlint.snapTo(0f)
+                    landGlint.animateTo(1f, tween(420, easing = LinearEasing))
+                }
+                launch { dripP.animateTo(1f, Motion.flow()) }
+                delay(150)
+                landSpread.animateTo(1f, Motion.flow())
             }
         } else {
             dripFromPull = false
@@ -674,7 +689,8 @@ fun IslandRoot(
     }
     fun dropSize(m: Rect) = min(min(m.height, m.width), band)
     fun dripSpread(q: Float): Float =
-        if (dripFromPull) pullSpread.value.coerceIn(0f, 1f) else q.coerceIn(0f, 1f).let { it * it * it }
+        if (dripFromPull) pullSpread.value.coerceIn(0f, 1f)
+        else min(landSpread.value, q.coerceIn(0f, 1f).let { it * it * it }).coerceIn(0f, 1f)
     fun dripRect(m: Rect): Rect {
         val s = dropSize(m)
         val pulling = pullPx >= 0f
@@ -784,7 +800,7 @@ fun IslandRoot(
     // to look right on their own), so the blur, and its off-screen layer, are dropped.
     fun changingShape(): Boolean =
         abs(mW - tW) > 0.5f || abs(mH - tH) > 0.5f || abs(mTop - tTop) > 0.5f || abs(mR - tR) > 0.5f ||
-            budP.isRunning || dripP.isRunning || pullPx >= 0f || pullSpread.isRunning || dripDx.value != 0f ||
+            budP.isRunning || dripP.isRunning || landSpread.isRunning || pullPx >= 0f || pullSpread.isRunning || dripDx.value != 0f ||
             abs(budWNow - budW) > 0.5f || abs(dripH - dripHTarget) > 0.5f
 
     Box(Modifier.fillMaxSize()) {
@@ -825,9 +841,28 @@ fun IslandRoot(
             }
         }
 
+        // The glint as a drop lands: the drop pulled four ways for a moment, outside the goo so
+        // its points stay sharp.
+        // Read only while drawing, so the glint redraws this layer alone, not the whole island.
+        Canvas(Modifier.fillMaxSize()) {
+            val u = landGlint.value
+            if (u < 1f && !dripFromPull && dripP.value > 0.3f) {
+                val d = dripRect(mainRect())
+                val s = dropSize(mainRect())
+                val e = sin(PI.toFloat() * u)
+                drawPath(inkStar(d.center.x, d.top + s / 2f, s / 2f * (1f + 1.1f * e), 2f - 1.58f * e, u * 0.8f), InkColors.ink)
+            }
+        }
+
         // ---- The battery round the camera, on the ink (not part of it, so the goo leaves it sharp) ----
 
         CameraRing(lastBattery, spot.cx, spot.cy, spot.radius, ringOn, if (ringMode) batteryFlash else 0L)
+
+        // Waiting for notification access: a halo of ink floats over the camera.
+        val waitingHalo = animateFloatAsState(if (listening) 0f else 1f, Motion.flow(), label = "halo")
+        Canvas(Modifier.fillMaxSize()) {
+            halo(Offset(spot.cx, spot.cy - spot.radius * 1.05f), spot.radius * 1.15f, spot.radius * 0.36f, waitingHalo.value, InkColors.on, px(1.4f))
+        }
 
         // ---- Content on the ink, clipped to the ink as it moves ----
 

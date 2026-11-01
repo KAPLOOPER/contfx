@@ -93,6 +93,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
             PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
             PillButton("Code", { IslandRepository.demo("code") }, icon = R.drawable.ic_copy, height = 38.dp)
+            PillButton("Missed call", { IslandRepository.demo("missed") }, icon = R.drawable.ic_call, height = 38.dp)
             PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm, height = 38.dp)
             PillButton("Event", { IslandRepository.demo("event") }, icon = R.drawable.ic_event, height = 38.dp)
             PillButton("Download", { IslandRepository.demo("download") }, height = 38.dp)

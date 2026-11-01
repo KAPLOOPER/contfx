@@ -74,6 +74,7 @@ class DirectService : Service() {
                 LiveAudio.listening.collect { on -> main.post { spectrum.listen(on) } }
             }
             EngineStatus.error.value = null
+            EngineStatus.since.value = android.os.SystemClock.elapsedRealtime()
             EngineStatus.running.value = true
         } catch (t: Throwable) {
             EngineStatus.error.value = t.message ?: "Couldn't start the EQ."

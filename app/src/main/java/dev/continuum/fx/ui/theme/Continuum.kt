@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
 
 /**
@@ -86,6 +87,31 @@ val Libron = FontFamily(
     Font(R.font.libron_regular, FontWeight.Normal),
     Font(R.font.libron_bold, FontWeight.Bold),
 )
+
+/**
+ * The small, exact face of the notes along the top of the app (Inter), set against Libron's
+ * warmth: tiny capitals, figures all one width.
+ */
+val Mark = FontFamily(Font(R.font.inter_medium, FontWeight.Medium))
+
+/** A note: tiny spaced capitals in [Mark], for exact facts at the page's edges. */
+@Composable
+fun Note(text: String, color: Color, modifier: Modifier = Modifier) {
+    BasicText(
+        text = text.uppercase(),
+        modifier = modifier,
+        style = TextStyle(
+            color = color,
+            fontSize = 9.5.sp,
+            fontFamily = Mark,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.3.sp,
+            fontFeatureSettings = "tnum, case",
+        ),
+        maxLines = 1,
+        overflow = TextOverflow.Clip,
+    )
+}
 
 /** Continuum's two springs: Flow for most motion, Snap for presses and small controls. */
 object Motion {

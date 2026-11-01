@@ -7,6 +7,9 @@ object EngineStatus {
     /** True while the capture service is running. */
     val running = MutableStateFlow(false)
 
+    /** When processing last started (elapsed realtime), for the time shown along the top. */
+    val since = MutableStateFlow(0L)
+
     /** Last error worth showing to the person, or null. */
     val error = MutableStateFlow<String?>(null)
 

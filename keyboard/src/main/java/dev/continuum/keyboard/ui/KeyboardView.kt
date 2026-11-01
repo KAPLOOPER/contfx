@@ -171,6 +171,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var appear = Array(0) { Spring(1f) }
     private val stripPress = HashMap<Int, Spring>()
     private val stripAppear = Spring(1f)
+
+    /** A code arriving: a drop that glints as it lands, then spreads into the chip. */
+    private val codeSpread = Spring(1f)
+    private var codeGlintAt = 0L
+    private val starPath = Path()
+    private val codeRect = RectF()
     private val balloons = ArrayList<Balloon>()
     private var popup: Popup? = null
     private val tongueLeft = Spring()
@@ -282,6 +288,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (s == strip) return
         val kindChanged = s::class != strip::class
         strip = s
+        if (kindChanged && s is Strip.Code) {
+            codeSpread.snap(0f)
+            codeSpread.to(1f, SpringSpec.Flow, delay = 0.16f)
+            codeGlintAt = SystemClock.uptimeMillis()
+        }
         if (kindChanged || s is Strip.Words) {
             stripAppear.snap(0.4f)
             stripAppear.to(1f, SpringSpec.Flow)
@@ -411,6 +422,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         for (s in appear) if (s.step(dt)) moving = true
         for (s in stripPress.values) if (s.step(dt)) moving = true
         if (stripAppear.step(dt)) moving = true
+        if (codeSpread.step(dt)) moving = true
+        if (now - codeGlintAt < CODE_GLINT_MS) moving = true
         val it = balloons.iterator()
         while (it.hasNext()) {
             val b = it.next()
@@ -651,9 +664,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val sc = (1f - 0.05f * pr) * (0.9f + 0.1f * a)
                 canvas.save()
                 canvas.scale(sc, sc, pasteRect.centerX(), pasteRect.centerY())
+                // It lands as a drop by the key icon, glints, and spreads out into the chip.
+                val spread = codeSpread.value.coerceIn(0f, 1f)
+                val ch = pasteRect.height()
+                codeRect.set(pasteRect.left, pasteRect.top, pasteRect.left + ch + (pasteRect.width() - ch) * spread, pasteRect.bottom)
                 fill.color = p.bright
                 fill.alpha = (255 * a).toInt()
-                canvas.drawRoundRect(pasteRect, pasteRect.height() / 2f, pasteRect.height() / 2f, fill)
+                canvas.drawRoundRect(codeRect, ch / 2f, ch / 2f, fill)
+                val g = (SystemClock.uptimeMillis() - codeGlintAt) / CODE_GLINT_MS.toFloat()
+                if (g in 0f..1f) {
+                    val e = kotlin.math.sin(Math.PI.toFloat() * g)
+                    canvas.drawPath(star(pasteRect.left + ch / 2f, pasteRect.centerY(), ch / 2f * (1f + 1.1f * e), 2f - 1.58f * e, g * 0.8f), fill)
+                }
+                val inside = ((spread - 0.55f) / 0.45f).coerceIn(0f, 1f)
                 icon.color = p.onBright
                 icon.alpha = (255 * a).toInt()
                 Icons.draw(canvas, Icons.KEY, pasteRect.left + 26f * u, pasteRect.centerY(), 20f * v, icon)
@@ -661,7 +684,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.typeface = bold
                 text.textSize = 18f * v
                 text.color = p.onBright
-                text.alpha = (255 * a).toInt()
+                text.alpha = (255 * a * inside).toInt()
                 val shown = if (s.code.length == 6) s.code.substring(0, 3) + "\u2009" + s.code.substring(3) else s.code
                 val x0 = pasteRect.left + 44f * u
                 val fm = text.fontMetrics
@@ -671,7 +694,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val w = text.measureText(shown)
                 text.typeface = regular
                 text.textSize = 14f * v
-                text.alpha = (170 * a).toInt()
+                text.alpha = (170 * a * inside).toInt()
                 val from = pasteLabel("from ${s.app}", pasteRect.right - (x0 + w + 10f * u) - 16f * u)
                 canvas.drawText(from, x0 + w + 10f * u, base, text)
                 text.textAlign = Paint.Align.CENTER
@@ -679,6 +702,24 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             }
             else -> Unit
         }
+    }
+
+    /** A drop pulled four ways, as a sparkle is: [p] 2 is round, smaller is spikier. */
+    private fun star(cx: Float, cy: Float, r: Float, p: Float, rot: Float): Path {
+        starPath.reset()
+        val k = p.coerceAtLeast(0.2f)
+        for (i in 0..72) {
+            val th = i / 72f * 2f * Math.PI.toFloat()
+            val c = abs(kotlin.math.cos(th))
+            val sn = abs(kotlin.math.sin(th))
+            val rr = r / Math.pow(Math.pow(c.toDouble(), k.toDouble()) + Math.pow(sn.toDouble(), k.toDouble()), 1.0 / k).toFloat()
+            val ang = th + rot
+            val x = cx + rr * kotlin.math.cos(ang)
+            val y = cy + rr * kotlin.math.sin(ang)
+            if (i == 0) starPath.moveTo(x, y) else starPath.lineTo(x, y)
+        }
+        starPath.close()
+        return starPath
     }
 
     private var pasteSource = ""
@@ -1332,6 +1373,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val STRIP_HUB = 10
         private const val STRIP_PASTE = 11
         private const val STRIP_CODE = 12
+        private const val CODE_GLINT_MS = 440L
         private const val STRIP_TOOL = 20
         /** The tools in the strip, in order after the hub. */
         private val STRIP_TOOLS = listOf(Tool.Clipboard, Tool.Emoji, Tool.Edit, Tool.Scan, Tool.Settings)

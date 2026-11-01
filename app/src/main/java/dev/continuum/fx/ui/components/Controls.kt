@@ -3,6 +3,17 @@ package dev.continuum.fx.ui.components
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawBehind
 import android.os.Build
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import dev.continuum.fx.island.ui.glint
+import dev.continuum.fx.island.ui.glintPull
+import dev.continuum.fx.island.ui.halo
+import dev.continuum.fx.island.ui.inkStar
+import kotlin.math.PI
+import kotlin.math.sin
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.RenderEffect
@@ -314,38 +325,65 @@ private fun ChipWord(label: String, selected: Boolean, onClick: () -> Unit, on: 
     }
 }
 
-/** The power control in the dock: tonal when off; turning it on floods it from the centre. */
+/**
+ * The power control in the dock: tonal when off; turning it on floods it from the centre, and the
+ * drop glints. While it's on but [waiting] (nothing playing yet), a halo of ink floats over it.
+ */
 @Composable
-fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: String = "processing") {
+fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: String = "processing", waiting: Boolean = false) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val touch = remember { Touch() }
     // From the centre whatever part of it you pressed: it's a button, not a surface.
     val spread = rememberSpread(on, touch, feel = false)
     val view = LocalView.current
-    Box(
-        Modifier
-            .squash(source)
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(p.inkTonal)
-            .toggleable(on, interactionSource = source, indication = null, role = Role.Switch) {
-                InkFeel.toggle(view, !on)
-                onClick()
+    val glintU = remember { Animatable(1f) }
+    val was = remember { booleanArrayOf(on) }
+    LaunchedEffect(on) {
+        val came = on && !was[0]
+        was[0] = on
+        if (came) {
+            glintU.snapTo(0f)
+            glintU.animateTo(1f, tween(600, easing = LinearEasing))
+        }
+    }
+    val haloK by animateFloatAsState(if (waiting) 1f else 0f, Motion.flow(), label = "halo")
+    val bob = if (haloK > 0.01f) {
+        rememberInfiniteTransition(label = "haloBob").animateFloat(
+            0f, 1f, infiniteRepeatable(tween(3000, easing = LinearEasing)), label = "haloPhase",
+        ).value
+    } else 0f
+    Box(Modifier.size(56.dp)) {
+        Box(
+            Modifier
+                .squash(source)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(p.inkTonal)
+                .toggleable(on, interactionSource = source, indication = null, role = Role.Switch) {
+                    InkFeel.toggle(view, !on)
+                    onClick()
+                }
+                .semantics { contentDescription = if (on) "Turn $what off" else "Turn $what on" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.onInk))
+            Box(Modifier.matchParentSize().spreadInk(spread).background(p.onInk), contentAlignment = Alignment.Center) {
+                Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.ink))
             }
-            .semantics { contentDescription = if (on) "Turn $what off" else "Turn $what on" },
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.onInk))
-        Box(Modifier.matchParentSize().spreadInk(spread).background(p.onInk), contentAlignment = Alignment.Center) {
-            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.ink))
+        }
+        Canvas(Modifier.matchParentSize()) {
+            glint(center, 36.dp.toPx(), glintU.value, p.onInk, 0.9f)
+            val y = -4.dp.toPx() + 2.dp.toPx() * sin(bob * 2f * PI.toFloat())
+            halo(Offset(center.x, y), 14.dp.toPx(), 3.6.dp.toPx(), haloK, p.onInk, 1.6.dp.toPx())
         }
     }
 }
 
 /**
- * A switch: off, a small dim dot; on, it swells into a drop (a little past, then back) and the
- * tick surfaces; off again, it shrinks back to the dot. No socket, no border: just the ink.
+ * A switch: off, a small dim dot; on, it swells into a drop (a little past, then back), pulled
+ * out into a four-point glint for a moment as it comes on, and the tick surfaces; off again, it
+ * shrinks back to the dot. No socket, no border: just the ink.
  */
 @Composable
 fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onClick: () -> Unit) {
@@ -353,11 +391,19 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
     val source = remember { MutableInteractionSource() }
     val view = LocalView.current
     val dot = remember { Animatable(if (on) 1f else 0f) }
+    val glintU = remember { Animatable(1f) }
     LaunchedEffect(on) {
         val target = if (on) 1f else 0f
         if (dot.targetValue == target) return@LaunchedEffect
+        if (on) {
+            launch {
+                glintU.snapTo(0f)
+                glintU.animateTo(1f, tween(620, easing = LinearEasing))
+            }
+        }
         dot.animateTo(target, if (on) SWELL else Motion.snap())
     }
+    val off = p.sub.copy(alpha = 0.45f)
     Box(
         Modifier
             .size(44.dp)
@@ -369,19 +415,15 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.squash(source).size(30.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        // From the 9 dp dot to the full 30 dp drop.
-                        val s = 0.3f + 0.7f * dot.value.coerceAtLeast(0f)
-                        scaleX = s
-                        scaleY = s
-                    }
-                    .clip(CircleShape)
-                    // Off: a translucent grey that reads on light and dark grounds alike.
-                    .background(lerp(p.sub.copy(alpha = 0.45f), p.primary, dot.value.coerceIn(0f, 1f))),
-            )
+            Canvas(Modifier.matchParentSize()) {
+                // From the 9 dp dot to the full 30 dp drop; pulled four ways at the glint.
+                val v = dot.value.coerceAtLeast(0f)
+                val pull = glintPull(glintU.value)
+                val r = size.minDimension / 2f * (0.3f + 0.7f * v) * (1f + 0.6f * pull)
+                val color = lerp(off, p.primary, dot.value.coerceIn(0f, 1f))
+                if (pull > 0.002f) drawPath(inkStar(center.x, center.y, r, 2f - 1.6f * pull, 0.32f * pull), color)
+                else drawCircle(color, r, center)
+            }
             Image(
                 painterResource(checkIcon),
                 contentDescription = null,

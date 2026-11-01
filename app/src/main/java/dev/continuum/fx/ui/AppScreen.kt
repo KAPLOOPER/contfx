@@ -100,6 +100,15 @@ import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSection
+import dev.continuum.fx.ui.components.rememberLiveLevels
+import dev.continuum.fx.ui.theme.Note
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.produceState
 import dev.continuum.fx.ui.components.choice
 import dev.continuum.fx.ui.components.EqGraph
 import dev.continuum.fx.ui.components.IconBubble
@@ -262,6 +271,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         Column(Modifier.fillMaxSize()) {
             PivotHeader(
                 titles = sections.map { it.name.lowercase() },
+                notes = { NotesLine(state) },
                 pivot = pivot,
                 onSelect = { slot ->
                     if (slot == pivot.contentSlot) {
@@ -271,7 +281,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         go(slot)
                     }
                 },
-                modifier = Modifier.statusBarsPadding().padding(top = 18.dp),
+                modifier = Modifier.statusBarsPadding().padding(top = 12.dp),
             )
             Box(
                 Modifier
@@ -592,11 +602,61 @@ private fun StatusLine(state: UiState) {
         else -> "Off"
     }
     val color = when {
-        error != null -> p.danger
+        error != null -> p.text
         state.running -> p.text
         else -> p.sub
     }
-    Txt(text, 17.sp, color, maxLines = 2)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // What needs you is the one thing in colour: a red mark beside it.
+        if (error != null) {
+            dev.continuum.fx.island.ui.RedMark(16.dp)
+            Spacer(Modifier.width(10.dp))
+        }
+        Txt(text, 17.sp, color, maxLines = 2)
+    }
+}
+
+/**
+ * Small, exact notes along the top, above the titles: what's running and how, in a quiet
+ * technical face, while the ink and the titles carry the page.
+ */
+@Composable
+private fun NotesLine(state: UiState) {
+    val p = LocalPalette.current
+    val mode by EngineSettings.mode.collectAsState()
+    val since by EngineStatus.since.collectAsState()
+    val volume by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
+    val sound = state.section == Section.Sound || state.section == Section.Effects
+    val running = sound && state.running
+    // The time it's been running, counted in seconds while it shows.
+    val elapsed by produceState(0L, running, since) {
+        while (running && since > 0L) {
+            value = (android.os.SystemClock.elapsedRealtime() - since) / 1000L
+            delay(1000L - (android.os.SystemClock.elapsedRealtime() - since) % 1000L)
+        }
+    }
+    fun clock(s: Long) = "%02d:%02d:%02d".format(s / 3600, (s / 60) % 60, s % 60)
+    val direct = mode == EngineMode.Direct
+    val (left, right) = when (state.section) {
+        Section.Sound, Section.Effects ->
+            if (state.running) "${if (direct) "Direct" else "Capture"} ${clock(elapsed)}" to (if (direct) "Android's effect · per app" else "48 kHz · 32-bit float · 10 ms")
+            else "Off" to "build ${state.build}"
+        Section.Island -> "Island · ${if (islandOn(state)) "on" else "off"}" to "Notifications · ${if (state.islandFed) "connected" else "waiting"}"
+        Section.Volume -> "Panel · ${if (volumeOn(state, volume)) "on" else "off"}" to "build ${state.build}"
+        Section.Keyboard -> "Keyboard · ${if (state.keyboard.selected) "in use" else "not chosen"}" to "Offline · no internet"
+    }
+    val pulse = if (running) {
+        rememberInfiniteTransition(label = "notes").animateFloat(
+            0.35f, 1f, infiniteRepeatable(tween(950), RepeatMode.Reverse), label = "notesPulse",
+        ).value
+    } else 1f
+    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(5.dp).graphicsLayer { alpha = if (running) pulse else 0.5f }.clip(CircleShape).background(p.text))
+        Spacer(Modifier.width(7.dp))
+        Note(left, p.sub)
+        Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
+        Note(right, p.sub)
+    }
 }
 
 @Composable
@@ -909,18 +969,48 @@ private fun DockBar(state: UiState, actions: AppActions) {
         !library.eqEnabled -> "${library.active.name} · EQ off$withFx"
         else -> library.active.name + withFx
     }
-    Row(
-        Modifier.fillMaxSize().padding(start = 10.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PowerButton(state.running, R.drawable.ic_power, actions::togglePower)
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt(if (state.running) "Processing" else "Off", 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
+    val playing = state.running && state.processing.isNotEmpty()
+    val music = rememberLiveLevels(playing, DOCK_BANDS)
+    val inside by animateFloatAsState(if (playing) 1f else 0f, Motion.flow(), label = "dockMusic")
+    Box(Modifier.fillMaxSize()) {
+        // The music, moving inside the ink as tiny drops of lighter ink.
+        Canvas(Modifier.fillMaxSize()) {
+            val tick = music.frame
+            if (inside <= 0.01f || tick < 0) return@Canvas
+            val step = 7.dp.toPx()
+            val x0 = 84.dp.toPx()
+            val x1 = size.width - 60.dp.toPx()
+            val floor = size.height - 6.dp.toPx()
+            val color = p.onInk.copy(alpha = 0.16f * inside)
+            var x = x0
+            while (x <= x1) {
+                val b = (((x - x0) / (x1 - x0).coerceAtLeast(1f)) * (DOCK_BANDS - 1)).roundToInt().coerceIn(0, DOCK_BANDS - 1)
+                val high = music.levels[b].coerceIn(0f, 1f) * size.height * 0.8f
+                var y = floor
+                while (floor - y < high) {
+                    val d = (floor - y) / high
+                    drawCircle(color, 0.5.dp.toPx() + 1.4.dp.toPx() * (1f - d), androidx.compose.ui.geometry.Offset(x, y))
+                    y -= step
+                }
+                x += step
+            }
         }
-        IconBubble(R.drawable.ic_setup, "Setup", onClick = { actions.setSetupOpen(true) }, on = Surface.Ink)
+        Row(
+            Modifier.fillMaxSize().padding(start = 10.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PowerButton(state.running, R.drawable.ic_power, actions::togglePower, waiting = state.running && state.processing.isEmpty())
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Txt(if (state.running) "Processing" else "Off", 18.sp, p.onInk, bold = true, maxLines = 1)
+                Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
+            }
+            IconBubble(R.drawable.ic_setup, "Setup", onClick = { actions.setSetupOpen(true) }, on = Surface.Ink)
+        }
     }
 }
+
+/** How many bands of the music move inside the dock. */
+private const val DOCK_BANDS = 24
 
 @Composable
 private fun SetupSheet(state: UiState, actions: AppActions) {

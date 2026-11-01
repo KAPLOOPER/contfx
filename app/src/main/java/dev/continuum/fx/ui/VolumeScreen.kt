@@ -131,7 +131,11 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         val problem by VolumeModel.problem.collectAsState()
         problem?.let {
             Gap(8.dp)
-            Txt(it, 14.sp, p.sub)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                dev.continuum.fx.island.ui.RedMark(12.dp)
+                Spacer(Modifier.width(8.dp))
+                Txt(it, 14.sp, p.text)
+            }
         }
         Gap(28.dp)
 
@@ -307,7 +311,11 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
         else -> {
             problem?.let {
                 Gap(6.dp)
-                Txt(it, 15.sp, p.danger)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    dev.continuum.fx.island.ui.RedMark(13.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Txt(it, 15.sp, p.text)
+                }
             }
             Gap(10.dp)
             Column(Modifier.fillMaxWidth()) {

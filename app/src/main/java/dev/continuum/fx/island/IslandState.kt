@@ -92,6 +92,8 @@ data class NoteInfo(
     val clearable: Boolean = true,
     /** A one-time code in it, ready to copy. */
     val code: String? = null,
+    /** A call you missed: it carries the one red mark, as everything that needs you does. */
+    val missed: Boolean = false,
     val demo: Boolean = false,
 )
 
@@ -460,6 +462,15 @@ object IslandRepository {
                     key = "demo-code-$now", appName = "Messages", title = "Google",
                     text = "G-482913 is your Google verification code.", largeIcon = null, smallIcon = null,
                     open = null, postedAt = now, code = "482913", demo = true,
+                )
+                note.value = n
+                recent.value = (listOf(n) + recent.value).take(MAX_RECENT)
+            }
+            "missed" -> {
+                val n = NoteInfo(
+                    key = "demo-missed-$now", appName = "Phone", title = "Mum",
+                    text = "Missed call", largeIcon = null, smallIcon = null,
+                    open = null, postedAt = now, missed = true, demo = true,
                 )
                 note.value = n
                 recent.value = (listOf(n) + recent.value).take(MAX_RECENT)

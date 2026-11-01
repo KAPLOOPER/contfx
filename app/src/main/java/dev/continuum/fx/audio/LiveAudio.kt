@@ -10,8 +10,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 object LiveAudio {
     val tap = SpectrumTap()
 
-    /** The EQ graph is on screen and wants samples. */
+    /** Something on screen (the EQ graph, the dock) wants samples. */
     val listening = MutableStateFlow(false)
+
+    private val listeners = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** Asks for samples until the returned release is called; several can listen at once. */
+    fun listen(): () -> Unit {
+        listeners.incrementAndGet()
+        listening.value = true
+        val released = java.util.concurrent.atomic.AtomicBoolean(false)
+        return {
+            if (released.compareAndSet(false, true) && listeners.decrementAndGet() <= 0) {
+                listeners.set(0)
+                listening.value = false
+            }
+        }
+    }
 
     /**
      * How many samples the spectrum reads at once: the capture engine fills the tap without

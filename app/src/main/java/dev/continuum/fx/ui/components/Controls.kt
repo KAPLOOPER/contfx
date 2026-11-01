@@ -2,6 +2,15 @@ package dev.continuum.fx.ui.components
 
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.drawBehind
+import android.os.Build
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import dev.continuum.fx.island.ui.lerpF
+import dev.continuum.fx.island.ui.Goo
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
@@ -391,15 +400,27 @@ fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onCl
 /** A drop filling its socket: past it by a tenth, then back. */
 private val SWELL = spring<Float>(dampingRatio = 0.42f, stiffness = 420f)
 
-/** The value's bubble rises bouncily and sinks back on Snap; the drop under the finger swells. */
+/** The value's bubble rises bouncily and sinks back on Snap. */
 private val RISE = spring<Float>(dampingRatio = 0.55f, stiffness = 300f)
-private val KNOB = spring<Float>(dampingRatio = 0.6f, stiffness = 620f)
+
+/** How far left of a slider its ink can reach: room for the branch from a section's thread. */
+private val BRANCH_ROOM = 56.dp
+
+/** The island's goo, for a slider's line and drop: Android 12 and later. */
+@Composable
+private fun rememberSliderGoo(): RenderEffect? {
+    val density = LocalDensity.current
+    return remember(density) {
+        if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 2.6.dp.toPx() }) else null
+    }
+}
 
 /**
- * A slider is a line of ink with a drop on it: solid up to the drop, faint after. Hold the drop
- * and a bubble of ink rises off it on a neck with [label] (the value) in it, following your
- * finger; let go and it sinks back in. Inside an [InkSection] the solid part starts at the
- * section's thread, as a branch of it, and grows out of it as the ink first reaches it.
+ * The island's seek bar, as every slider: a soft track, and the part up to the value a line of
+ * ink ending in a drop that the goo fuses to it. Under your finger the line thickens and the drop
+ * swells, and a bubble of ink rises off the drop on a neck with [label] (the value) in it; let go
+ * and it all settles back. Inside an [InkSection] a thin branch joins the line to the section's
+ * thread, and the slider grows out along it as the ink first reaches it.
  * [value] is 0..1; [muted] draws it in grey.
  */
 @Composable
@@ -412,6 +433,7 @@ fun InkSlider(
 ) {
     val p = LocalPalette.current
     val ink = if (muted) p.sub else p.primary
+    val track = p.sub.copy(alpha = 0.3f)
     val onInk = p.onPrimary
     val thread = LocalInkThread.current
     val view = LocalView.current
@@ -420,7 +442,7 @@ fun InkSlider(
     var dragging by remember { mutableStateOf(false) }
     val held = pressing || dragging
     val lift = remember { Animatable(0f) }
-    val knob = remember { Animatable(0f) }
+    val grab = remember { Animatable(0f) }
     val first = remember { booleanArrayOf(true) }
     LaunchedEffect(held) {
         if (!first[0]) {
@@ -428,12 +450,36 @@ fun InkSlider(
         }
         first[0] = false
         launch { lift.animateTo(if (held) 1f else 0f, if (held) RISE else Motion.snap()) }
-        launch { knob.animateTo(if (held) 1f else 0f, KNOB) }
+        launch { grab.animateTo(if (held) 1f else 0f, Motion.flow()) }
     }
+    val goo = rememberSliderGoo()
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val measurer = rememberTextMeasurer()
     val style = TextStyle(color = onInk, fontSize = 14.sp, fontFamily = Libron)
     val latest = rememberUpdatedState(onChange)
+
+    // Where the section's thread is, left of this slider (none outside a section), and how far
+    // the ink has reached it.
+    val branch = FloatArray(2)
+    fun measureBranch() {
+        branch[0] = 0f
+        branch[1] = 1f
+        val t = thread ?: return
+        val mine = coords[0] ?: return
+        val sc = t.coords ?: return
+        if (!sc.isAttached || !mine.isAttached) return
+        val at = sc.localPositionOf(mine, Offset.Zero)
+        branch[0] = t.threadX - at.x
+        branch[1] = t.reach(at.y + mine.size.height / 2f)
+    }
+    fun Density.thick() = lerpF(6.dp.toPx(), 9.dp.toPx(), grab.value)
+    fun Density.bulb() = lerpF(5.5.dp.toPx(), 10.dp.toPx(), grab.value)
+    /** The drop's centre across: on the value, kept inside the track's ends. */
+    fun Density.dropX(w: Float, from: Float, reach: Float): Float {
+        val kx = value.coerceIn(0f, 1f) * w
+        return if (reach >= 1f) kx.coerceIn(bulb(), max(bulb(), w - bulb())) else from + (kx - from) * reach
+    }
+
     Box(
         modifier
             .fillMaxWidth()
@@ -468,36 +514,55 @@ fun InkSlider(
                     onTap = { o -> latest.value((o.x / size.width).coerceIn(0f, 1f)) },
                 )
             }
-            .drawBehind {
-                val cy = size.height / 2f
-                val w = size.width
-                val kx = value.coerceIn(0f, 1f) * w
-                var from = 0f
-                var reach = 1f
-                val t = thread
-                val mine = coords[0]
-                if (t != null && mine != null) {
-                    val sc = t.coords
-                    if (sc != null && sc.isAttached && mine.isAttached) {
-                        val at = sc.localPositionOf(mine, Offset.Zero)
-                        from = t.threadX - at.x
-                        reach = t.reach(at.y + cy)
-                    }
-                }
-                if (reach <= 0f) return@drawBehind
-                // The rest of the line, faint, drawn out from the drop.
-                drawLine(ink.copy(alpha = 0.25f), Offset(kx, cy), Offset(kx + (w - kx) * reach, cy), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
-                val end = from + (kx - from) * reach
-                drawLine(ink, Offset(from, cy), Offset(end, cy), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-                val kr = (7.dp.toPx() + 3.dp.toPx() * knob.value) * min(1f, reach * 1.3f)
-                drawCircle(ink, kr, Offset(end, cy))
-
-                if (reach < 1f) return@drawBehind
+            .drawWithContent {
+                drawContent()
+                measureBranch()
+                if (branch[1] < 1f) return@drawWithContent
                 val b = lift.value
                 if (b > 0.02f) {
                     val spill = 16.dp.toPx()
-                    inkBubble(Offset(kx, cy), b, label?.let { measurer.measure(it, style) }, ink, -spill, w + spill)
+                    val at = Offset(dropX(size.width, branch[0], 1f), size.height / 2f)
+                    inkBubble(at, b, label?.let { measurer.measure(it, style) }, ink, -spill, size.width + spill)
                 }
             },
-    )
+    ) {
+        // The track, drawn out as the ink reaches it.
+        Canvas(Modifier.fillMaxSize()) {
+            measureBranch()
+            val reach = branch[1]
+            if (reach <= 0f) return@Canvas
+            val th = 6.dp.toPx()
+            drawRoundRect(track, Offset(0f, (size.height - th) / 2f), Size(size.width * reach, th), CornerRadius(th / 2f))
+        }
+        // The line and its drop, fused by the goo; with room to the left for the branch.
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .layout { measurable, constraints ->
+                    val room = BRANCH_ROOM.roundToPx()
+                    val wide = constraints.maxWidth + room
+                    val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
+                    layout(constraints.maxWidth, placeable.height) { placeable.place(-room, 0) }
+                }
+                .graphicsLayer { renderEffect = goo },
+        ) {
+            measureBranch()
+            val from = branch[0]
+            val reach = branch[1]
+            if (reach <= 0f) return@Canvas
+            val room = BRANCH_ROOM.toPx()
+            val w = size.width - room
+            val cy = size.height / 2f
+            val th = thick()
+            val kx = value.coerceIn(0f, 1f) * w
+            val end = from + (kx - from) * reach
+            if (from < 0f && end > from) {
+                drawLine(ink, Offset(room + from, cy), Offset(room + min(end, th / 2f), cy), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+            }
+            if (end > 0f) {
+                drawRoundRect(ink, Offset(room, cy - th / 2f), Size(end, th), CornerRadius(th / 2f))
+            }
+            drawCircle(ink, bulb() * min(1f, reach * 1.3f), Offset(room + dropX(w, from, reach), cy))
+        }
+    }
 }

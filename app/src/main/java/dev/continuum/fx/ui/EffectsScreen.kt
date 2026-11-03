@@ -56,6 +56,7 @@ import dev.continuum.fx.ui.components.OnOffDot
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
+import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
 import kotlin.math.roundToInt
 
@@ -87,34 +88,42 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
     val names = fx.onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
 
     Column {
-        val status = when {
-            !fx.enabled -> "Off · only the EQ plays"
-            names.isEmpty() -> "Nothing on yet"
-            !state.running -> "${names.joinToString()} · start the EQ to hear them"
-            else -> "On · ${names.joinToString()}"
+        // What's on, said as a sentence, with one switch for all of it.
+        val waiting = fx.copy(enabled = true).onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
+        Kicker(if (fx.enabled) "On now" else "Effects off", if (fx.enabled) "${names.size} of $EFFECTS" else null)
+        Gap(6.dp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            HeroLine(
+                when {
+                    !fx.enabled -> "Only the EQ plays."
+                    names.isEmpty() -> "Nothing on yet."
+                    else -> inWords(names)
+                },
+                if (fx.enabled && names.isNotEmpty()) p.text else p.sub,
+                Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Box(Modifier.padding(top = 2.dp)) {
+                OnOffDot(fx.enabled, R.drawable.ic_check, "Effects", onClick = { set { it.copy(enabled = !it.enabled) } })
+            }
         }
-        Txt(status, 17.sp, if (fx.enabled && names.isNotEmpty() && state.running) p.text else p.sub, maxLines = 3)
-        Gap(14.dp)
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Chip(if (fx.enabled) "Effects on" else "Effects off", fx.enabled, onClick = { set { it.copy(enabled = !it.enabled) } })
-            if (state.running && (fx.anyOn || spaces.enabled)) ComparePill()
-        }
-        if (ctx.direct) {
-            Gap(8.dp)
-            Txt("Direct mode runs the effects inside Android's own effect, so a few work more simply. Each says how.", 14.sp, p.sub)
+        val quiet = listOfNotNull(
+            if (!fx.enabled && waiting.isNotEmpty()) "${waiting.size} waiting" else null,
+            if (fx.enabled && names.isNotEmpty() && !state.running) "Start processing to hear them" else null,
+            if (ctx.direct) "Direct · a few work more simply" else null,
+        )
+        if (quiet.isNotEmpty()) {
+            Gap(10.dp)
+            Note(quiet.joinToString(" · "), p.sub)
         }
 
         output?.let { device ->
-            Gap(18.dp)
+            Gap(22.dp)
             ListeningOn(device.name, ctx.onPhoneSpeaker, ctx.listener(fx)) { l ->
                 set { it.copy(listeners = it.listeners + (device.key to l)) }
             }
         }
 
-        Group("Bass")
+        Group("Bass", 1)
         EffectCard(
             "Analog bass",
             if (fx.bassOn) "Lift at ${FxSettings.PULTEC_FREQS[fx.pultecFreq.coerceIn(0, 3)].toInt()} Hz · drive ${pct(fx.bassDrive)}" else "Console warmth and a Pultec-style lift",
@@ -172,7 +181,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             SliderField("Strength", pct(fx.speakerBass), fx.speakerBass.toFloat()) { v -> set { it.copy(speakerBass = v.toDouble()) } }
         }
 
-        Group("Clarity")
+        Group("Clarity", 2)
         EffectCard(
             "Tube warmth",
             if (fx.tubeOn) "Amount ${pct(fx.tube)}" else "The bloom and soft top of valve playback",
@@ -212,7 +221,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             SliderField("Amount", pct(fx.air), fx.air.toFloat()) { v -> set { it.copy(air = v.toDouble()) } }
         }
 
-        Group("Space")
+        Group("Space", 3)
         val nowThrough by EngineStatus.spatialSetup.collectAsState()
         val spatialRest = when {
             ctx.direct -> "Resting · needs Capture"
@@ -285,7 +294,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
             SliderField("Strength", db1(-14.0 + 9.5 * fx.crossfeed) + " across", fx.crossfeed.toFloat()) { v -> set { it.copy(crossfeed = v.toDouble()) } }
         }
 
-        Group("Level")
+        Group("Level", 4)
         EffectCard(
             "Dynamics",
             when (fx.dynamics) {
@@ -343,46 +352,48 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         ) {}
 
         Gap(30.dp)
-        BackupSection(actions)
     }
 }
 
 @Composable
-private fun Group(title: String) = SectionLabel(title)
+private fun Group(title: String, index: Int) = SectionLabel(title, index = index)
+
+/** How many effects the page holds. */
+private const val EFFECTS = 12
+
 
 /** What's being listened on, so effects fit it. */
 @Composable
 private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick: (Listener) -> Unit) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painterResource(if (phone || current == Listener.Speaker) R.drawable.ic_speaker else R.drawable.ic_headphones),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                colorFilter = ColorFilter.tint(p.text),
-            )
-            Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                Txt(name, 17.sp, p.text, maxLines = 1)
-                Txt("Listening on", 14.sp, p.sub, maxLines = 1)
-            }
+    var open by rememberSaveable { mutableStateOf(false) }
+    val source = remember { MutableInteractionSource() }
+    InkSection(open, header = {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 54.dp)
+                .clickable(interactionSource = source, indication = null, role = Role.Button) { open = !open },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Txt("Listening on", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+            ValueNote(if (phone || current == Listener.Unsure) name else "$name · ${current.label}")
         }
-        if (phone) {
-            Txt(
-                "Effects keep to what the phone's speaker can play. Speaker bass is made for it.",
-                14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, top = 6.dp),
-            )
-        } else {
-            Gap(4.dp)
-            ChoiceRow(Modifier.padding(start = 38.dp)) {
-                Listener.entries.filter { it != Listener.PhoneSpeaker }.forEach { l ->
-                    Chip(l.label, current == l, onClick = { onPick(l) }, on = Surface.Card)
+    }) {
+        Column(Modifier.padding(bottom = 10.dp)) {
+            if (phone) {
+                Txt("Effects keep to what the phone's speaker can play. Speaker bass is made for it.", 14.sp, p.sub)
+            } else {
+                ChoiceRow {
+                    Listener.entries.filter { it != Listener.PhoneSpeaker }.forEach { l ->
+                        Chip(l.label, current == l, onClick = { onPick(l) }, on = Surface.Card)
+                    }
                 }
+                Txt(
+                    "Bass and treble effects ask no more than this kind of driver can give, and crossfeed is for headphones.",
+                    14.sp, p.sub, modifier = Modifier.padding(top = 4.dp),
+                )
             }
-            Txt(
-                "Bass and treble effects ask no more than this kind of driver can give, and crossfeed is for headphones.",
-                14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, top = 4.dp),
-            )
         }
     }
 }
@@ -407,24 +418,25 @@ private fun EffectCard(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    InkSection(expanded, header = {
+    // Off, an effect is just its name, quiet; on, it says what it's doing.
+    InkSection(expanded, quiet = !on, header = {
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp)
+                .heightIn(min = if (on) 64.dp else 52.dp)
                 .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onExpand)
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt(title, 17.sp, p.text, maxLines = 1)
-                Txt(summary, 14.sp, if (on && !resting) p.text else p.sub, maxLines = 1)
+                Txt(title, 17.sp, if (on) p.text else p.sub, maxLines = 1)
+                if (on) Txt(summary, 14.sp, if (!resting) p.text else p.sub, maxLines = 1)
             }
             if (onToggle != null) {
                 OnOffDot(on, R.drawable.ic_check, title, onToggle)
             } else if (mode != null) {
                 Spacer(Modifier.width(12.dp))
-                Txt(mode, 15.sp, if (on) p.text else p.sub, maxLines = 1)
+                if (on) Txt(mode, 15.sp, p.text, maxLines = 1) else Note("Off", p.quiet)
             }
         }
     }) {

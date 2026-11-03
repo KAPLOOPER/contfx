@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
@@ -75,19 +77,62 @@ internal fun Rest(
  * surface, space and these labels are what group things, not boxes.
  */
 @Composable
-internal fun SectionLabel(text: String, modifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 34.dp) {
+internal fun SectionLabel(text: String, modifier: Modifier = Modifier, top: androidx.compose.ui.unit.Dp = 34.dp, index: Int? = null) {
     val p = LocalPalette.current
+    Box(modifier.padding(top = top, bottom = 6.dp)) {
+        // Its number sits out in the margin, in the column the drops hang in.
+        if (index != null) {
+            dev.continuum.fx.ui.theme.Note("%02d".format(index), p.quiet, Modifier.offset(x = (-21).dp, y = 1.5.dp))
+        }
+        androidx.compose.foundation.text.BasicText(
+            text.uppercase(),
+            style = androidx.compose.ui.text.TextStyle(
+                color = p.sub.copy(alpha = 0.8f),
+                fontSize = 11.sp,
+                fontFamily = dev.continuum.fx.ui.theme.Libron,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                letterSpacing = 2.4.sp,
+            ),
+        )
+    }
+}
+
+/**
+ * The small exact label above a page's hero line: what it is on the left, a count on the right,
+ * the way the posters label things. Only here, so it stays special.
+ */
+@Composable
+internal fun Kicker(left: String, right: String? = null) {
+    val p = LocalPalette.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        dev.continuum.fx.ui.theme.Note(left, p.sub, Modifier.weight(1f))
+        if (right != null) dev.continuum.fx.ui.theme.Note(right, p.quiet)
+    }
+}
+
+/** A page's hero line: one thing, set large. */
+@Composable
+internal fun HeroLine(text: String, color: Color, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.TextUnit = 28.sp) {
     androidx.compose.foundation.text.BasicText(
-        text.uppercase(),
-        modifier.padding(top = top, bottom = 6.dp),
+        text,
+        modifier,
         style = androidx.compose.ui.text.TextStyle(
-            color = p.sub.copy(alpha = 0.8f),
-            fontSize = 11.sp,
+            color = color,
+            fontSize = size,
+            lineHeight = size * 1.18f,
+            letterSpacing = (-0.2).sp,
             fontFamily = dev.continuum.fx.ui.theme.Libron,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            letterSpacing = 2.4.sp,
         ),
+        maxLines = 3,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
     )
+}
+
+/** A value at the end of a row, in small exact type: a count, a device, a mode. */
+@Composable
+internal fun ValueNote(text: String, modifier: Modifier = Modifier) {
+    val p = LocalPalette.current
+    dev.continuum.fx.ui.theme.Note(text, p.sub, modifier.padding(start = 12.dp))
 }
 
 /** Lets something run past the page's side margins of [by] each, to the screen's edges. */
@@ -144,6 +189,15 @@ internal fun Chevron(open: Boolean?, color: Color) {
         modifier = Modifier.size(18.dp).rotate(turn),
         colorFilter = ColorFilter.tint(color),
     )
+}
+
+/** A list said as a sentence: "A.", "A and B.", "A, B and C.", or "A, B and 3 more." */
+internal fun inWords(names: List<String>): String = when (names.size) {
+    0 -> ""
+    1 -> "${names[0]}."
+    2 -> "${names[0]} and ${names[1]}."
+    3 -> "${names[0]}, ${names[1]} and ${names[2]}."
+    else -> "${names[0]}, ${names[1]} and ${names.size - 2} more."
 }
 
 /** The widest the page's content grows on large screens: a comfortable line length. */

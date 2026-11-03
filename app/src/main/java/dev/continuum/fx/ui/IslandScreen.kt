@@ -43,6 +43,7 @@ import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSection
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
@@ -52,18 +53,8 @@ import kotlin.math.abs
 
 internal fun islandOn(state: UiState) = state.island.enabled && state.privileges.islandReady
 
-@Composable
-private fun IslandStatusLine(state: UiState) {
-    val p = LocalPalette.current
-    val text = when {
-        !state.privileges.islandReady -> "Off · finish setup to start"
-        !state.island.enabled -> "Off"
-        state.islandLive && state.islandFed -> "On · around your camera"
-        state.islandLive -> "On · waiting for notification access"
-        else -> "On · starting"
-    }
-    Txt(text, 17.sp, if (islandOn(state)) p.text else p.sub, maxLines = 2)
-}
+/** How many kinds of thing the island can show. */
+private const val ISLAND_SOURCES = 11
 
 @Composable
 internal fun IslandContent(state: UiState, actions: AppActions) {
@@ -72,17 +63,65 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
     var showMore by rememberSaveable { mutableStateOf(false) }
     var aboutInk by rememberSaveable { mutableStateOf(false) }
     Column {
-        IslandStatusLine(state)
+        // What the island shows, said as a sentence, with its switch beside it.
+        val on = islandOn(state)
+        val shown = buildList {
+            if (prefs.media) add("Music")
+            if (prefs.calls) add("calls")
+            if (prefs.timers) add("timers")
+            if (prefs.notifications) add("notifications")
+            if (prefs.codes) add("codes")
+            if (prefs.alarms) add("alarms")
+            if (prefs.events && state.privileges.calendar) add("events")
+            if (prefs.live) add("live updates")
+            if (prefs.sound) add("sound mode")
+            if (prefs.headphones) add("headphones")
+            if (prefs.battery) add("charging")
+        }.mapIndexed { i, w -> if (i == 0) w.replaceFirstChar { it.uppercase() } else w }
+        Kicker(if (on) "In the island" else "Island off", if (on) "${shown.size} of $ISLAND_SOURCES" else null)
+        Gap(6.dp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            HeroLine(
+                when {
+                    !state.privileges.islandReady -> "Finish setup to start."
+                    !prefs.enabled -> "Switched off."
+                    shown.isEmpty() -> "Nothing chosen to show."
+                    else -> inWords(shown)
+                },
+                if (on && shown.isNotEmpty()) p.text else p.sub,
+                Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Box(Modifier.padding(top = 2.dp)) {
+                OnOffDot(prefs.enabled && state.privileges.islandReady, R.drawable.ic_check, "The island", actions::toggleIsland)
+            }
+        }
+        val waitingFor = when {
+            !on -> null
+            state.islandLive && !state.islandFed -> "Waiting for notification access"
+            !state.islandLive -> "Starting"
+            else -> null
+        }
+        if (waitingFor != null) {
+            Gap(10.dp)
+            dev.continuum.fx.ui.theme.Note(waitingFor, p.sub)
+        }
         Gap(22.dp)
 
-        SectionLabel("Try it", top = 0.dp)
-        Gap(2.dp)
-        Txt(
-            if (state.islandLive) "Send a sample to the island and watch the ink move."
-            else "Finish setup and switch the island on to try it.",
-            15.sp, p.sub,
-        )
-        Gap(12.dp)
+        // Samples, folded into one line until you want them.
+        var trying by rememberSaveable { mutableStateOf(false) }
+        val trySource = remember { MutableInteractionSource() }
+        InkSection(trying, header = {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 54.dp)
+                    .clickable(interactionSource = trySource, indication = null, role = Role.Button) { trying = !trying },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("Try it", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                ValueNote(if (state.islandLive) "12 samples" else "after setup")
+            }
+        }) {
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -101,10 +140,11 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
             PillButton("Clear", { IslandRepository.demo("clear") }, height = 38.dp)
         }
-        Gap(28.dp)
+        Gap(14.dp)
+        }
 
-        SectionLabel("Show in the island", top = 0.dp)
-        Gap(10.dp)
+        SectionLabel("Show in the island", index = 1)
+        Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
                 actions.updateIsland { it.copy(media = !it.media) }
@@ -145,6 +185,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 if (prefs.events && !state.privileges.calendar) "Needs calendar access: tap to allow"
                 else "From 15 minutes before, with Join",
                 eventsOn,
+                always = prefs.events && !state.privileges.calendar,
             ) {
                 when {
                     eventsOn -> actions.updateIsland { it.copy(events = false) }
@@ -169,15 +210,11 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             }
             }
         }
-        Gap(28.dp)
 
         PopupsSection(state, actions)
-        Gap(28.dp)
 
-        SectionLabel("Always on", top = 0.dp)
-        Gap(2.dp)
-        Txt("Kept in the island all the time, beside music, calls and timers.", 15.sp, p.sub)
-        Gap(10.dp)
+        SectionLabel("Always on", index = 3)
+        Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow("Time", "With nothing else on, the date as well", prefs.alwaysTime) {
                 actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
@@ -206,10 +243,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 Chip("Ink battery", !prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = false) } }, on = Surface.Card)
             }
         }
-        Gap(28.dp)
 
         PlacementSection(prefs, actions)
-        Gap(28.dp)
+        Gap(20.dp)
 
         MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
             "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
@@ -253,16 +289,14 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     fun pct(v: Float) = "${Math.round(v * 100)}%"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        SectionLabel("Placement", modifier = Modifier.weight(1f), top = 0.dp)
+        SectionLabel("Placement", modifier = Modifier.weight(1f), index = 4)
         if (prefs.placed) PillButton("Reset", { place { it.unplaced() } }, height = 36.dp)
     }
-    Gap(2.dp)
-    Txt(
-        if (detected) "The island starts fitted to your camera. Move it, fit it to the lens or resize it here; it shows itself while you do."
-        else "No camera cutout was found, so the island sits at the top centre. Move it over your camera here; it shows itself while you do.",
-        15.sp, p.sub,
-    )
-    Gap(10.dp)
+    // Said only when it isn't simply fitted to the camera.
+    if (!detected) {
+        Txt("No camera cutout was found, so the island sits at the top centre. Move it over your camera here.", 14.sp, p.sub)
+    }
+    Gap(4.dp)
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         val y = prefs.offsetY
         SliderField(
@@ -320,10 +354,8 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
     val prefs = state.island
     val priv = state.privileges
     val context = LocalContext.current
-    SectionLabel("Android's pop-ups", top = 0.dp)
-    Gap(2.dp)
-    Txt("Stop the usual banner appearing as well as the island.", 15.sp, p.sub)
-    Gap(10.dp)
+    SectionLabel("Android's pop-ups", index = 2)
+    Gap(4.dp)
     Column(Modifier.fillMaxWidth()) {
         ToggleRow(
             "Only the island",
@@ -358,7 +390,7 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
 }
 
 @Composable
-internal fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () -> Unit) {
+internal fun ToggleRow(title: String, body: String, on: Boolean, always: Boolean = false, onToggle: () -> Unit) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val view = LocalView.current
@@ -369,13 +401,15 @@ internal fun ToggleRow(title: String, body: String, on: Boolean, onToggle: () ->
                 InkFeel.toggle(view, !on)
                 onToggle()
             }
-            .heightIn(min = 64.dp)
-            .padding(vertical = 6.dp),
+            .heightIn(min = if (on || always) 62.dp else 52.dp)
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Off, it's just its name, quietly; on (or when it needs you), the line under it says
+        // what it's doing.
         Column(Modifier.weight(1f).padding(end = 8.dp)) {
-            Txt(title, 17.sp, p.text, maxLines = 1)
-            Txt(body, 14.sp, p.sub, maxLines = 2)
+            Txt(title, 17.sp, if (on) p.text else p.sub, maxLines = 1)
+            if (on || always) Txt(body, 14.sp, p.sub, maxLines = 2)
         }
         OnOffDot(on, R.drawable.ic_check, title, onToggle)
     }

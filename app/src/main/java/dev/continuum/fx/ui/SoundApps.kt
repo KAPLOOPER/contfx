@@ -118,103 +118,48 @@ internal fun OpenedFromRow(pkg: String, library: Library, actions: AppActions) {
  * whenever it's what's playing.
  */
 @Composable
-internal fun AppsRow(library: Library, actions: AppActions) {
+internal fun AppsList(library: Library, actions: AppActions) {
     val p = LocalPalette.current
     val context = LocalContext.current
     val profile = library.active
-    val linked = library.appsFor(profile.id)
-    var open by rememberSaveable { mutableStateOf(false) }
     val heard by HeardApps.apps.collectAsState()
     val known by AppVolumes.known.collectAsState()
     val playing by EngineStatus.processingPackages.collectAsState()
     val mode by EngineSettings.mode.collectAsState()
-    val source = remember { MutableInteractionSource() }
-    dev.continuum.fx.ui.components.InkSection(open, header = {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 64.dp)
-                .clickable(interactionSource = source, indication = null, role = Role.Button) { open = !open }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Image(painterResource(R.drawable.ic_music), contentDescription = null, modifier = Modifier.size(22.dp), colorFilter = ColorFilter.tint(p.text))
-            Column(Modifier.weight(1f).padding(start = 16.dp, end = 8.dp)) {
-                Txt("Apps", 17.sp, p.text, maxLines = 1)
-                val names = remember(linked) { linked.map { appLabel(context, it) } }
-                Txt(
-                    when {
-                        names.isEmpty() -> "Give an app ${profile.name} of its own"
-                        names.size == 1 -> "${names[0]} uses ${profile.name}"
-                        names.size == 2 -> "${names[0]} and ${names[1]} use ${profile.name}"
-                        else -> "${names[0]}, ${names[1]} and ${names.size - 2} more use ${profile.name}"
-                    },
-                    14.sp, p.sub, maxLines = 1,
-                )
+    val list = (playing + heard + known + library.apps.keys).distinct()
+    Column(Modifier.padding(bottom = 8.dp)) {
+        Txt(
+            if (mode == EngineMode.Direct) "Each app plays through its own EQ, side by side."
+            else "An app's own EQ is used while it's what's playing.",
+            14.sp, p.sub, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+        )
+        if (list.isEmpty()) {
+            Rest("Apps show up here once they've played something through the EQ.")
+        }
+        list.forEach { pkg ->
+            key(pkg) {
+                val own = library.appProfile(pkg)
+                val on = own?.id == profile.id
+                val name = remember(pkg) { appLabel(context, pkg) }
+                val rowSource = remember { MutableInteractionSource() }
+                val toggle = { actions.linkApp(pkg, if (on) null else profile.id) }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(interactionSource = rowSource, indication = null, role = Role.Switch, onClick = toggle)
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AppIcon(pkg)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Txt(name, 16.sp, if (on) p.text else p.sub, maxLines = 1)
+                        if (own != null && !on) Txt("Uses ${own.name}", 13.sp, p.sub, maxLines = 1)
+                    }
+                    OnOffDot(on, R.drawable.ic_check, "$name uses ${profile.name}", toggle)
+                }
             }
         }
-    }) {
-            val list = (playing + heard + known + library.apps.keys).distinct()
-            Column(Modifier.padding(bottom = 8.dp)) {
-                Txt(
-                    if (mode == EngineMode.Direct) "Each app plays through its own EQ, side by side."
-                    else "Capture mixes everything first, so an app's own EQ is used while it's what's playing.",
-                    14.sp, p.sub, modifier = Modifier.padding(start = 38.dp, bottom = 4.dp),
-                )
-                if (list.isEmpty()) {
-                    Rest(
-                        "Apps show up here once they've played something through the EQ.",
-                        modifier = Modifier.padding(start = 38.dp),
-                    )
-                }
-                list.forEach { pkg ->
-                    key(pkg) {
-                        val own = library.appProfile(pkg)
-                        val on = own?.id == profile.id
-                        val name = remember(pkg) { appLabel(context, pkg) }
-                        val rowSource = remember { MutableInteractionSource() }
-                        val toggle = { actions.linkApp(pkg, if (on) null else profile.id) }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable(interactionSource = rowSource, indication = null, role = Role.Switch, onClick = toggle)
-                                .padding(start = 38.dp, top = 4.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AppIcon(pkg)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Txt(name, 16.sp, p.text, maxLines = 1)
-                                Txt(
-                                    when {
-                                        on -> "Uses ${profile.name}"
-                                        own != null -> "Uses ${own.name}"
-                                        else -> "Uses whichever EQ is on"
-                                    },
-                                    13.sp, p.sub, maxLines = 1,
-                                )
-                            }
-                            OnOffDot(on, R.drawable.ic_check, "$name uses ${profile.name}", toggle)
-                        }
-                    }
-                }
-            }
     }
 }
 
-/** For the Effects page: backup and restore of everything. */
-@Composable
-internal fun BackupSection(actions: AppActions) {
-    val p = LocalPalette.current
-    SectionLabel("Backup", top = 0.dp)
-    Txt(
-        "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
-            "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
-        15.sp, p.sub,
-    )
-    Gap(4.dp)
-    Row {
-        PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_share)
-        PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_import)
-    }
-}

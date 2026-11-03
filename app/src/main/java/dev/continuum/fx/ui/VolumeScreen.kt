@@ -1,5 +1,12 @@
 package dev.continuum.fx.ui
 
+import dev.continuum.fx.ui.components.InkSection
+import dev.continuum.fx.ui.components.OnOffDot
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.heightIn
 import android.media.AudioManager
 import android.os.Build
 import androidx.compose.foundation.Image
@@ -92,30 +99,54 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
     }
 
     Column {
-        val status = when {
-            !state.privileges.volumeService -> "Off · finish setup to start"
-            !prefs.enabled -> "Off · the volume keys open Android's panel"
-            serviceOn -> "On · your volume keys open the ink panel"
-            else -> "On · starting"
+        // What the volume keys do, said as a sentence, with the switch beside it.
+        val on = volumeOn(state, prefs)
+        val media = snap[VolStream.Media]
+        Kicker(if (on) "Volume keys" else "Volume panel off", "Media ${media.percent}%" + if (boost > 0) " + ${BoostPolicy.percent(boost) - 100}%" else "")
+        Gap(6.dp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            HeroLine(
+                when {
+                    !state.privileges.volumeService -> "Finish setup to start."
+                    !prefs.enabled -> "Android's own panel, for now."
+                    serviceOn -> "They open the ink panel."
+                    else -> "Starting."
+                },
+                if (on) p.text else p.sub,
+                Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Box(Modifier.padding(top = 2.dp)) {
+                OnOffDot(on, R.drawable.ic_check, "The volume panel", actions::toggleVolume)
+            }
         }
-        Txt(status, 17.sp, if (volumeOn(state, prefs)) p.text else p.sub, maxLines = 2)
         Gap(22.dp)
 
-        SectionLabel("Try it", top = 0.dp)
-        Gap(2.dp)
-        Txt(
-            if (serviceOn) "Press a volume key, or show the panel from here." else "Finish setup and the volume keys open the panel.",
-            15.sp, p.sub,
-        )
-        Gap(12.dp)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PillButton("Show the panel", { actions.showVolumePanel(false) }, icon = R.drawable.ic_volume, height = 38.dp)
-            PillButton("Opened out", { actions.showVolumePanel(true) }, icon = R.drawable.ic_tune, height = 38.dp)
+        // Showing the panel from here, folded into one line.
+        var trying by rememberSaveable { mutableStateOf(false) }
+        val trySource = remember { MutableInteractionSource() }
+        InkSection(trying, header = {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 54.dp)
+                    .clickable(interactionSource = trySource, indication = null, role = Role.Button) { trying = !trying },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Txt("Try it", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                ValueNote(if (serviceOn) "or press a key" else "after setup")
+            }
+        }) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PillButton("Show the panel", { actions.showVolumePanel(false) }, icon = R.drawable.ic_volume, height = 38.dp)
+                PillButton("Opened out", { actions.showVolumePanel(true) }, icon = R.drawable.ic_tune, height = 38.dp)
+            }
         }
-        Gap(28.dp)
 
-        SectionLabel("Levels", top = 0.dp)
-        Gap(10.dp)
+        SectionLabel("Levels", index = 1)
+        Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             VolStream.entries.forEach { s ->
                 val lv = snap[s]
@@ -137,10 +168,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 Txt(it, 14.sp, p.text)
             }
         }
-        Gap(28.dp)
 
-        SectionLabel("Apps", top = 0.dp)
-        Gap(2.dp)
+        SectionLabel("Apps", index = 2)
+        Gap(4.dp)
         when {
             !helper -> Rest(
                 "Each app can have its own volume, with Shizuku.",
@@ -149,13 +179,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 onAction = { actions.setSetupOpen(true) },
             )
             apps.isEmpty() -> Rest("Nothing's playing. Apps show up here while they make sound.")
-            else -> Txt(
-                "Each app's own volume, kept while it's open" + if (prefs.rememberApps) " and for next time." else ".",
-                15.sp, p.sub,
-            )
+            else -> Unit
         }
         if (helper && apps.isNotEmpty()) {
-            Gap(10.dp)
             Column(Modifier.fillMaxWidth()) {
                 // Each row belongs to its app, not to its place in the list.
                 apps.forEach { a ->
@@ -163,13 +189,11 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 }
             }
         }
-        Gap(28.dp)
 
         PlaysAlongside(helper, known, actions)
-        Gap(28.dp)
 
-        SectionLabel("Panel", top = 0.dp)
-        Gap(10.dp)
+        SectionLabel("Panel", index = 4)
+        Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow("Replace Android's panel", "The volume keys open the ink panel. Off hands them straight back to Android.", prefs.enabled) {
                 actions.updateVolume { it.copy(enabled = !it.enabled) }
@@ -198,10 +222,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 Chip("Lower", prefs.height == VolumePrefs.HEIGHT_LOWER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_LOWER) } }, on = Surface.Card)
             }
         }
-        Gap(28.dp)
 
-        SectionLabel("Boost", top = 0.dp)
-        Gap(10.dp)
+        SectionLabel("Boost", index = 5)
+        Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow(
                 "Go past 100%",
@@ -286,14 +309,8 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
     val p = LocalPalette.current
     val alongside by AppVolumes.alongside.collectAsState()
     val problem by AppVolumes.alongsideProblem.collectAsState()
-    SectionLabel("Play alongside", top = 0.dp)
-    Gap(2.dp)
-    Txt(
-        "Normally, an app that starts playing pauses the one before. Switch an app on and it plays alongside: starting it doesn't " +
-            "pause anything, and nothing else starting pauses it. Calls and alarms still pause it, and directions still lower it. " +
-            "While any app is on, the helper looks after audio focus for the phone.",
-        15.sp, p.sub,
-    )
+    SectionLabel("Play alongside", index = 3)
+    var how by rememberSaveable { mutableStateOf(false) }
     val list = (alongside.toList() + known).distinct()
     when {
         !helper && alongside.isEmpty() -> {
@@ -317,16 +334,24 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
                     Txt(it, 15.sp, p.text)
                 }
             }
-            Gap(10.dp)
+            Gap(4.dp)
             Column(Modifier.fillMaxWidth()) {
                 list.forEach { pkg ->
                     val on = pkg in alongside
-                    ToggleRow(AppVolumes.label(pkg), if (on) "Plays alongside" else "Pauses when another starts", on) {
+                    ToggleRow(AppVolumes.label(pkg), "Plays alongside", on) {
                         actions.setPlaysAlongside(pkg, !on)
                     }
                 }
             }
         }
+    }
+    MoreSection(how, { how = !how }, label = "How it works") {
+        Txt(
+            "Normally, an app that starts playing pauses the one before. Switch an app on and it plays alongside: starting it doesn't " +
+                "pause anything, and nothing else starting pauses it. Calls and alarms still pause it, and directions still lower it. " +
+                "While any app is on, the helper looks after audio focus for the phone.",
+            14.sp, p.sub, modifier = Modifier.padding(bottom = 10.dp),
+        )
     }
 }
 

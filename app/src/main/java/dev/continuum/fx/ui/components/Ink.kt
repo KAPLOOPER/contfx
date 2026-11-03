@@ -400,6 +400,8 @@ private val MARGIN = 24.dp
 internal fun InkSection(
     open: Boolean,
     modifier: Modifier = Modifier,
+    /** Its drop sits quieter in the margin (for something that's off). */
+    quiet: Boolean = false,
     header: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -462,7 +464,7 @@ internal fun InkSection(
                 }
                 // The drop: small while closed; it swells a moment as it starts to drip.
                 val r = 3.5.dp.toPx() + 1.5.dp.toPx() * min(1f, q * 4f) + 2.dp.toPx() * min(1f, q * 3f) * (1f - q)
-                drawCircle(ink, r, Offset(x, y))
+                drawCircle(ink, r, Offset(x, y), alpha = if (quiet && q < 0.01f) 0.45f else 1f)
             },
     ) { measurables, constraints ->
         val margin = MARGIN.roundToPx()

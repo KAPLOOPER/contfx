@@ -20,6 +20,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.ui.theme.Mark
+import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.island.ui.dropsLine
 import androidx.compose.ui.text.drawText
 import androidx.compose.runtime.DisposableEffect
@@ -87,6 +88,10 @@ fun EqGraph(
     live: Boolean = false,
     /** Held to compare: the curve drains flat, as the sound does. */
     comparing: Boolean = false,
+    /** Off: nothing to drag, so the dots sink away and touches are left to the page. */
+    editable: Boolean = true,
+    /** Held on empty graph: true while you want to hear the music without the EQ. */
+    onCompare: ((Boolean) -> Unit)? = null,
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -141,6 +146,9 @@ fun EqGraph(
     val latestMove = rememberUpdatedState(onMove)
     val latestQ = rememberUpdatedState(onQ)
     val latestSelected = rememberUpdatedState(selected)
+    val latestEditable = rememberUpdatedState(editable)
+    val latestCompare = rememberUpdatedState(onCompare)
+    val dotsShown by animateFloatAsState(if (editable) 1f else 0f, Motion.flow(), label = "dots")
     // The filter under your finger: its values rise off its dot in a bubble of ink while you hold.
     var holding by remember { mutableIntStateOf(-1) }
     val lastHeld = remember { intArrayOf(-1) }
@@ -201,7 +209,47 @@ fun EqGraph(
                     // filter's width; a touch that starts away from the dots is left to the page.
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        val target = nearest(down.position)
+                        val target = if (latestEditable.value) nearest(down.position) else -1
+                        // Away from the dots, a still hold compares: the EQ lets go while you hold.
+                        val compare = latestCompare.value
+                        if (target < 0 && compare != null) {
+                            // 1: let go (a tap); 2: moved or a second finger (not a hold); null: held still.
+                            val settled: Int? = withTimeoutOrNull(250L) {
+                                var how = 0
+                                while (how == 0) {
+                                    val e = awaitPointerEvent()
+                                    val hs = e.changes.filter { it.pressed }
+                                    how = when {
+                                        hs.isEmpty() -> 1
+                                        hs.size >= 2 || e.changes.any { it.isConsumed } -> 2
+                                        (hs[0].position - down.position).getDistance() > viewConfiguration.touchSlop -> 2
+                                        else -> 0
+                                    }
+                                }
+                                how
+                            }
+                            when (settled) {
+                                null -> {
+                                    compare(true)
+                                    try {
+                                        while (true) {
+                                            val e = awaitPointerEvent()
+                                            e.changes.forEach { it.consume() }
+                                            if (e.changes.none { it.pressed }) break
+                                        }
+                                    } finally {
+                                        compare(false)
+                                    }
+                                    return@awaitEachGesture
+                                }
+                                1 -> {
+                                    // A tap on empty graph lets go of the chosen dot.
+                                    if (latestEditable.value) latestSelect.value(-1)
+                                    return@awaitEachGesture
+                                }
+                                else -> Unit
+                            }
+                        }
                         var mode = 0 // 0 undecided, 1 dragging, 2 pinching
                         var moved = false
                         var band = -1
@@ -212,6 +260,7 @@ fun EqGraph(
                             val held = event.changes.filter { it.pressed }
                             if (held.isEmpty()) break
                             if (held.size >= 2) {
+                                if (!latestEditable.value) break
                                 if (mode != 2) {
                                     band = if (target >= 0) target else latestSelected.value
                                     if (band < 0 || band >= latestProfile.value.bands.size) continue
@@ -246,7 +295,7 @@ fun EqGraph(
                         }
                         holding = -1
                         // A tap: choose the dot under it, or none.
-                        if (mode == 0 && !moved) latestSelect.value(target)
+                        if (mode == 0 && !moved && latestEditable.value) latestSelect.value(target)
                     }
                 },
         ) {
@@ -277,8 +326,13 @@ fun EqGraph(
                 val x = xOf(f)
                 drawLine(p.surface, Offset(x, top), Offset(x, top + plotH), strokeWidth = grid)
             }
+            // Zero, as a line of drops.
             val zero = yOf(0.0, range)
-            drawLine(p.line, Offset(padX, zero), Offset(padX + plotW, zero), strokeWidth = grid)
+            val dot = with(density) { 1.6.dp.toPx() }
+            drawLine(
+                p.quiet, Offset(padX, zero), Offset(padX + plotW, zero), strokeWidth = dot, cap = StrokeCap.Round,
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(0f, with(density) { 6.dp.toPx() }), 0f),
+            )
 
             val path = Path()
             for (i in 0 until POINTS) {
@@ -295,9 +349,11 @@ fun EqGraph(
             profile.bands.forEachIndexed { i, b ->
                 val c = Offset(xOf(b.frequency), dotY(i, profile, range, shape))
                 val isSel = i == selected
-                val radius = with(density) { (if (isSel) 11.dp else 7.dp).toPx() }
-                drawCircle(if (b.enabled) p.primary else p.sub, radius, c)
-                if (isSel) drawCircle(p.ground, radius * 0.42f, c)
+                val radius = with(density) { (if (isSel) 11.dp else 7.dp).toPx() } * (0.4f + 0.6f * dotsShown)
+                if (dotsShown > 0.01f) {
+                    drawCircle(if (b.enabled) p.primary else p.sub, radius, c, alpha = dotsShown)
+                    if (isSel) drawCircle(p.ground, radius * 0.42f, c, alpha = dotsShown)
+                }
             }
 
             val held = lastHeld[0]
@@ -347,26 +403,26 @@ fun EqGraph(
         val labelY = (top + plotH + with(density) { 6.dp.toPx() }).roundToInt()
         listOf(100.0 to "100", 1000.0 to "1k", 10000.0 to "10k").forEach { (f, label) ->
             Box(Modifier.offset { IntOffset((xOf(f) + 5f).roundToInt(), labelY) }) {
-                Txt(label, 12.sp, p.sub)
+                Note(label, p.sub)
             }
         }
         Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top - 2f).roundToInt()) }) {
-            Txt("+${range.roundToInt()}", 12.sp, p.sub)
+            Note("+${range.roundToInt()}", p.sub)
         }
-        if (shape < 0.98f) {
+        if (shape < 0.98f && editable) {
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 14.dp, end = inset)
                     .graphicsLayer { alpha = (1f - shape).coerceIn(0f, 1f) },
-            ) { Txt("Original · matched loudness", 12.sp, p.text) }
+            ) { Note("Original · matched loudness", p.text) }
         }
-        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top + plotH - with(density) { 16.dp.toPx() }).roundToInt()) }) {
-            Txt("−${range.roundToInt()}", 12.sp, p.sub)
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top + plotH - with(density) { 13.dp.toPx() }).roundToInt()) }) {
+            Note("−${range.roundToInt()}", p.sub)
         }
 
         // The touched filter's values, right beside its dot, following it as it moves.
-        if (selected in profile.bands.indices) {
+        if (editable && selected in profile.bands.indices) {
             val b = profile.bands[selected]
             val dx = xOf(b.frequency)
             val dy = dotY(selected, profile, range, shape)

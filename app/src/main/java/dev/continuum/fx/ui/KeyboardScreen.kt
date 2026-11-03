@@ -59,7 +59,17 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val k = state.keyboard
     Column {
-        Txt(statusText(k), 17.sp, if (k.selected) p.text else p.sub, maxLines = 2)
+        Kicker("Keyboard", if (k.installed) "Build ${k.build}" else null)
+        Gap(6.dp)
+        HeroLine(
+            when {
+                !k.installed -> "Not installed yet."
+                !k.enabled -> "Installed, not switched on."
+                !k.selected -> "On, but not in use."
+                else -> "In use."
+            },
+            if (k.selected) p.text else p.sub,
+        )
 
         UpdateCard(
             update = k.update,
@@ -72,11 +82,11 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
             onAllow = actions::allowInstalls,
             onDismiss = actions::dismissKeyboardUpdate,
         )
-        Gap(18.dp)
+        Gap(4.dp)
 
         if (!k.selected) {
-            SectionLabel("Set it up", top = 0.dp)
-            Gap(10.dp)
+            SectionLabel("Set it up", index = 1)
+            Gap(4.dp)
             Column(Modifier.fillMaxWidth()) {
                 SetupStep(1, k.installed, "Install it", "Continuum Keyboard is its own app, installed and kept up to date from here.") {
                     PillButton("Install", actions::installKeyboard, icon = R.drawable.ic_import, primary = true, on = Surface.Card)
@@ -88,12 +98,11 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                     PillButton("Choose keyboard", actions::chooseKeyboard, on = Surface.Card)
                 }
             }
-            Gap(28.dp)
         }
 
         if (k.installed) {
-            SectionLabel("Settings", top = 0.dp)
-            Gap(10.dp)
+            SectionLabel("Settings", index = if (k.selected) 1 else 2)
+            Gap(4.dp)
             val pages = listOf(
                 "look" to "Look",
                 "typing" to "Typing",
@@ -121,10 +130,9 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
             Gap(24.dp)
         }
 
-        Txt(
-            "Continuum Keyboard is its own app, kept up to date from here. Swipe typing, corrections, clipboard history and scan text all work on your phone; the keyboard has no internet access.",
-            13.sp, p.sub,
-        )
+        Gap(if (k.installed) 0.dp else 24.dp)
+        // Everything it does happens on the phone.
+        dev.continuum.fx.ui.theme.Note("Offline · no internet access", p.quiet)
     }
 }
 

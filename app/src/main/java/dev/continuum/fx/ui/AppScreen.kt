@@ -123,6 +123,8 @@ import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.BoxWithConstraints
 
 enum class Section { Sound, Effects, Island, Volume, Keyboard }
 
@@ -271,7 +273,6 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         Column(Modifier.fillMaxSize()) {
             PivotHeader(
                 titles = sections.map { it.name.lowercase() },
-                notes = { NotesLine(state) },
                 pivot = pivot,
                 onSelect = { slot ->
                     if (slot == pivot.contentSlot) {
@@ -281,7 +282,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         go(slot)
                     }
                 },
-                modifier = Modifier.statusBarsPadding().padding(top = 12.dp),
+                modifier = Modifier.statusBarsPadding().padding(top = 22.dp),
             )
             Box(
                 Modifier
@@ -361,10 +362,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             Seeded(visible = state.openedFrom != null, corner = 24.dp, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)) {
                                 if (from != null) OpenedFromRow(from, state.library, actions)
                             }
-                            StatusLine(state)
-                            Gap(12.dp)
-                            ModeRow(actions)
-                            Gap(32.dp)
+                            // The page only speaks up when something needs you; the dock says the rest.
+                            if (state.error != null) {
+                                StatusLine(state)
+                                Gap(18.dp)
+                            }
                             SoundContent(state, store, actions)
                         }
                         Section.Effects -> EffectsContent(state, actions)
@@ -398,36 +400,53 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     val library = state.library
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
+    var adding by rememberSaveable { mutableStateOf(false) }
     var fitting by rememberSaveable { mutableStateOf(false) }
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    var linksOpen by rememberSaveable { mutableStateOf(false) }
+    var moreOpen by rememberSaveable { mutableStateOf(false) }
+    val eqOn = library.eqEnabled
+    val canCompare = state.running && eqOn
+    val view = LocalView.current
+    // Nothing to compare once the EQ is off or stopped, so a hold that was comparing lets go.
+    LaunchedEffect(canCompare) { if (!canCompare) EngineStatus.comparing.value = false }
+    val compare: (Boolean) -> Unit = { on ->
+        if (on) InkFeel.detent(view)
+        EngineStatus.comparing.value = on
+    }
     Column {
-        SectionLabel("EQ", top = 0.dp)
-        ChoiceRow {
-            library.profiles.forEach { pr ->
-                Chip(pr.name, pr.id == library.activeId, onClick = { store.select(pr.id) })
+        // The EQ you're listening through, set large, with all of them as drops beneath it.
+        EqHero(library, store, onAdd = { adding = !adding })
+        Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
+            if (adding) {
+                Gap(6.dp)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    PillButton("Import", { adding = false; actions.importFile() }, icon = R.drawable.ic_import)
+                    PillButton("Paste", { adding = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
+                    PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune)
+                }
+            }
+            if (fitting) {
+                Gap(12.dp)
+                FitCard(actions)
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            PillButton("Import", actions::importFile, icon = R.drawable.ic_import)
-            PillButton("Paste", actions::pasteFromClipboard, icon = R.drawable.ic_paste)
-            PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune)
-        }
-        if (fitting) {
-            Gap(12.dp)
-            FitCard(actions)
-        }
-        Gap(18.dp)
+        Gap(10.dp)
 
         val comparing by EngineStatus.comparing.collectAsState()
         EqGraph(
             profile = profile,
             live = state.running,
-            comparing = comparing && state.running && library.eqEnabled,
+            // With no EQ, the curve lies flat, as the sound does.
+            comparing = !eqOn || (comparing && canCompare),
+            editable = eqOn,
             selected = selected,
             onSelect = { selected = it },
             // Edge to edge: the centre of the page.
             modifier = Modifier.bleed(24.dp),
             inset = 24.dp,
+            // Hold the graph anywhere away from a dot to hear the music without the EQ.
+            onCompare = compare.takeIf { canCompare },
             onQ = { i, q ->
                 store.updateActive { pr ->
                     pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j != i) b else b.copy(q = Fmt.roundQ(q)) })
@@ -444,92 +463,273 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 }
             },
         )
-        Gap(14.dp)
-        val output by OutputWatcher.current.collectAsState()
-        output?.let { device ->
-            OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
+
+        if (eqOn) {
+            Gap(20.dp)
+            PreampRow(
+                preampDb = profile.preampDb,
+                suggested = EqResponse.suggestedPreamp(profile),
+                onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
+                onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
+            )
+            Gap(14.dp)
+
+            // The filters, folded into one line: the graph is where you shape the sound; this is
+            // for exact numbers and filter types.
+            val filtersSource = remember { MutableInteractionSource() }
+            InkSection(
+                open = filtersOpen,
+                header = {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 54.dp)
+                            .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Txt("Filters", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                        ValueNote(if (profile.bands.isEmpty()) "none" else "${profile.bands.size}")
+                    }
+                },
+            ) {
+                if (profile.bands.isEmpty()) {
+                    Rest(
+                        "${profile.name} has no filters, so music plays as it is. Add one, or bring in an EQ from squig.link or AutoEQ.",
+                        action = "Import an EQ",
+                        icon = R.drawable.ic_import,
+                        onAction = actions::importFile,
+                    )
+                }
+                profile.bands.forEachIndexed { i, band ->
+                    BandCard(
+                        band = band,
+                        expanded = selected == i,
+                        onToggle = { selected = if (selected == i) -1 else i },
+                        onChange = { nb ->
+                            store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
+                        },
+                        onRemove = {
+                            store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
+                            selected = -1
+                        },
+                    )
+                }
+                PillButton("Add a filter", {
+                    val newIndex = profile.bands.size
+                    store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
+                    selected = newIndex
+                }, icon = R.drawable.ic_plus)
+                Gap(8.dp)
+            }
         }
-        AppsRow(library, actions)
-        Gap(18.dp)
 
-        PreampSection(
-            preampDb = profile.preampDb,
-            eqEnabled = library.eqEnabled,
-            canCompare = state.running && library.eqEnabled,
-            onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
-            onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
-            onToggleEq = { store.setEqEnabled(!library.eqEnabled) },
-        )
-        Gap(10.dp)
-        PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
-
-        // The filters, folded into one line: the graph is where you shape the sound; this is
-        // for exact numbers and filter types.
-        val filtersSource = remember { MutableInteractionSource() }
-        Gap(18.dp)
+        // Where this EQ comes on by itself: the headphones it's linked to, and apps of its own.
+        val output by OutputWatcher.current.collectAsState()
+        val linkedHere = output?.let { library.devices[it.key] == profile.id } == true
+        val appCount = library.appsFor(profile.id).size
+        val linksSource = remember { MutableInteractionSource() }
         InkSection(
-            open = filtersOpen && profile.bands.isNotEmpty(),
+            open = linksOpen,
             header = {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 56.dp)
-                        .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
+                        .heightIn(min = 54.dp)
+                        .clickable(interactionSource = linksSource, indication = null, role = Role.Button) { linksOpen = !linksOpen },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Txt(
-                        when (profile.bands.size) {
-                            0 -> "No filters"
-                            1 -> "1 filter"
-                            else -> "${profile.bands.size} filters"
+                    Txt("Comes on by itself", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                    val parts = listOfNotNull(
+                        if (linkedHere) output?.name else null,
+                        when (appCount) {
+                            0 -> null
+                            1 -> "1 app"
+                            else -> "$appCount apps"
                         },
-                        17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f),
                     )
-                    IconBubble(R.drawable.ic_plus, "Add filter", onClick = {
-                        val newIndex = profile.bands.size
-                        store.updateActive { it.copy(bands = it.bands + EqBand(FilterType.PEAK, 1000.0, 0.0, 1.0)) }
-                        selected = newIndex
-                        filtersOpen = true
-                    })
+                    ValueNote(if (parts.isEmpty()) "not yet" else parts.joinToString(" · "))
                 }
             },
         ) {
-            profile.bands.forEachIndexed { i, band ->
-                BandCard(
-                    band = band,
-                    expanded = selected == i,
-                    onToggle = { selected = if (selected == i) -1 else i },
-                    onChange = { nb ->
-                        store.updateActive { pr -> pr.copy(bands = pr.bands.mapIndexed { j, b -> if (j == i) nb else b }) }
-                    },
-                    onRemove = {
-                        store.updateActive { pr -> pr.copy(bands = pr.bands.filterIndexed { j, _ -> j != i }) }
-                        selected = -1
-                    },
-                )
+            output?.let { device ->
+                OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
+            }
+            AppsList(library, actions)
+        }
+
+        if (eqOn) {
+            // What's about this EQ itself, and rarely needed.
+            MoreSection(moreOpen, { moreOpen = !moreOpen }, label = "More for ${profile.name}") {
+                PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
+                Gap(6.dp)
+                Row {
+                    PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
+                    PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
+                }
+                Gap(8.dp)
             }
         }
-        Rest(
-            "${profile.name} has no filters, so music plays as it is. Add one with +, or bring in an EQ from squig.link or AutoEQ.",
-            visible = profile.bands.isEmpty(),
-            action = "Import an EQ",
-            icon = R.drawable.ic_import,
-            onAction = actions::importFile,
-        )
-        Gap(14.dp)
-        Row {
-            PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
-            PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
-        }
+
         if (state.blocked.isNotEmpty()) {
             Gap(18.dp)
             val names = state.blocked.joinToString()
             val one = state.blocked.size == 1
             Txt(
                 "$names ${if (one) "blocks" else "block"} audio capture, so ${if (one) "it plays" else "they play"} without effects.",
-                15.sp, p.sub,
+                14.sp, p.sub,
             )
         }
+    }
+}
+
+/**
+ * The EQ you're listening through, set large; swipe it for the next. Under it, every EQ as a
+ * drop: "Off" a ring, the one you're on the ink pill, and + for a new one.
+ */
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
+@Composable
+private fun EqHero(library: Library, store: ProfileStore, onAdd: () -> Unit) {
+    val p = LocalPalette.current
+    val view = LocalView.current
+    val profiles = library.profiles
+    val eqOn = library.eqEnabled
+    val index = if (!eqOn) 0 else 1 + profiles.indexOfFirst { it.id == library.activeId }.coerceAtLeast(0)
+    var dir by remember { mutableIntStateOf(1) }
+    fun choose(i: Int) {
+        if (i == index || i < 0 || i > profiles.size) return
+        dir = if (i > index) 1 else -1
+        InkFeel.detent(view)
+        if (i == 0) {
+            store.setEqEnabled(false)
+        } else {
+            store.select(profiles[i - 1].id)
+            if (!eqOn) store.setEqEnabled(true)
+        }
+    }
+    val latestChoose by rememberUpdatedState<(Int) -> Unit>({ i -> choose(i) })
+    val latestIndex by rememberUpdatedState(index)
+    Kicker(if (eqOn) "Listening through" else "No EQ", if (eqOn) "$index of ${profiles.size}" else "off")
+    Gap(6.dp)
+    androidx.compose.animation.AnimatedContent(
+        targetState = if (eqOn) library.active.name else "Off",
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                var dx = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { dx = 0f },
+                    onDragEnd = {
+                        val threshold = 36.dp.toPx()
+                        if (dx < -threshold) latestChoose(latestIndex + 1) else if (dx > threshold) latestChoose(latestIndex - 1)
+                    },
+                ) { change, amount ->
+                    change.consume()
+                    dx += amount
+                }
+            },
+        transitionSpec = {
+            val d = dir
+            (androidx.compose.animation.slideInHorizontally(Motion.flow()) { w -> d * w / 6 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))) togetherWith
+                (androidx.compose.animation.slideOutHorizontally(Motion.flow()) { w -> -d * w / 6 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)))
+        },
+        label = "eqName",
+    ) { name ->
+        HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 34.sp)
+    }
+    Gap(12.dp)
+    EqDrops(count = profiles.size, index = index, onPick = { latestChoose(it) }, onAdd = onAdd)
+}
+
+/** Every EQ as a drop in a row: "Off" a ring, the chosen one the ink pill, and + at the end. */
+@Composable
+private fun EqDrops(count: Int, index: Int, onPick: (Int) -> Unit, onAdd: () -> Unit) {
+    val p = LocalPalette.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth().height(28.dp)) {
+        val n = count + 1
+        val maxStep = with(density) { 26.dp.toPx() }
+        val step = minOf(maxStep, constraints.maxWidth.toFloat() / (n + 1.5f))
+        val pad = with(density) { 7.dp.toPx() }
+        fun xOf(i: Int) = pad + i * step
+        val pillW = with(density) { 22.dp.toPx() }.coerceAtMost(step * 0.9f)
+        val left = remember { androidx.compose.animation.core.Animatable(xOf(index)) }
+        val right = remember { androidx.compose.animation.core.Animatable(xOf(index) + pillW) }
+        val first = remember { booleanArrayOf(true) }
+        LaunchedEffect(index, step) {
+            val tl = xOf(index) - pillW / 2f
+            val tr = tl + pillW
+            if (first[0]) {
+                first[0] = false
+                left.snapTo(tl)
+                right.snapTo(tr)
+                return@LaunchedEffect
+            }
+            val toRight = tl > left.value
+            val lead = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.843f, stiffness = 620f)
+            val trail = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.72f, stiffness = 130f)
+            launch { left.animateTo(tl, if (toRight) trail else lead) }
+            launch { right.animateTo(tr, if (toRight) lead else trail) }
+        }
+        val pick by rememberUpdatedState(onPick)
+        val add by rememberUpdatedState(onAdd)
+        Canvas(
+            Modifier
+                .matchParentSize()
+                .pointerInput(n, step) {
+                    detectTapGestures { o ->
+                        val i = ((o.x - pad) / step).roundToInt()
+                        when {
+                            i in 0 until n -> pick(i)
+                            i == n -> add()
+                        }
+                    }
+                },
+        ) {
+            val cy = size.height / 2f
+            val r = 3.5.dp.toPx()
+            // "Off" is a ring; each EQ a drop; + adds one.
+            drawCircle(p.quiet, r - 0.7.dp.toPx(), androidx.compose.ui.geometry.Offset(xOf(0), cy), style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
+            for (i in 1 until n) drawCircle(p.quiet, r, androidx.compose.ui.geometry.Offset(xOf(i), cy))
+            val px = xOf(n)
+            val arm = 4.5.dp.toPx()
+            drawLine(p.quiet, androidx.compose.ui.geometry.Offset(px - arm, cy), androidx.compose.ui.geometry.Offset(px + arm, cy), strokeWidth = 1.5.dp.toPx())
+            drawLine(p.quiet, androidx.compose.ui.geometry.Offset(px, cy - arm), androidx.compose.ui.geometry.Offset(px, cy + arm), strokeWidth = 1.5.dp.toPx())
+            // The chosen one: the ink pill, flowing from drop to drop.
+            val h = 9.dp.toPx()
+            val l = minOf(left.value, right.value - h)
+            val w = maxOf(right.value, left.value + h) - l
+            drawRoundRect(p.primary, androidx.compose.ui.geometry.Offset(l, cy - h / 2f), androidx.compose.ui.geometry.Size(w, h), androidx.compose.ui.geometry.CornerRadius(h / 2f))
+        }
+    }
+}
+
+/** The preamp: its value, and "auto" beside its name while it's where the EQ wants it. */
+@Composable
+private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) -> Unit, onAuto: () -> Unit) {
+    val p = LocalPalette.current
+    val span = EqLimits.MAX_PREAMP - EqLimits.MIN_PREAMP
+    val auto = kotlin.math.abs(preampDb - suggested) < 0.05
+    val source = remember { MutableInteractionSource() }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Preamp", 17.sp, p.text, maxLines = 1)
+            // Set by hand, the word offers to hand it back.
+            dev.continuum.fx.ui.theme.Note(
+                if (auto) "auto" else "back to auto",
+                if (auto) p.quiet else p.sub,
+                Modifier
+                    .padding(start = 10.dp)
+                    .clickable(interactionSource = source, indication = null, enabled = !auto, onClick = onAuto)
+                    .padding(vertical = 10.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Txt(Fmt.db(preampDb), 17.sp, p.text, maxLines = 1)
+        }
+        InkSlider(
+            value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
+            onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
+            label = Fmt.db(preampDb),
+        )
     }
 }
 
@@ -575,9 +775,9 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
 private fun ModeRow(actions: AppActions) {
     val p = LocalPalette.current
     val mode by EngineSettings.mode.collectAsState()
-    ChoiceRow(scroll = false) {
-        Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) })
-        Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) })
+    ChoiceRow(scroll = false, on = Surface.Ink) {
+        Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) }, on = Surface.Ink)
+        Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) }, on = Surface.Ink)
     }
     Gap(6.dp)
     Txt(
@@ -585,7 +785,7 @@ private fun ModeRow(actions: AppActions) {
             EngineMode.Capture -> "Records what apps play and plays it back through the EQ, with exact filters. Android shows its capture icon."
             EngineMode.Direct -> "Puts the EQ on each app's own sound: no capture icon, less battery and delay, within a fraction of a decibel."
         },
-        15.sp, p.sub,
+        15.sp, p.onInkSub,
     )
 }
 
@@ -616,81 +816,6 @@ private fun StatusLine(state: UiState) {
     }
 }
 
-/**
- * Small, exact notes along the top, above the titles: what's running and how, in a quiet
- * technical face, while the ink and the titles carry the page.
- */
-@Composable
-private fun NotesLine(state: UiState) {
-    val p = LocalPalette.current
-    val mode by EngineSettings.mode.collectAsState()
-    val since by EngineStatus.since.collectAsState()
-    val volume by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
-    val sound = state.section == Section.Sound || state.section == Section.Effects
-    val running = sound && state.running
-    // The time it's been running, counted in seconds while it shows.
-    val elapsed by produceState(0L, running, since) {
-        while (running && since > 0L) {
-            value = (android.os.SystemClock.elapsedRealtime() - since) / 1000L
-            delay(1000L - (android.os.SystemClock.elapsedRealtime() - since) % 1000L)
-        }
-    }
-    fun clock(s: Long) = "%02d:%02d:%02d".format(s / 3600, (s / 60) % 60, s % 60)
-    val direct = mode == EngineMode.Direct
-    val (left, right) = when (state.section) {
-        Section.Sound, Section.Effects ->
-            if (state.running) "${if (direct) "Direct" else "Capture"} ${clock(elapsed)}" to (if (direct) "Android's effect · per app" else "48 kHz · 32-bit float · 10 ms")
-            else "Off" to "build ${state.build}"
-        Section.Island -> "Island · ${if (islandOn(state)) "on" else "off"}" to "Notifications · ${if (state.islandFed) "connected" else "waiting"}"
-        Section.Volume -> "Panel · ${if (volumeOn(state, volume)) "on" else "off"}" to "build ${state.build}"
-        Section.Keyboard -> "Keyboard · ${if (state.keyboard.selected) "in use" else "not chosen"}" to "Offline · no internet"
-    }
-    val pulse = if (running) {
-        rememberInfiniteTransition(label = "notes").animateFloat(
-            0.35f, 1f, infiniteRepeatable(tween(950), RepeatMode.Reverse), label = "notesPulse",
-        ).value
-    } else 1f
-    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(5.dp).graphicsLayer { alpha = if (running) pulse else 0.5f }.clip(CircleShape).background(p.text))
-        Spacer(Modifier.width(7.dp))
-        Note(left, p.sub)
-        Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
-        Note(right, p.sub)
-    }
-}
-
-@Composable
-private fun PreampSection(
-    preampDb: Double,
-    eqEnabled: Boolean,
-    canCompare: Boolean,
-    onPreamp: (Double) -> Unit,
-    onAuto: () -> Unit,
-    onToggleEq: () -> Unit,
-) {
-    val p = LocalPalette.current
-    val span = EqLimits.MAX_PREAMP - EqLimits.MIN_PREAMP
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Txt("Preamp", 17.sp, p.sub, modifier = Modifier.weight(1f))
-            Txt(Fmt.db(preampDb), 17.sp, p.text)
-        }
-        InkSlider(
-            value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
-            onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
-            label = Fmt.db(preampDb),
-        )
-        Gap(4.dp)
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Chip(if (eqEnabled) "EQ on" else "EQ off", eqEnabled, onToggleEq)
-            PillButton("Auto preamp", onAuto)
-            if (canCompare) ComparePill()
-        }
-    }
-}
 
 /**
  * Polarity, for earphones that come out the wrong way round: a push in the recording arriving
@@ -761,47 +886,6 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
     }
 }
 
-/**
- * Hold to hear the music without the EQ. The loudness is matched, so the comparison is of
- * sound, not volume (the louder of two otherwise tends to sound better).
- */
-@Composable
-internal fun ComparePill() {
-    val p = LocalPalette.current
-    val source = remember { MutableInteractionSource() }
-    val view = LocalView.current
-    val comparing by EngineStatus.comparing.collectAsState()
-    DisposableEffect(Unit) { onDispose { EngineStatus.comparing.value = false } }
-    // While you hold, a pill of ink swells in behind the words, as behind a chosen word.
-    ChoiceRow(scroll = false) {
-        Box(
-            Modifier
-                .choice(comparing)
-                .squash(source, pill = true)
-                .heightIn(min = 44.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures(onPress = { pos ->
-                        val press = PressInteraction.Press(pos)
-                        source.emit(press)
-                        InkFeel.toggle(view, true)
-                        EngineStatus.comparing.value = true
-                        val lifted = tryAwaitRelease()
-                        EngineStatus.comparing.value = false
-                        InkFeel.toggle(view, false)
-                        source.emit(if (lifted) PressInteraction.Release(press) else PressInteraction.Cancel(press))
-                    })
-                }
-                .semantics(mergeDescendants = true) {
-                    role = Role.Button
-                    contentDescription = "Hold to hear without the EQ"
-                }
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Txt("Hold to compare", 16.sp, if (comparing) p.text else p.sub, maxLines = 1)
-        }
-    }
-}
 
 @Composable
 private fun BandCard(
@@ -964,9 +1048,12 @@ private fun DockBar(state: UiState, actions: AppActions) {
     val fx by FxStore.state.collectAsState()
     val effects = fx.onNames().size
     val withFx = if (effects == 0) "" else " · $effects ${if (effects == 1) "effect" else "effects"}"
+    // The page shows the EQ; the dock says what it's working on.
     val subtitle = when {
         !readyFor(mode, state.privileges) && !state.running -> "Tap to set up"
-        !library.eqEnabled -> "${library.active.name} · EQ off$withFx"
+        state.running && state.processing.isNotEmpty() -> state.processing.joinToString() + withFx
+        state.running -> "Waiting for something to play"
+        !library.eqEnabled -> "EQ off$withFx"
         else -> library.active.name + withFx
     }
     val playing = state.running && state.processing.isNotEmpty()
@@ -1036,7 +1123,10 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             else "Continuum Kit works without root: it captures what other apps play, processes it and plays it back.",
             15.sp, p.onInkSub,
         )
-        Gap(8.dp)
+        Gap(16.dp)
+        // How the sound is reached, set once, so it lives here rather than on the page.
+        ModeRow(actions)
+        Gap(10.dp)
 
         StepRow(
             ++step, priv.recordAudio,
@@ -1100,6 +1190,20 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
                 primary = true,
                 on = Surface.Ink,
             )
+        }
+        // Rarely wanted, so kept here rather than on a page.
+        Gap(28.dp)
+        Note("Backup", p.onInkSub)
+        Gap(6.dp)
+        Txt(
+            "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
+                "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
+            14.sp, p.onInkSub,
+        )
+        Gap(6.dp)
+        Row {
+            PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_share, on = Surface.Ink)
+            PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_import, on = Surface.Ink)
         }
     }
 }

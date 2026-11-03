@@ -113,8 +113,6 @@ internal object PivotMath {
 internal fun PivotHeader(
     titles: List<String>,
     pivot: PivotState,
-    /** Small exact notes above the app's name. */
-    notes: (@Composable () -> Unit)? = null,
     onSelect: (slot: Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -140,19 +138,6 @@ internal fun PivotHeader(
     }
 
     Column(modifier) {
-        if (notes != null) {
-            notes()
-            Spacer(Modifier.height(14.dp))
-        }
-        // The app's name above, small and spaced out, as Windows Phone did; the drop is Continuum's.
-        Row(Modifier.padding(start = 25.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(p.text))
-            Spacer(Modifier.width(9.dp))
-            BasicText(
-                "CONTINUUM KIT",
-                style = TextStyle(color = p.sub, fontSize = 12.sp, fontFamily = Libron, fontWeight = FontWeight.Bold, letterSpacing = 2.6.sp),
-            )
-        }
         val seeds = LocalSeeds.current
         BoxWithConstraints(
             Modifier

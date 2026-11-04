@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import android.view.Gravity
@@ -26,9 +28,10 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import dev.continuum.fx.island.ui.IslandSurface
 
 /**
- * Two overlay windows, the way Essentials does it: a large window that only draws
- * (so the ink can stretch and drip without stealing touches), and a small touchable
- * window kept exactly over the island, which forwards its touches to the drawing.
+ * Overlay windows, the way Essentials does it: a large window that only draws (so the ink can
+ * stretch and drip without stealing touches), and small touchable windows kept exactly over the
+ * parts of the island you can touch (each drop in the bar, what's landed below it), which
+ * forward their touches to the drawing. Between them, the status bar still pulls Android's shade.
  */
 class IslandHost(private val context: Context) {
 
@@ -41,11 +44,16 @@ class IslandHost(private val context: Context) {
     private var owner: OverlayLifecycleOwner? = null
     private var drawParams: WindowManager.LayoutParams? = null
 
-    private var touchView: View? = null
-    private var touchParams: WindowManager.LayoutParams? = null
-    private var touchAdded = false
-    private var bounds: Rect? = null
+    private val touchViews = mutableListOf<View>()
+    private val touchParams = mutableListOf<WindowManager.LayoutParams>()
+    private val touchAdded = mutableListOf<Boolean>()
+    private var bounds: List<Rect> = emptyList()
     private var wantsOutside = false
+    private val main = Handler(Looper.getMainLooper())
+    // A tap reaches every touch window: the one it lands in as a touch, the others as "outside".
+    // Only a tap that landed in none of them counts as outside the island.
+    private var lastDownAt = -1L
+    private var lastOutsideAt = -1L
 
     private val density get() = context.resources.displayMetrics.density
     private val pad get() = (6 * density).toInt()
@@ -93,7 +101,7 @@ class IslandHost(private val context: Context) {
         compose = null
         owner = null
         drawParams = null
-        bounds = null
+        bounds = emptyList()
     }
 
     private fun attach(located: CameraSpot) {
@@ -152,56 +160,76 @@ class IslandHost(private val context: Context) {
     }
 
     /** The island reports where it can be touched, and whether a tap elsewhere should fold it up. */
-    private fun onBounds(rect: Rect?, outside: Boolean) {
+    private fun onBounds(rects: List<Rect>, outside: Boolean) {
         wantsOutside = outside
-        if (rect == bounds) return
-        bounds = rect
+        if (rects == bounds) return
+        bounds = rects
         layoutTouch()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun layoutTouch() {
         val draw = drawParams
-        val b = bounds
-        if (draw == null || b == null || b.isEmpty) {
+        val rects = bounds.filter { !it.isEmpty }
+        if (draw == null || rects.isEmpty()) {
             removeTouch()
             return
         }
-        val lp = touchParams ?: params(touchable = true).also { touchParams = it }
-        lp.x = draw.x + b.left - pad
-        lp.y = draw.y + b.top - pad
-        lp.width = b.width() + pad * 2
-        lp.height = b.height() + pad * 2
-        val view = touchView ?: View(context).also { v ->
-            v.setOnTouchListener { _, event -> forward(event) }
-            touchView = v
+        rects.forEachIndexed { i, b ->
+            if (i >= touchViews.size) {
+                val v = View(context)
+                v.setOnTouchListener { _, event -> forward(event, i) }
+                touchViews += v
+                touchParams += params(touchable = true)
+                touchAdded += false
+            }
+            val lp = touchParams[i]
+            lp.x = draw.x + b.left - pad
+            lp.y = draw.y + b.top - pad
+            lp.width = b.width() + pad * 2
+            lp.height = b.height() + pad * 2
+            try {
+                if (touchAdded[i]) wm.updateViewLayout(touchViews[i], lp) else wm.addView(touchViews[i], lp)
+                touchAdded[i] = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Couldn't place an island touch window", e)
+                touchAdded[i] = false
+            }
         }
+        // Fewer places to touch than before: the spare windows go.
+        for (i in rects.size until touchViews.size) removeTouchAt(i)
+    }
+
+    private fun removeTouchAt(i: Int) {
+        if (!touchAdded[i]) return
         try {
-            if (touchAdded) wm.updateViewLayout(view, lp) else wm.addView(view, lp)
-            touchAdded = true
-        } catch (e: Exception) {
-            Log.e(TAG, "Couldn't place the island touch window", e)
-            touchAdded = false
+            wm.removeViewImmediate(touchViews[i])
+        } catch (_: Exception) {
         }
+        touchAdded[i] = false
     }
 
     private fun removeTouch() {
-        if (!touchAdded) return
-        try {
-            touchView?.let { wm.removeViewImmediate(it) }
-        } catch (_: Exception) {
-        }
-        touchAdded = false
+        for (i in touchViews.indices) removeTouchAt(i)
     }
 
-    private fun forward(event: MotionEvent): Boolean {
+    private fun forward(event: MotionEvent, index: Int): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            if (wantsOutside) outsideTaps.intValue += 1
+            val at = event.eventTime
+            if (wantsOutside && at != lastOutsideAt) {
+                main.postDelayed({
+                    if (lastDownAt != at && lastOutsideAt != at) {
+                        lastOutsideAt = at
+                        outsideTaps.intValue += 1
+                    }
+                }, 48)
+            }
             return false
         }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) lastDownAt = event.eventTime
         val target = compose ?: return false
         val draw = drawParams ?: return false
-        val touch = touchParams ?: return false
+        val touch = touchParams.getOrNull(index) ?: return false
         val copy = MotionEvent.obtain(event)
         copy.offsetLocation((touch.x - draw.x).toFloat(), (touch.y - draw.y).toFloat())
         target.dispatchTouchEvent(copy)

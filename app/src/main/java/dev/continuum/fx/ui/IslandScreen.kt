@@ -222,6 +222,10 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             ToggleRow("Battery", "A drop at the right, as full as the battery; ink runs into it while charging", prefs.alwaysBattery) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
             }
+            Txt(
+                "Hold any drop in the bar and slide it along to move it. Reset, under Placement, puts them all back.",
+                14.sp, p.sub, modifier = Modifier.padding(top = 6.dp),
+            )
         }
 
         PlacementSection(prefs, actions)

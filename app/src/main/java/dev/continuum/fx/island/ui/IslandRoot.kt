@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -34,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -164,7 +166,7 @@ private fun <T : Any> rememberLast(current: T?): T? {
 fun IslandSurface(
     spotState: State<CameraSpot?>,
     outsideTaps: IntState,
-    onBounds: (android.graphics.Rect?, Boolean) -> Unit,
+    onBounds: (List<android.graphics.Rect>, Boolean) -> Unit,
 ) {
     val prefs by IslandSettings.state.collectAsState()
     val base = LocalDensity.current
@@ -196,7 +198,13 @@ private fun DrawScope.hangDrop(body: Rect, x: Float, attach: Float, latch: NeckL
     if (body.width < 0.5f || body.height < 0.5f) return
     val top = Rect(x - attach * 1.8f, -attach * 4f, x + attach * 1.8f, edge)
     drawRoundRect(InkColors.ink, top.topLeft, top.size, CornerRadius(attach * 0.6f))
-    neckDown(top, body, x, latch, reach = attach * 5f, touch = 0f, maxHalf = attach, color = InkColors.ink)
+    if (abs(body.center.x - x) < 0.5f) {
+        neckDown(top, body, x, latch, reach = attach * 5f, touch = 0f, maxHalf = attach, color = InkColors.ink)
+    } else {
+        // Being dragged: the body runs ahead and the neck leans after it.
+        val k = (1f - (body.top - top.bottom).coerceAtLeast(0f) / (attach * 5f)).coerceIn(0f, 1f).pow(1.5f)
+        neckSlant(top, body, x, body.center.x, k, attach, InkColors.ink)
+    }
     drawRoundRect(InkColors.ink, body.topLeft, body.size, CornerRadius(min(body.width, body.height) / 2f))
 }
 
@@ -221,7 +229,7 @@ private fun grown(x: Float, y: Float, w: Float, h: Float, p: Float, edge: Float,
 fun IslandRoot(
     spotState: State<CameraSpot?>,
     outsideTaps: IntState,
-    onBounds: (android.graphics.Rect?, Boolean) -> Unit,
+    onBounds: (List<android.graphics.Rect>, Boolean) -> Unit,
 ) {
     val spot = spotState.value ?: return
     val density = LocalDensity.current
@@ -553,10 +561,11 @@ fun IslandRoot(
     val levelNow = (lastBattery?.level ?: 0) / 100f
     val battRTarget = px(9.5f) + px(4f) * levelNow
     val battR by animateFloatAsState(battRTarget, Motion.flow(), label = "battR")
-    val battX = sw - margin - px(13.5f)
+    val battHalf = px(13.5f)
+    val battHome = sw - margin - battHalf
     val battY = min(cy + battR * 0.12f, barBottom - battR - px(1f))
     val cameraLeft = cx < sw * 0.3f
-    val timeX = if (cameraLeft) battX - px(13.5f) - px(12f) - timeW / 2f else margin + timeW / 2f
+    val timeHome = if (cameraLeft) battHome - battHalf - px(12f) - timeW / 2f else margin + timeW / 2f
 
     // What hangs beside the camera.
     val actR = min(px(12f), barBottom - cy - px(1f))
@@ -577,13 +586,59 @@ fun IslandRoot(
     val rightWTarget = glyphW + (if (rightLabel.isNotEmpty()) px(5f) + textW(rightLabel, 13f, true) else 0f) + px(20f)
     val leftW by animateFloatAsState(leftWTarget, Motion.flow(), label = "leftW")
     val rightW by animateFloatAsState(rightWTarget, Motion.flow(), label = "rightW")
-    val leftX = cx - camR - beside - leftW / 2f
-    val rightX = cx + camR + beside + rightW / 2f
+    val leftHome = cx - camR - beside - leftW / 2f
+    val rightHome = cx + camR + beside + rightW / 2f
 
-    val timeBody = grown(timeX, cy, timeW, bodyH, timeP, edge, px(14f))
-    val battBody = grown(battX, battY, battR * 2f, battR * 2f, battP, edge, px(6f))
-    val leftBody = grown(leftX, cy, leftW, if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f), leftP, edge, px(8f))
-    val rightBody = grown(rightX, cy, rightW, bodyH - px(2f), rightP, edge, px(8f))
+    // Each drop hangs where you put it (hold one and slide it along the bar), or in its own place.
+    // Where two would overlap, the later one settles in the nearest free spot.
+    var moving by remember { mutableStateOf<String?>(null) }
+    val lastMoving = remember { arrayOf<String?>(null) }
+    val moveX = remember { floatArrayOf(0f) }
+    val moveAt = remember { longArrayOf(0L) }
+    var lean by remember { mutableFloatStateOf(0f) }
+    val lo = margin * 0.5f
+    val hi = sw - margin * 0.5f
+    val spacing = px(6f)
+    fun wanted(at: Float, home: Float) = if (at >= 0f) at * sw else home
+    val taken = mutableListOf(Span(cx, camR + px(2f)))
+    fun place(id: String, present: Boolean, want: Float, half: Float): Float {
+        if (!present || moving == id) return want.coerceIn(lo + half, hi - half)
+        val x = settle(want, half, taken, lo, hi, spacing)
+        taken += Span(x, half)
+        return x
+    }
+    val timeTarget = place("time", showTime, wanted(prefs.timeAt, timeHome), timeW / 2f)
+    val battTarget = place("battery", showBattery, wanted(prefs.batteryAt, battHome), battHalf)
+    val leftTarget = place("left", leftKind != null, wanted(prefs.playingAt, leftHome), leftW / 2f)
+    val rightTarget = place("right", rightKind != null, wanted(prefs.countingAt, rightHome), rightW / 2f)
+    val timeA = remember { Animatable(timeTarget) }
+    val battA = remember { Animatable(battTarget) }
+    val leftA = remember { Animatable(leftTarget) }
+    val rightA = remember { Animatable(rightTarget) }
+    LaunchedEffect(timeTarget, moving) { if (moving != "time") timeA.animateTo(timeTarget, Motion.flow()) }
+    LaunchedEffect(battTarget, moving) { if (moving != "battery") battA.animateTo(battTarget, Motion.flow()) }
+    LaunchedEffect(leftTarget, moving) { if (moving != "left") leftA.animateTo(leftTarget, Motion.flow()) }
+    LaunchedEffect(rightTarget, moving) { if (moving != "right") rightA.animateTo(rightTarget, Motion.flow()) }
+    // A dragged drop's neck leans after it, then straightens as it comes to rest.
+    LaunchedEffect(moving) {
+        while (moving != null) {
+            delay(16)
+            lean *= 0.82f
+        }
+        lean = 0f
+    }
+    val lift by animateFloatAsState(if (moving != null) 1f else 0f, Motion.flow(), label = "lift")
+    fun swell(id: String) = if (lastMoving[0] == id) 1f + 0.08f * lift else 1f
+    fun leanOf(id: String) = if (moving == id) lean.coerceIn(-px(10f), px(10f)) else 0f
+    val timeX = timeA.value
+    val battX = battA.value
+    val leftX = leftA.value
+    val rightX = rightA.value
+
+    val timeBody = grown(timeX, cy, timeW * swell("time"), bodyH * swell("time"), timeP, edge, px(14f))
+    val battBody = grown(battX, battY, battR * 2f * swell("battery"), battR * 2f * swell("battery"), battP, edge, px(6f))
+    val leftBody = grown(leftX, cy, leftW * swell("left"), (if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f)) * swell("left"), leftP, edge, px(8f))
+    val rightBody = grown(rightX, cy, rightW * swell("right"), (bodyH - px(2f)) * swell("right"), rightP, edge, px(8f))
     val camBody = Rect(cx - camR, cy - camR, cx + camR, cy + camR)
 
     // The line: the camera's drop spread along the edge.
@@ -733,33 +788,93 @@ fun IslandRoot(
 
     // ---- Touch: only what you can tap, so the rest of the bar still pulls down Android's shade ----
 
-    fun inflate(r: Rect, by: Float) = Rect(r.left - by, 0f, r.right + by, max(r.bottom + by, barH))
-    val grabRect: Rect? = if (line != null) null else run {
-        var u: Rect = inflate(camBody, px(14f))
-        if (leftKind != null) u = unionOf(u, inflate(leftBody, px(6f)))
-        if (rightKind != null) u = unionOf(u, inflate(rightBody, px(6f)))
-        // The time and the battery are left to Android, so the bar either side still pulls the shade.
-        u
+    fun grabOf(r: Rect, by: Float) = Rect(r.left - by, 0f, r.right + by, max(r.bottom + by, barH))
+    // Each drop, and the camera, gets its own small window; the bar between them still pulls down
+    // Android's shade.
+    val grabs: List<Grab> = if (line != null) emptyList() else buildList {
+        add(Grab("camera", Rect(cx - camR - px(14f), 0f, cx + camR + px(14f), max(camBody.bottom + px(14f), barH))))
+        if (showTime && timeP > 0.5f) add(Grab("time", grabOf(timeBody, px(4f))))
+        if (showBattery && battP > 0.5f) add(Grab("battery", grabOf(battBody, px(6f))))
+        if (leftKind != null && leftP > 0.5f) add(Grab("left", grabOf(leftBody, px(6f))))
+        if (rightKind != null && rightP > 0.5f) add(Grab("right", grabOf(rightBody, px(6f))))
     }
+    // While a drop is being moved, the windows stay put under the finger.
+    var frozen by remember { mutableStateOf<List<Grab>?>(null) }
+    val shownGrabs = frozen ?: grabs
     val lineTouch = if (line != null) Rect(margin * 0.5f, 0f, sw - margin * 0.5f, barH) else null
-    val touchRect: android.graphics.Rect? = run {
-        var u: Rect? = grabRect ?: lineTouch
-        if (dripVisible) u = u?.let { unionOf(it, dripTarget) } ?: dripTarget
-        u?.let { android.graphics.Rect(it.left.toInt(), it.top.toInt(), it.right.roundToInt(), it.bottom.roundToInt()) }
+    fun Rect.toAndroid() = android.graphics.Rect(left.toInt(), top.toInt(), right.roundToInt(), bottom.roundToInt())
+    val touchRects: List<android.graphics.Rect> = buildList {
+        shownGrabs.forEach { add(it.rect.toAndroid()) }
+        lineTouch?.let { add(it.toAndroid()) }
+        if (dripVisible) add(dripTarget.toAndroid())
     }
     val wantsOutside = dripVisible
-    LaunchedEffect(touchRect, wantsOutside) { bounds(touchRect, wantsOutside) }
+    LaunchedEffect(touchRects, wantsOutside) { bounds(touchRects, wantsOutside) }
 
-    // Tapping in the bar: whichever drop is under the finger.
-    val tapAt by rememberUpdatedState<(Offset) -> Unit>({ p ->
-        fun hits(r: Rect, slop: Float) = p.x >= r.left - slop && p.x <= r.right + slop && p.y <= max(r.bottom, barH) + slop
-        when {
-            leftKind != null && hits(leftBody, px(6f)) -> expanded = leftKind
-            rightKind != null && hits(rightBody, px(6f)) -> expanded = rightKind
-            showBattery && hits(battBody, px(6f)) -> expanded = Kind.Battery
-            showTime && hits(timeBody, px(4f)) -> dateShowing = true
-            hits(camBody, px(14f)) -> (leftKind ?: rightKind)?.let { expanded = it }
+    // Tapping a drop opens it (it falls and lands); the time says the date.
+    val tapOn by rememberUpdatedState<(String) -> Unit>({ id ->
+        // A hold that became a move isn't a tap.
+        if (android.os.SystemClock.uptimeMillis() - moveAt[0] > 900) {
+            when (id) {
+                "time" -> dateShowing = true
+                "battery" -> expanded = Kind.Battery
+                "left" -> leftKind?.let { expanded = it }
+                "right" -> rightKind?.let { expanded = it }
+                else -> (leftKind ?: rightKind)?.let { expanded = it }
+            }
         }
+        Unit
+    })
+    fun animOf(id: String) = when (id) {
+        "time" -> timeA
+        "battery" -> battA
+        "left" -> leftA
+        else -> rightA
+    }
+    fun halfOf(id: String) = when (id) {
+        "time" -> timeW / 2f
+        "battery" -> battHalf
+        "left" -> leftW / 2f
+        else -> rightW / 2f
+    }
+    val startMove by rememberUpdatedState<(String) -> Unit>({ id ->
+        frozen = grabs
+        moving = id
+        lastMoving[0] = id
+        moveX[0] = animOf(id).value
+        moveAt[0] = android.os.SystemClock.uptimeMillis()
+        InkFeel.split(view)
+    })
+    val moveBy by rememberUpdatedState<(String, Float) -> Unit>({ id, dx ->
+        val h = halfOf(id)
+        moveX[0] = (moveX[0] + dx).coerceIn(lo + h, hi - h)
+        lean = lean * 0.6f + dx * 0.4f
+        val a = animOf(id)
+        val x = moveX[0]
+        scope.launch { a.snapTo(x) }
+    })
+    val endMove by rememberUpdatedState<() -> Unit>({
+        val id = moving
+        if (id != null) {
+            // It settles where you let go, or beside whatever's already there.
+            val others = mutableListOf(Span(cx, camR + px(2f)))
+            if (showTime && id != "time") others += Span(timeX, timeW / 2f)
+            if (showBattery && id != "battery") others += Span(battX, battHalf)
+            if (leftKind != null && id != "left") others += Span(leftX, leftW / 2f)
+            if (rightKind != null && id != "right") others += Span(rightX, rightW / 2f)
+            val f = settle(moveX[0], halfOf(id), others, lo, hi, spacing) / sw
+            IslandSettings.update {
+                when (id) {
+                    "time" -> it.copy(timeAt = f)
+                    "battery" -> it.copy(batteryAt = f)
+                    "left" -> it.copy(playingAt = f)
+                    else -> it.copy(countingAt = f)
+                }
+            }
+            InkFeel.land(view)
+        }
+        moving = null
+        frozen = null
         Unit
     })
 
@@ -786,9 +901,9 @@ fun IslandRoot(
             // The bar along the edge, then the camera and everything else hanging from it.
             drawRect(InkColors.ink, Offset(-px(10f), -px(24f)), Size(sw + px(20f), px(24f) + edge))
             hangDrop(camBody, cx, px(8f), latches[0], edge)
-            if (timeP > 0.01f) hangDrop(timeBody, timeX, px(8.5f) * timeP.coerceAtMost(1f), latches[1], edge)
+            if (timeP > 0.01f) hangDrop(timeBody, timeX - leanOf("time"), px(8.5f) * timeP.coerceAtMost(1f), latches[1], edge)
             if (battP > 0.01f) {
-                hangDrop(battBody, battX, px(6.5f) * battP.coerceAtMost(1f), latches[2], edge)
+                hangDrop(battBody, battX - leanOf("battery"), px(6.5f) * battP.coerceAtMost(1f), latches[2], edge)
                 val u = chargeDrip.value
                 if (u > 0f) {
                     // A bead of ink running down the neck into the drop.
@@ -796,8 +911,8 @@ fun IslandRoot(
                     drawCircle(InkColors.ink, px(3.4f) * (1f - 0.3f * u), Offset(battX, y))
                 }
             }
-            if (leftP > 0.01f) hangDrop(leftBody, leftX, px(6f) * leftP.coerceAtMost(1f), latches[3], edge)
-            if (rightP > 0.01f) hangDrop(rightBody, rightX, px(6f) * rightP.coerceAtMost(1f), latches[4], edge)
+            if (leftP > 0.01f) hangDrop(leftBody, leftX - leanOf("left"), px(6f) * leftP.coerceAtMost(1f), latches[3], edge)
+            if (rightP > 0.01f) hangDrop(rightBody, rightX - leanOf("right"), px(6f) * rightP.coerceAtMost(1f), latches[4], edge)
             // News: the camera's drop spread along the edge.
             if (lineP > 0.01f) {
                 drawRoundRect(InkColors.ink, lineRect.topLeft, lineRect.size, CornerRadius(min(px(16f), lineRect.height / 2f)))
@@ -918,38 +1033,61 @@ fun IslandRoot(
             }
         }
 
-        // Tapping a drop opens it (it falls and lands); dragging down from the camera pulls out
-        // your recent notifications.
-        if (grabRect != null) {
-            Box(
-                Modifier
-                    .offset { IntOffset(grabRect.left.roundToInt(), grabRect.top.roundToInt()) }
-                    .size(toDp(grabRect.width), toDp(grabRect.height))
-                    .pointerInput(grabRect.left, grabRect.top) {
-                        val origin = grabRect.topLeft
-                        detectTapGestures(
-                            onTap = { o -> tapAt(o + origin) },
-                            onLongPress = { if (canPullNow) haptic(strong = false) },
-                        )
-                    }
-                    .pointerInput(Unit) {
-                        var dy = 0f
-                        detectVerticalDragGestures(
-                            onDragStart = {
-                                dy = 0f
-                                if (canPullNow) startPull()
+        // Tapping a drop opens it (it falls and lands); holding one and sliding moves it along the
+        // bar; dragging down from the camera pulls out your recent notifications.
+        for (g in shownGrabs) {
+            key(g.id) {
+                val camera = g.id == "camera"
+                Box(
+                    Modifier
+                        .offset { IntOffset(g.rect.left.roundToInt(), g.rect.top.roundToInt()) }
+                        .size(toDp(g.rect.width), toDp(g.rect.height))
+                        .then(
+                            if (camera) {
+                                Modifier.pointerInput(g.id) {
+                                    detectTapGestures(
+                                        onTap = { tapOn(g.id) },
+                                        onLongPress = { if (canPullNow) haptic(strong = false) },
+                                    )
+                                }
+                            } else {
+                                Modifier.pointerInput(g.id) { detectTapGestures(onTap = { tapOn(g.id) }) }
                             },
-                            onDragEnd = { releasePull() },
-                            onDragCancel = { releasePull() },
-                        ) { change, amount ->
-                            if (pullPx >= 0f) {
-                                change.consume()
-                                dy += amount
-                                movePull(dy)
-                            }
-                        }
-                    },
-            )
+                        )
+                        .then(
+                            if (camera) {
+                                Modifier.pointerInput(Unit) {
+                                    var dy = 0f
+                                    detectVerticalDragGestures(
+                                        onDragStart = {
+                                            dy = 0f
+                                            if (canPullNow) startPull()
+                                        },
+                                        onDragEnd = { releasePull() },
+                                        onDragCancel = { releasePull() },
+                                    ) { change, amount ->
+                                        if (pullPx >= 0f) {
+                                            change.consume()
+                                            dy += amount
+                                            movePull(dy)
+                                        }
+                                    }
+                                }
+                            } else {
+                                Modifier.pointerInput(g.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { startMove(g.id) },
+                                        onDragEnd = { endMove() },
+                                        onDragCancel = { endMove() },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        moveBy(g.id, amount.x)
+                                    }
+                                }
+                            },
+                        ),
+                )
+            }
         }
 
         // ---- The line's words, either side of the camera ----
@@ -1307,3 +1445,25 @@ private fun dayMonth(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMMM", Locale.getDefault()))
 
 private fun unionOf(a: Rect, b: Rect) = Rect(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
+
+/** A part of the island you can touch: a drop, or the camera. */
+private data class Grab(val id: String, val rect: Rect)
+
+/** Where a drop takes up the bar: its middle, and half its width. */
+private class Span(val x: Float, val half: Float)
+
+/**
+ * Where a drop of [half] width settles when it wants [desired]: there, if nothing's in the way;
+ * otherwise the nearest place beside whatever is, within [lo]..[hi].
+ */
+private fun settle(desired: Float, half: Float, taken: List<Span>, lo: Float, hi: Float, gap: Float): Float {
+    val a = lo + half
+    val b = hi - half
+    if (a > b) return (lo + hi) / 2f
+    fun free(x: Float) = taken.all { abs(x - it.x) >= half + it.half + gap - 0.5f }
+    val want = desired.coerceIn(a, b)
+    if (free(want)) return want
+    val options = taken.flatMap { listOf(it.x - it.half - half - gap, it.x + it.half + half + gap) }
+        .filter { it in a..b && free(it) }
+    return options.minByOrNull { abs(it - want) } ?: want
+}

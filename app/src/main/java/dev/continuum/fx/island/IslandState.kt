@@ -583,13 +583,26 @@ data class IslandPrefs(
     val height: Float = 1f,
     /** Extra room on each side of the camera, in dp. */
     val width: Float = 0f,
+
+    // ---- Where each drop hangs along the bar, as a fraction of the screen's width; -1 is its own place ----
+
+    val timeAt: Float = -1f,
+    val batteryAt: Float = -1f,
+    /** What's playing or on a call. */
+    val playingAt: Float = -1f,
+    /** A timer, or what's coming up. */
+    val countingAt: Float = -1f,
 ) {
     /** Whether the island has been moved or resized from where it fits the camera. */
     val placed: Boolean
-        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f || height != 1f || width != 0f
+        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f || height != 1f || width != 0f ||
+            timeAt >= 0f || batteryAt >= 0f || playingAt >= 0f || countingAt >= 0f
 
     /** These settings with the placement put back. */
-    fun unplaced() = copy(offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f, height = 1f, width = 0f)
+    fun unplaced() = copy(
+        offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f, height = 1f, width = 0f,
+        timeAt = -1f, batteryAt = -1f, playingAt = -1f, countingAt = -1f,
+    )
 
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
@@ -648,6 +661,10 @@ object IslandSettings {
             scale = p.getFloat("scale", 1f).coerceIn(SCALE_MIN, SCALE_MAX),
             height = p.getFloat("height", 1f).coerceIn(HEIGHT_MIN, HEIGHT_MAX),
             width = p.getFloat("width", 0f).coerceIn(WIDTH_MIN, WIDTH_MAX),
+            timeAt = p.getFloat("timeAt", -1f).coerceIn(-1f, 1f),
+            batteryAt = p.getFloat("batteryAt", -1f).coerceIn(-1f, 1f),
+            playingAt = p.getFloat("playingAt", -1f).coerceIn(-1f, 1f),
+            countingAt = p.getFloat("countingAt", -1f).coerceIn(-1f, 1f),
         )
     }
 
@@ -694,6 +711,10 @@ object IslandSettings {
             ?.putFloat("scale", next.scale)
             ?.putFloat("height", next.height)
             ?.putFloat("width", next.width)
+            ?.putFloat("timeAt", next.timeAt)
+            ?.putFloat("batteryAt", next.batteryAt)
+            ?.putFloat("playingAt", next.playingAt)
+            ?.putFloat("countingAt", next.countingAt)
             ?.apply()
     }
 }

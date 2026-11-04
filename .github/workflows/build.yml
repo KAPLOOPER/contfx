@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # The whole history and its tags, so the notes can gather every change since the last release.
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -68,10 +69,23 @@ jobs:
             exit 1
           fi
 
+      # What's new: every change since the last published build (so a build that failed to
+      # publish isn't lost), one per commit, divided by "---" lines. A commit marked
+      # "Notes: none" is left out: fix-ups to a change already described.
       - name: Release notes
         shell: bash
         run: |
-          git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          prev=$(git tag --list 'build-*' --sort=-v:refname | head -1)
+          range="HEAD"
+          [ -n "$prev" ] && range="$prev..HEAD"
+          : > notes.md
+          for c in $(git log -20 --format=%H $range); do
+            msg=$(git log -1 --format=%B "$c")
+            if printf '%s\n' "$msg" | grep -qiE '^Notes: *none'; then continue; fi
+            [ -s notes.md ] && printf '\n---\n\n' >> notes.md
+            printf '%s\n' "$msg" | grep -v -E '^(Co-Authored-By|Claude-Session|Notes):' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' >> notes.md
+          done
+          [ -s notes.md ] || git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session|Notes):' > notes.md
           cat notes.md
 
       - name: Name the APK

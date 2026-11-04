@@ -34,7 +34,7 @@ import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import dev.continuum.fx.update.Release
 import dev.continuum.fx.update.UpdateState
-import dev.continuum.fx.update.changeOf
+import dev.continuum.fx.update.changesOf
 import dev.continuum.fx.ui.theme.Note
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -83,7 +83,7 @@ private fun UpdateCardBody(
 ) {
     val p = LocalPalette.current
     var whatsNew by rememberSaveable { mutableStateOf(false) }
-    val changes = release.changes.ifEmpty { listOfNotNull(changeOf(release.build, release.notes)) }
+    val changes = release.changes.ifEmpty { changesOf(release.build, release.notes) }
     Column(
         Modifier
             .fillMaxWidth()

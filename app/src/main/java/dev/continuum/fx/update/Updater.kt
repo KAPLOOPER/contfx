@@ -41,6 +41,10 @@ data class Change(val build: Int, val area: String?, val headline: String, val d
  * Reads a release's notes (a commit message: "Area: what changed", a blank line, then prose
  * wrapped at 72 columns) into a [Change], dropping the sign-off lines.
  */
+/** A release's notes, which may hold several changes divided by "---" lines, each read by [changeOf]. */
+internal fun changesOf(build: Int, notes: String): List<Change> =
+    notes.replace("\r", "").split(Regex("\n-{3,}\n")).mapNotNull { changeOf(build, it) }
+
 internal fun changeOf(build: Int, notes: String): Change? {
     val lines = notes.replace("\r", "").lines()
         .filterNot { it.startsWith("Co-Authored-By:") || it.startsWith("Claude-Session:") || it.startsWith("Signed-off-by:") }
@@ -219,7 +223,7 @@ abstract class UpdateChannel(
             val o = list.getJSONObject(i)
             if (o.optBoolean("draft")) continue
             val build = tag.matchEntire(o.optString("tag_name"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
-            if (build > since) changeOf(build, o.optString("body"))?.let { changes += it }
+            if (build > since) changes += changesOf(build, o.optString("body"))
             val assets = o.optJSONArray("assets") ?: continue
             var url: String? = null
             var size = 0L

@@ -3,6 +3,9 @@ package dev.continuum.fx.island.ui
 import android.graphics.Shader
 import android.os.Build
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -683,25 +686,28 @@ fun IslandRoot(
     val dripDx = remember { Animatable(0f) }
     val sideLatch = remember { NeckLatch() }
     val dripP = remember { Animatable(0f) }
-    // A drop you open falls as a drop, glints as it lands, then spreads into its card.
+    // One motion: a drop you open falls, gathering speed; it lands with a splash (a crown of
+    // droplets flung up that fall back into it, in the same ink as everything else); the splash
+    // carries straight on into the card, spreading wide then filling down; and its words come only
+    // as it settles. Closing runs it back: the card gathers into a drop, drawn back up into the bar.
     val landSpread = remember { Animatable(0f) }
-    val landGlint = remember { Animatable(1f) }
+    val impact = remember { Animatable(1f) }
     LaunchedEffect(dripVisible) {
         if (dripVisible) {
             if (!dripFromPull) {
                 landSpread.snapTo(0f)
-                dripP.animateTo(1.12f, tween(260, easing = LinearOutSlowInEasing))
-                launch {
-                    landGlint.snapTo(0f)
-                    landGlint.animateTo(1f, tween(420, easing = LinearEasing))
-                }
-                launch { dripP.animateTo(1f, Motion.flow()) }
-                delay(150)
-                landSpread.animateTo(1f, Motion.flow())
+                impact.snapTo(0f)
+                dripP.animateTo(1f, tween(230, easing = CubicBezierEasing(0.5f, 0f, 1f, 1f)))
+                InkFeel.land(view)
+                launch { impact.animateTo(1f, tween(420, easing = LinearEasing)) }
+                landSpread.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 280f), initialVelocity = 2f)
             }
         } else {
+            if (dripFromPull) landSpread.snapTo(pullSpread.value)
             dripFromPull = false
-            dripP.animateTo(0f, Motion.flow())
+            impact.snapTo(1f)
+            landSpread.animateTo(0f, tween(170, easing = FastOutLinearInEasing))
+            dripP.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = 420f))
         }
     }
     fun dripSpread(q: Float): Float =
@@ -712,10 +718,17 @@ fun IslandRoot(
         val pulling = pullPx >= 0f
         val fall = (landTop - (src.bottom - s)).coerceAtLeast(1f)
         val q = if (pulling) pullPx / fall else dripP.value.coerceAtLeast(0f)
-        val spread = dripSpread(q)
+        val spread = dripSpread(q).coerceAtLeast(0f)
         val stretch = if (pulling) ((pullPx - s) / tearGap).coerceIn(0f, 1f) else 0f
-        val w = lerpF(s, cardW, spread) * (1f - 0.14f * stretch)
-        val h = lerpF(s, dripH, spread) * (1f + 0.16f * stretch)
+        // A splash spreads wide before it fills down.
+        val spreadW = spread.pow(0.75f)
+        val spreadH = spread.pow(1.4f)
+        val settledness = spread.coerceAtMost(1f)
+        // Squashed for a moment as it hits; drawn long while it falls.
+        val hit = if (pulling || dripFromPull) 0f else sin(PI.toFloat() * impact.value) * (1f - settledness)
+        val falling = if (pulling || dripFromPull) 0f else (dripP.velocity * 0.03f).coerceIn(0f, 0.2f) * (1f - settledness)
+        val w = lerpF(s, cardW, spreadW) * (1f - 0.14f * stretch) * (1f + 0.4f * hit) * (1f - 0.4f * falling)
+        val h = lerpF(s, dripH, spreadH) * (1f + 0.16f * stretch) * (1f - 0.3f * hit) * (1f + falling)
         val t = lerpF(src.bottom - s, landTop, q)
         val x = lerpF(src.center.x, centerFor(cardW), spread) + dripDx.value
         return Rect(x - w / 2f, t, x + w / 2f, t + h)
@@ -922,6 +935,17 @@ fun IslandRoot(
                 val src = sourceOf(lastDrip)
                 val d = dripRect(src)
                 drawRoundRect(InkColors.ink, d.topLeft, d.size, CornerRadius(dripRadius(d)))
+                // The splash as it lands: droplets flung up and out, falling back into the card as it
+                // spreads, so the goo takes them back in.
+                val u = impact.value
+                if (u < 1f && !dripFromPull) {
+                    val tt = u * 0.42f
+                    for (k in SPLASH) {
+                        val x = d.center.x + k * px(14f) + k * px(250f) * tt
+                        val y = landTop + px(2f) - (px(200f) + px(100f) * (1f - abs(k))) * tt + 0.5f * px(2000f) * tt * tt
+                        drawCircle(InkColors.ink, px(4.6f) * (1f - 0.85f * u), Offset(x, y))
+                    }
+                }
                 val reach = if (dripFromPull && !pulledOpen) tearGap else px(18f)
                 val lean = dripDx.value
                 if (abs(lean) < 0.5f) {
@@ -940,19 +964,6 @@ fun IslandRoot(
                         neckSlant(src, d, src.center.x, src.center.x + lean, rest * side.pow(1.5f), px(20f), InkColors.ink)
                     }
                 }
-            }
-        }
-
-        // The glint as a drop lands: pulled four ways for a moment, outside the goo so its
-        // points stay sharp. Read only while drawing, so it redraws this layer alone.
-        Canvas(Modifier.fillMaxSize()) {
-            val u = landGlint.value
-            if (u < 1f && !dripFromPull && dripP.value > 0.3f) {
-                val src = sourceOf(lastDrip)
-                val d = dripRect(src)
-                val s = min(src.width, src.height).coerceAtLeast(px(12f))
-                val e = sin(PI.toFloat() * u)
-                drawPath(inkStar(d.center.x, d.top + s / 2f, s / 2f * (1f + 1.1f * e), 2f - 1.58f * e, u * 0.8f), InkColors.ink)
             }
         }
 
@@ -1140,13 +1151,11 @@ fun IslandRoot(
 
         // ---- What you opened, landed below the bar ----
 
-        val dripAlpha by animateFloatAsState(
-            if (dripVisible) 1f else 0f,
-            if (dripVisible) tween(240, delayMillis = 200) else tween(120),
-            label = "dripAlpha",
-        )
+        // Its words come with the card, not on their own clock: only as it settles, and they go first
+        // as it gathers back up.
+        val dripShown = dripVisible || dripP.isRunning || landSpread.isRunning || dripP.value > 0.01f
         val shownDrip = lastDrip
-        if (shownDrip != null && dripAlpha > 0.01f) {
+        if (shownDrip != null && dripShown) {
             val cardWidth = dripTarget.width
             // Sideways: the notification follows your finger; past a third of the way it flies
             // off and is cleared, otherwise it springs back and the neck joins up again.
@@ -1176,7 +1185,7 @@ fun IslandRoot(
                 Modifier
                     .offset { IntOffset(dripTarget.left.roundToInt(), dripTarget.top.roundToInt()) }
                     .size(toDp(dripTarget.width), toDp(dripTarget.height))
-                    .graphicsLayer { alpha = dripAlpha }
+                    .graphicsLayer { alpha = ((dripSpread(dripP.value) - 0.78f) / 0.2f).coerceIn(0f, 1f) }
                     .drawWithContent {
                         val d = dripRect(sourceOf(lastDrip))
                         val local = d.translate(-dripTarget.left, -dripTarget.top)
@@ -1445,6 +1454,9 @@ private fun dayMonth(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMMM", Locale.getDefault()))
 
 private fun unionOf(a: Rect, b: Rect) = Rect(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
+
+/** Where the splash's droplets fly, across from the middle: -1 far left to 1 far right. */
+private val SPLASH = floatArrayOf(-1f, -0.6f, -0.25f, 0.25f, 0.6f, 1f)
 
 /** A part of the island you can touch: a drop, or the camera. */
 private data class Grab(val id: String, val rect: Rect)

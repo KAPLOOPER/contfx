@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -193,7 +194,7 @@ fun IslandSurface(
  */
 private fun DrawScope.hangDrop(body: Rect, x: Float, attach: Float, latch: NeckLatch, edge: Float) {
     if (body.width < 0.5f || body.height < 0.5f) return
-    val top = Rect(x - attach * 2.2f, -attach * 4f, x + attach * 2.2f, edge)
+    val top = Rect(x - attach * 1.8f, -attach * 4f, x + attach * 1.8f, edge)
     drawRoundRect(InkColors.ink, top.topLeft, top.size, CornerRadius(attach * 0.6f))
     neckDown(top, body, x, latch, reach = attach * 5f, touch = 0f, maxHalf = attach, color = InkColors.ink)
     drawRoundRect(InkColors.ink, body.topLeft, body.size, CornerRadius(min(body.width, body.height) / 2f))
@@ -523,7 +524,8 @@ fun IslandRoot(
     // The status bar: the ink keeps within it, unless you open something.
     val barH = max(max(spot.bar, cy + camR + px(4f)), px(24f))
     val barBottom = barH - px(1.5f)
-    val edge = px(1.5f)
+    // A slim bar of ink along the top edge: everything hangs from it, so it all sits flush.
+    val edge = px(4.5f)
     val margin = px(14f)
     val bodyH = min(px(26f), (barBottom - cy) * 2f - px(2f)).coerceAtLeast(camR * 2f - px(2f))
     val beside = px(9f)
@@ -781,7 +783,8 @@ fun IslandRoot(
 
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
-            // The camera, and everything else, hangs from the edge.
+            // The bar along the edge, then the camera and everything else hanging from it.
+            drawRect(InkColors.ink, Offset(-px(10f), -px(24f)), Size(sw + px(20f), px(24f) + edge))
             hangDrop(camBody, cx, px(8f), latches[0], edge)
             if (timeP > 0.01f) hangDrop(timeBody, timeX, px(8.5f) * timeP.coerceAtMost(1f), latches[1], edge)
             if (battP > 0.01f) {

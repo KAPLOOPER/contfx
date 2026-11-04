@@ -699,7 +699,7 @@ fun IslandRoot(
                 impact.snapTo(0f)
                 dripP.animateTo(1f, tween(230, easing = CubicBezierEasing(0.5f, 0f, 1f, 1f)))
                 InkFeel.land(view)
-                launch { impact.animateTo(1f, tween(420, easing = LinearEasing)) }
+                launch { impact.animateTo(1f, tween((SPLASH_S * 1000f).toInt(), easing = LinearEasing)) }
                 landSpread.animateTo(1f, spring(dampingRatio = 0.78f, stiffness = 280f), initialVelocity = 2f)
             }
         } else {
@@ -939,11 +939,13 @@ fun IslandRoot(
                 // spreads, so the goo takes them back in.
                 val u = impact.value
                 if (u < 1f && !dripFromPull) {
-                    val tt = u * 0.42f
+                    // Low and quick: they leave the card's top edge, rise no more than a drop's
+                    // height, and fall back in while still close enough for the goo to join them.
+                    val tt = u * SPLASH_S
                     for (k in SPLASH) {
-                        val x = d.center.x + k * px(14f) + k * px(250f) * tt
-                        val y = landTop + px(2f) - (px(200f) + px(100f) * (1f - abs(k))) * tt + 0.5f * px(2000f) * tt * tt
-                        drawCircle(InkColors.ink, px(4.6f) * (1f - 0.85f * u), Offset(x, y))
+                        val x = d.center.x + k * px(12f) + k * px(120f) * tt
+                        val y = landTop + px(5f) - (px(230f) - px(40f) * abs(k)) * tt + 0.5f * px(2400f) * tt * tt
+                        drawCircle(InkColors.ink, px(6.2f) * (1f - 0.6f * u), Offset(x, y))
                     }
                 }
                 val reach = if (dripFromPull && !pulledOpen) tearGap else px(18f)
@@ -1456,7 +1458,10 @@ private fun dayMonth(at: Long): String =
 private fun unionOf(a: Rect, b: Rect) = Rect(min(a.left, b.left), min(a.top, b.top), max(a.right, b.right), max(a.bottom, b.bottom))
 
 /** Where the splash's droplets fly, across from the middle: -1 far left to 1 far right. */
-private val SPLASH = floatArrayOf(-1f, -0.6f, -0.25f, 0.25f, 0.6f, 1f)
+private val SPLASH = floatArrayOf(-1f, -0.4f, 0.4f, 1f)
+
+/** How long the splash's droplets are in the air, in seconds: up and back into the card. */
+private const val SPLASH_S = 0.22f
 
 /** A part of the island you can touch: a drop, or the camera. */
 private data class Grab(val id: String, val rect: Rect)

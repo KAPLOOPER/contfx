@@ -29,6 +29,8 @@ import kotlin.math.min
 /** What the panel shows; the host and the service move it, the panel draws it. */
 class PanelUi {
     val visible = mutableStateOf(false)
+    /** Pressed open from the sliver: the capsule you drag, with the ringer and the way into every stream. */
+    val opened = mutableStateOf(false)
     val expanded = mutableStateOf(false)
     val stream = mutableStateOf(VolStream.Media)
     /** Bumped by every key press, so the panel stays up and the level drop speaks up. */
@@ -144,8 +146,15 @@ class VolumeHost(private val context: Context) {
             root.visibility = View.VISIBLE
         }
         ui.stream.value = stream
-        // A fresh appearance starts as asked; one already up only ever opens further.
-        if (!ui.visible.value) ui.expanded.value = expanded else if (expanded) ui.expanded.value = true
+        // A fresh appearance starts as asked (a key press: just the sliver at the edge); one already
+        // up only ever opens further.
+        if (!ui.visible.value) {
+            ui.expanded.value = expanded
+            ui.opened.value = expanded
+        } else if (expanded) {
+            ui.expanded.value = true
+            ui.opened.value = true
+        }
         ui.visible.value = true
         ui.holding.value = key
         ui.keyTick.intValue += 1
@@ -160,6 +169,7 @@ class VolumeHost(private val context: Context) {
     fun hide() {
         ui.holding.value = false
         ui.expanded.value = false
+        ui.opened.value = false
         ui.visible.value = false
     }
 

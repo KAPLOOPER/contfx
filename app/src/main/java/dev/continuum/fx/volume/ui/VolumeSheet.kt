@@ -1,6 +1,8 @@
 package dev.continuum.fx.volume.ui
 
+import android.app.NotificationManager
 import android.content.Context
+import android.service.notification.NotificationListenerService
 import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaRouter2
@@ -75,6 +77,8 @@ import dev.continuum.fx.volume.Level
 import dev.continuum.fx.volume.VolStream
 import dev.continuum.fx.volume.VolumeModel
 import dev.continuum.fx.volume.VolumeSnapshot
+import dev.continuum.fx.volume.VolumeSettings
+import dev.continuum.fx.island.IslandRepository
 import kotlin.math.roundToInt
 
 /** The panel opened out: where sound is going, the ringer, every stream and every app playing. */
@@ -130,6 +134,46 @@ internal fun VolumeSheet(
                     onTouch()
                     VolumeModel.setRinger(mode)
                 }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        // The other sound switches: Do not disturb (through the island's notification access) and
+        // going past 100%.
+        val prefs by VolumeSettings.state.collectAsState()
+        val nm = remember { context.getSystemService(NotificationManager::class.java) }
+        var quiet by remember {
+            mutableStateOf((nm?.currentInterruptionFilter ?: NotificationManager.INTERRUPTION_FILTER_ALL) >= NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val listener = IslandRepository.listener
+            if (listener != null) {
+                InkPill(
+                    "Do not disturb",
+                    if (quiet) InkColors.on else InkColors.tonal,
+                    if (quiet) InkColors.ink else InkColors.on,
+                    Modifier.weight(1f),
+                    icon = R.drawable.ic_bell_off,
+                ) {
+                    onTouch()
+                    val next = !quiet
+                    try {
+                        listener.requestInterruptionFilter(
+                            if (next) NotificationListenerService.INTERRUPTION_FILTER_PRIORITY else NotificationListenerService.INTERRUPTION_FILTER_ALL,
+                        )
+                        quiet = next
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            InkPill(
+                "Past 100%",
+                if (prefs.boost) InkColors.on else InkColors.tonal,
+                if (prefs.boost) InkColors.ink else InkColors.on,
+                Modifier.weight(1f),
+                icon = R.drawable.ic_volume,
+            ) {
+                onTouch()
+                VolumeSettings.update { it.copy(boost = !it.boost) }
             }
         }
         Spacer(Modifier.height(10.dp))

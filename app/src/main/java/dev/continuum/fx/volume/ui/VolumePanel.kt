@@ -76,11 +76,12 @@ import kotlin.math.sin
 private val Rim = Color(0xFF3A3A38)
 
 /**
- * The volume panel, in ink. It grows out of the screen edge beside the volume buttons as one
- * capsule, which liquid fills to the level; a drop pinches off its side to say the number, and
- * two more separate from its ends: the ringer above, and below, the way into every stream.
- * Opened, the capsule spreads into a sheet. Folding away, everything merges back into the
- * capsule and the capsule sinks back into the edge, so ink only ever separates and merges.
+ * The volume panel, in ink, growing out of the screen edge beside the volume buttons. A key
+ * press brings out just a sliver against the edge, filled to the level. Press it and it swells
+ * off the edge into a capsule you drag, with a drop pinching off its side to say the number and
+ * two more separating from its ends: the ringer above, and below, the way into everything.
+ * Opened out, the capsule spreads into a sheet. Folding away, everything merges back and sinks
+ * into the edge, so ink only ever separates and merges, and always comes from the edge.
  */
 @Composable
 fun VolumePanel(
@@ -101,6 +102,7 @@ fun VolumePanel(
 
     val visible = ui.visible.value
     val expanded = ui.expanded.value
+    val opened = ui.opened.value || expanded
     val stream = ui.stream.value
     val holding = ui.holding.value
     val keyTick = ui.keyTick.intValue
@@ -113,6 +115,8 @@ fun VolumePanel(
     val buds = remember { Animatable(0f) }
     val open = remember { Animatable(0f) }
     val tell = remember { Animatable(0f) }
+    // 0 the sliver against the edge, 1 the capsule.
+    val wide = remember { Animatable(if (opened) 1f else 0f) }
     val fill = remember { Animatable(snap[stream].fraction) }
     var touchTick by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
@@ -130,8 +134,12 @@ fun VolumePanel(
             launch { open.animateTo(0f, Motion.snap()) }
             buds.animateTo(0f, Motion.snap())
             out.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 380f))
+            wide.snapTo(0f)
             settled(false)
         }
+    }
+    LaunchedEffect(opened, visible) {
+        if (visible) wide.animateTo(if (opened) 1f else 0f, Motion.flow())
     }
     LaunchedEffect(expanded) {
         if (visible || !expanded) open.animateTo(if (expanded) 1f else 0f, Motion.flow())
@@ -139,13 +147,14 @@ fun VolumePanel(
     // Leaves on its own: shortly after the last press or touch, longer when opened out.
     LaunchedEffect(visible, expanded, keyTick, touchTick, holding, dragging) {
         if (!visible || holding || dragging) return@LaunchedEffect
-        delay(if (expanded) 7_000L else 2_300L)
+        delay(if (expanded) 7_000L else if (opened) 2_300L else 1_500L)
         ui.expanded.value = false
+        ui.opened.value = false
         ui.visible.value = false
     }
     // The number drop speaks up while the level moves, then merges back.
-    LaunchedEffect(keyTick, dragging, expanded) {
-        if (!visible || expanded) {
+    LaunchedEffect(keyTick, dragging, expanded, opened) {
+        if (!visible || expanded || !opened) {
             tell.animateTo(0f, Motion.snap())
             return@LaunchedEffect
         }
@@ -202,23 +211,33 @@ fun VolumePanel(
     val o = out.value
     val e = open.value.coerceIn(0f, 1.05f)
     val b = buds.value
-    // Hidden, the capsule sits just past the edge; it slides out as it emerges.
-    val near = margin - (1f - o) * (w + margin + px(10f))
-    val capsule = side(near, w, capTop, capBottom)
+    val wv = wide.value.coerceIn(0f, 1.05f)
+    val wc = wv.coerceIn(0f, 1f)
+    // The sliver: ink grown out of the edge, a little of it past the edge so it's flush there.
+    val sliverW = px(8f)
+    // Most of it is past the edge, so the goo keeps the part you see full and flush.
+    val past = px(24f)
+    val sliverWidth = past + sliverW * o.coerceIn(0f, 1f)
+    // The capsule: hidden, it sits just past the edge; it slides out as it emerges.
+    val capNear = margin - (1f - o) * (w + margin + px(10f))
+    val near = lerpF(-past, capNear, wv)
+    val capsule = side(near, lerpF(sliverWidth, w, wv), capTop, capBottom)
+    // What of it is on the screen.
+    val shown = Rect(max(capsule.left, 0f), capsule.top, min(capsule.right, stripW), capsule.bottom)
 
     val cardW = min(stripW - margin * 2f, px(360f))
     val cardH = min(
         screenH - px(112f),
-        px(16f + 44f + 12f + 44f + 10f) + VolStream.entries.size * px(50f) +
+        px(16f + 44f + 12f + 44f + 10f + 52f) + VolStream.entries.size * px(50f) +
             (if (apps.isNotEmpty()) px(30f) + apps.size * px(50f) else 0f) + px(30f),
     )
     val cardTop = (cy - cardH / 2f).coerceIn(px(56f), (screenH - px(56f) - cardH).coerceAtLeast(px(56f)))
     val card = side(margin, cardW, cardTop, cardTop + cardH)
     val body = lerpRect(capsule, card, e)
-    val radius = lerpF(w / 2f, px(30f), e.coerceIn(0f, 1f))
+    val radius = lerpF(capsule.width / 2f, px(30f), e.coerceIn(0f, 1f))
 
     // Buds come out of the capsule's ends, and go back into the sheet when it opens.
-    val budK = (b * (1f - e)).coerceIn(0f, 1.1f)
+    val budK = (b * (1f - e) * wc).coerceIn(0f, 1.1f)
     val budX = capsule.center.x
     val ringerCy = lerpF(capsule.top + d / 2f, capsule.top - gap - d / 2f, budK)
     val moreCy = lerpF(capsule.bottom - d / 2f, capsule.bottom + gap + d / 2f, budK)
@@ -237,19 +256,27 @@ fun VolumePanel(
     val labelLayout = remember(label) { measurer.measure(label, labelStyle) }
     val tellW = labelLayout.size.width + px(26f)
     val tellH = px(32f)
-    val t = tell.value.coerceIn(0f, 1.1f) * (1f - e) * o.coerceIn(0f, 1f)
-    val innerTop = capsule.top + px(5f)
-    val innerBottom = capsule.bottom - px(5f)
+    val t = tell.value.coerceIn(0f, 1.1f) * (1f - e) * o.coerceIn(0f, 1f) * wc
+    // The liquid sits inside: a thread of it in the sliver, a column in the capsule.
+    val ins = lerpF(px(2.2f), px(5f), wc)
+    val innerTop = capsule.top + ins
+    val innerBottom = capsule.bottom - ins
     // The liquid runs from the bottom to the top of the capsule proper; a boost tops it up above.
-    val fullY = capBottom - baseH + px(5f)
+    val fullY = capBottom - baseH + ins
     val liquidY = lerpF(innerBottom, fullY, fill.value.coerceIn(0f, 1f))
     val surfaceY = if (extraH > 0.5f) innerTop else liquidY
     val tellCy = if (innerBottom - innerTop > tellH) surfaceY.coerceIn(innerTop + tellH / 2f, innerBottom - tellH / 2f) else capsule.center.y
     val tellNear = lerpF(near + w / 2f - tellW / 2f, near + w + px(18f), t)
     val tellRect = side(tellNear, tellW, tellCy - tellH / 2f, tellCy + tellH / 2f)
 
-    // Touchable: the capsule and its buds, or the sheet.
-    val boundsKey = if (!visible) null else if (expanded) card else unionOf(side(margin, w, capTop, capBottom), Rect(Offset(budX, capTop - gap - d / 2f), d / 2f), Rect(Offset(budX, capBottom + gap + d / 2f), d / 2f))
+    // Touchable: the sliver (a finger's width of the edge), the capsule and its buds, or the sheet.
+    val budCx = side(margin, w, capTop, capBottom).center.x
+    val boundsKey = when {
+        !visible -> null
+        expanded -> card
+        opened -> unionOf(side(0f, margin + w, capTop, capBottom), Rect(Offset(budCx, capTop - gap - d / 2f), d / 2f), Rect(Offset(budCx, capBottom + gap + d / 2f), d / 2f))
+        else -> side(0f, px(30f), capTop - px(6f), capBottom + px(6f))
+    }
     val reportBounds by rememberUpdatedState(onBounds)
     LaunchedEffect(boundsKey) {
         reportBounds(boundsKey?.let { r -> AndroidRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()) })
@@ -258,7 +285,11 @@ fun VolumePanel(
     val goo = remember(density) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(px(9f)) else null }
     val rim = goo
     val edgeX = if (left) 0f else stripW
-    val lipW = px(22f) * sin(PI.toFloat() * o.coerceIn(0f, 1f)).coerceAtLeast(0f)
+    // Where the ink leaves the edge: a lip as the capsule comes out, or steps off the sliver.
+    val lipW = px(22f) * max(
+        sin(PI.toFloat() * o.coerceIn(0f, 1f)) * wc,
+        sin(PI.toFloat() * wc) * o.coerceIn(0f, 1f),
+    ).coerceAtLeast(0f)
     val lip = if (left) Rect(edgeX - px(4f), cy - baseH * 0.32f, edgeX + lipW, cy + baseH * 0.32f)
     else Rect(edgeX - lipW, cy - baseH * 0.32f, edgeX + px(4f), cy + baseH * 0.32f)
     if (o <= 0.001f && !visible) return
@@ -303,8 +334,8 @@ fun VolumePanel(
         // The liquid shows at full strength early on, rather than greying in with the capsule.
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e * 2.2f).coerceIn(0f, 1f) * ((o - 0.15f) / 0.35f).coerceIn(0f, 1f) }) {
             val inner = RoundRect(
-                Rect(capsule.left + px(5f), innerTop, capsule.right - px(5f), innerBottom),
-                CornerRadius((w - px(10f)) / 2f),
+                Rect(shown.left + ins, innerTop, shown.right - ins, innerBottom),
+                CornerRadius(((shown.width - ins * 2f) / 2f).coerceAtLeast(0f)),
             )
             val clip = Path().apply { addRoundRect(inner) }
             // The liquid's surface bulges with its speed: up as it rises, down as it falls.
@@ -334,8 +365,11 @@ fun VolumePanel(
             val iconSize = px(22f)
             val iconTop = innerBottom - px(14f) - iconSize
             val iconLeft = capsule.center.x - iconSize / 2f
-            clipRect(top = 0f, bottom = liquidY) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.on) }
-            clipRect(top = liquidY, bottom = size.height) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.ink) }
+            if (wc > 0.5f) {
+                val a = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
+                clipRect(top = 0f, bottom = liquidY) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.on.copy(alpha = a)) }
+                clipRect(top = liquidY, bottom = size.height) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.ink.copy(alpha = a)) }
+            }
 
             if (budK > 0.3f) {
                 val a = ((budK - 0.3f) / 0.6f).coerceIn(0f, 1f)
@@ -353,13 +387,26 @@ fun VolumePanel(
             }
         }
 
-        // ---- Touch, collapsed: drag or tap the capsule, tap the buds. ----
+        // ---- Touch, collapsed: press the sliver to open it (and keep going to drag the level),
+        // drag or tap the capsule, tap the buds. ----
         if (visible && !expanded) {
             val hapticsNow by rememberUpdatedState(prefs.haptics)
             val haptics = prefs.haptics
             val levelNow by rememberUpdatedState(level)
             val streamNow by rememberUpdatedState(stream)
+            val openedNow by rememberUpdatedState(opened)
+            val innerBottomNow by rememberUpdatedState(capBottom - px(5f))
+            val fullYNow by rememberUpdatedState(capBottom - baseH + px(5f))
+            val touchTop = capTop - px(4f)
+            val touchTopNow by rememberUpdatedState(touchTop)
+            fun openUp() {
+                if (openedNow) return
+                if (haptics) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                ui.opened.value = true
+            }
             fun setFrom(y: Float) {
+                val innerBottom = innerBottomNow
+                val fullY = fullYNow
                 val f = ((innerBottom - y) / (innerBottom - fullY)).coerceIn(0f, 1f)
                 val lv = levelNow
                 val index = lv.indexAt(f)
@@ -368,16 +415,18 @@ fun VolumePanel(
                 if (index != lv.index) VolumeModel.set(streamNow, index)
                 if (index != before && hapticsNow) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
             }
+            val pad = side(0f, margin + w, touchTop, capBottom + px(4f))
             Box(
                 Modifier
-                    .offset { IntOffset(capsule.left.roundToInt(), (capTop - px(4f)).roundToInt()) }
-                    .size(with(density) { w.toDp() }, with(density) { (capBottom - capTop + px(8f)).toDp() })
-                    .pointerInput(capTop, capBottom) {
+                    .offset { IntOffset(pad.left.roundToInt(), pad.top.roundToInt()) }
+                    .size(with(density) { pad.width.toDp() }, with(density) { pad.height.toDp() })
+                    .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onDragStart = { pos ->
                                 dragging = true
                                 touchTick++
-                                setFrom(capTop - px(4f) + pos.y)
+                                openUp()
+                                setFrom(touchTopNow + pos.y)
                             },
                             onDragEnd = {
                                 dragging = false
@@ -390,26 +439,33 @@ fun VolumePanel(
                             },
                         ) { change, _ ->
                             change.consume()
-                            setFrom(capTop - px(4f) + change.position.y)
+                            setFrom(touchTopNow + change.position.y)
                         }
                     }
-                    .pointerInput(capTop, capBottom) {
+                    .pointerInput(Unit) {
                         detectTapGestures { pos ->
                             touchTick++
-                            setFrom(capTop - px(4f) + pos.y)
-                            dragFraction = null
+                            // A tap on the sliver opens it; on the capsule, it sets the level there.
+                            if (!openedNow) {
+                                openUp()
+                            } else {
+                                setFrom(touchTopNow + pos.y)
+                                dragFraction = null
+                            }
                         }
                     },
             )
-            BudTouch(ringerBud, d, density.density) {
-                touchTick++
-                if (haptics) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                VolumeModel.setRinger(nextRinger(snap.ringer))
-            }
-            BudTouch(moreBud, d, density.density) {
-                touchTick++
-                if (haptics) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                ui.expanded.value = true
+            if (opened) {
+                BudTouch(ringerBud, d, density.density) {
+                    touchTick++
+                    if (haptics) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    VolumeModel.setRinger(nextRinger(snap.ringer))
+                }
+                BudTouch(moreBud, d, density.density) {
+                    touchTick++
+                    if (haptics) view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    ui.expanded.value = true
+                }
             }
         }
 
@@ -429,6 +485,7 @@ fun VolumePanel(
                     onTouch = { touchTick++ },
                     onDone = {
                         ui.expanded.value = false
+                        ui.opened.value = false
                         ui.visible.value = false
                     },
                     openApp = openApp,

@@ -47,7 +47,12 @@ class IslandAccessibilityService : AccessibilityService() {
                 h.sync(prefs.enabled)
                 // Android's own pop-ups step aside while the island shows notifications.
                 val hide = prefs.wantsPopupsHidden
-                withContext(Dispatchers.IO) { PopupGuard.sync(this@IslandAccessibilityService, hide) }
+                // And its clock and icons, while the island carries the time and battery.
+                val icons = prefs.wantsStatusIconsHidden
+                withContext(Dispatchers.IO) {
+                    PopupGuard.sync(this@IslandAccessibilityService, hide)
+                    StatusIcons.sync(this@IslandAccessibilityService, icons)
+                }
             }
         }
     }
@@ -73,7 +78,12 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private fun teardown() {
         // Without the island, Android's pop-ups come back.
-        if (scope != null) Thread { PopupGuard.sync(applicationContext, false) }.start()
+        if (scope != null) {
+            Thread {
+                PopupGuard.sync(applicationContext, false)
+                StatusIcons.sync(applicationContext, false)
+            }.start()
+        }
         scope?.cancel()
         scope = null
         battery?.stop()

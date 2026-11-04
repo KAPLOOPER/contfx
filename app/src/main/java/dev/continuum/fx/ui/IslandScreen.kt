@@ -213,34 +213,14 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
 
         PopupsSection(state, actions)
 
-        SectionLabel("Always on", index = 3)
+        SectionLabel("In the bar", index = 3)
         Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
-            ToggleRow("Time", "With nothing else on, the date as well", prefs.alwaysTime) {
+            ToggleRow("Time", "A drop at the left of the status bar; tap it for the date", prefs.alwaysTime) {
                 actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
             }
-            if (prefs.alwaysTime) {
-                ChoiceRow(Modifier.padding(bottom = 10.dp)) {
-                    listOf(
-                        IslandPrefs.TIME_OUTSIDE to "Left of the art",
-                        IslandPrefs.TIME_INSIDE to "Right of the art",
-                        IslandPrefs.TIME_SPLIT to "Around the camera",
-                    ).forEach { (spot, label) ->
-                        Chip(label, prefs.timeSpot == spot, onClick = { actions.updateIsland { it.copy(timeSpot = spot) } }, on = Surface.Card)
-                    }
-                }
-            }
-            ToggleRow(
-                "Battery",
-                if (prefs.batteryRing) "A ring round the camera: green charging, red low"
-                else "An ink battery on the far right",
-                prefs.alwaysBattery,
-            ) {
+            ToggleRow("Battery", "A drop at the right, as full as the battery; ink runs into it while charging", prefs.alwaysBattery) {
                 actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
-            }
-            ChoiceRow(Modifier.padding(bottom = 10.dp)) {
-                Chip("Ring round the camera", prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = true) } }, on = Surface.Card)
-                Chip("Ink battery", !prefs.batteryRing, onClick = { actions.updateIsland { it.copy(batteryRing = false) } }, on = Surface.Card)
             }
         }
 
@@ -248,11 +228,11 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         Gap(20.dp)
 
         MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
-            "The island is one piece of ink that starts as your camera. It stretches into a pill for what's live, " +
-                "pinches off a second bubble when two things are running, and drips alerts down from the camera. " +
-                "Hold it and drag down to pull a drop out on a stretchy neck: let go early and it springs back, " +
-                "pull past the snap and it tears free as your recent notifications. Swipe a notification sideways and it " +
-                "leans away on a neck that thins and snaps; swipe up to send it back. Nothing pops in or out: ink only separates and merges.",
+            "The island is the status bar, and the top edge of the screen is where its ink comes from. The time, the camera and the " +
+                "battery hang from it as drops, and whatever starts (a song, a call, a timer) hangs as its own drop beside the camera. " +
+                "News spreads the camera's drop along the edge into one line: who, the camera, then what. Nothing hangs below the bar " +
+                "unless you ask: tap a drop and it falls and lands as its card; push it up and it's drawn back into the edge. Hold the " +
+                "camera and drag down to pull out your recent notifications. Ink never appears or vanishes: it leaves the edge and returns to it.",
             15.sp, p.sub,
         ) }
     }
@@ -329,20 +309,12 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
             },
             frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX),
         ) { t -> place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) } }
-        Txt("Grow or shrink this until the ink, and the battery ring, hug your lens.", 13.sp, p.sub)
+        Txt("Grow or shrink this until the camera's drop hugs your lens.", 13.sp, p.sub)
         Gap(8.dp)
         SliderField("Size", pct(prefs.scale), frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX)) { t ->
             place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
         }
-        SliderField("Height", pct(prefs.height), frac(prefs.height, IslandSettings.HEIGHT_MIN, IslandSettings.HEIGHT_MAX)) { t ->
-            place { it.copy(height = value(t, IslandSettings.HEIGHT_MIN, IslandSettings.HEIGHT_MAX, 0.01f, 1f)) }
-        }
-        SliderField(
-            "Width",
-            if (prefs.width == 0f) "As wide as it needs" else "+${dpText(prefs.width)} each side",
-            frac(prefs.width, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX),
-        ) { t -> place { it.copy(width = value(t, IslandSettings.WIDTH_MIN, IslandSettings.WIDTH_MAX, 1f, 0f)) } }
-        Txt("Size scales everything together; height and width shape the pill around what's in it.", 13.sp, p.sub)
+        Txt("Size scales every drop together.", 13.sp, p.sub)
         }
     }
 }
@@ -354,24 +326,29 @@ private fun PopupsSection(state: UiState, actions: AppActions) {
     val prefs = state.island
     val priv = state.privileges
     val context = LocalContext.current
-    SectionLabel("Android's pop-ups", index = 2)
+    SectionLabel("Android's own", index = 2)
     Gap(4.dp)
     Column(Modifier.fillMaxWidth()) {
         ToggleRow(
-            "Only the island",
+            "Only the island's pop-ups",
             "No banners while the island shows them; the shade keeps everything",
             prefs.hidePopups,
         ) { actions.updateIsland { it.copy(hidePopups = !it.hidePopups) } }
+        ToggleRow(
+            "Only the island's status bar",
+            "Android's clock, battery and icons step aside while the island shows the time and battery",
+            prefs.hideStatusIcons,
+        ) { actions.updateIsland { it.copy(hideStatusIcons = !it.hideStatusIcons) } }
         if (prefs.hidePopups && !prefs.notifications) {
             Txt(
                 "Turn on Notifications above too, or nothing will show new messages.",
                 14.sp, p.sub, modifier = Modifier.padding(bottom = 10.dp),
             )
         }
-        if (prefs.hidePopups && !priv.popups) {
+        if ((prefs.hidePopups || prefs.hideStatusIcons) && !priv.popups) {
             Column(Modifier.padding(top = 4.dp, bottom = 12.dp)) {
                 Txt(
-                    "Android needs one more permission before the island can switch its banners off. Grant it once:",
+                    "Android needs one more permission before the island can step its own pieces aside. Grant it once:",
                     14.sp, p.text,
                 )
                 Gap(10.dp)

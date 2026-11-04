@@ -358,7 +358,11 @@ class MainActivity : ComponentActivity(), AppActions {
             if (privileges.value.popups) {
                 val prefs = IslandSettings.state.value
                 val hide = prefs.wantsPopupsHidden && IslandRepository.hostActive.value
-                withContext(Dispatchers.IO) { PopupGuard.sync(this@MainActivity, hide) }
+                val icons = prefs.wantsStatusIconsHidden && IslandRepository.hostActive.value
+                withContext(Dispatchers.IO) {
+                    PopupGuard.sync(this@MainActivity, hide)
+                    dev.continuum.fx.island.StatusIcons.sync(this@MainActivity, icons)
+                }
             }
             message.value = when {
                 privileges.value.popups -> "Done. Only the island shows new notifications now."

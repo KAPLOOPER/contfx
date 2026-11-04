@@ -542,10 +542,10 @@ data class IslandPrefs(
     val battery: Boolean = true,
     /** Drag the island down to pull a drop of recent notifications out of it. */
     val pull: Boolean = true,
-    /** Keep the time in the island at all times, beside whatever else is live. */
-    val alwaysTime: Boolean = false,
-    /** Keep the battery in the island at all times, beside whatever else is live. */
-    val alwaysBattery: Boolean = false,
+    /** The time, a drop at the left of the status bar. */
+    val alwaysTime: Boolean = true,
+    /** The battery, a drop at the right of the status bar as full as it is. */
+    val alwaysBattery: Boolean = true,
     /** Where the always-on time sits: [TIME_OUTSIDE], [TIME_INSIDE] or [TIME_SPLIT]. */
     val timeSpot: String = TIME_OUTSIDE,
     /** Switch Android's own notification pop-ups off while the island shows notifications. */
@@ -566,6 +566,8 @@ data class IslandPrefs(
     val batteryRing: Boolean = true,
     /** One-time codes: shown large with Copy, and offered to Continuum Keyboard. */
     val codes: Boolean = true,
+    /** Android's own clock, battery and icons step aside while the island shows the time and battery. */
+    val hideStatusIcons: Boolean = true,
 
     // ---- Placement: fitting the island to the camera, or moving it ----
 
@@ -592,6 +594,9 @@ data class IslandPrefs(
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
 
+    /** Whether Android's own status icons should step aside right now (with the island running). */
+    val wantsStatusIconsHidden: Boolean get() = enabled && hideStatusIcons && (alwaysTime || alwaysBattery)
+
     companion object {
         /** Left of the artwork, at the far end of the island. */
         const val TIME_OUTSIDE = "outside"
@@ -611,6 +616,11 @@ object IslandSettings {
     fun init(context: Context) {
         appContext = context.applicationContext
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        // The island became the status bar: the time and battery are part of it now, so they
+        // come on once for everyone, and can be switched off again after.
+        if (!p.getBoolean("drops", false)) {
+            p.edit().putBoolean("drops", true).putBoolean("alwaysTime", true).putBoolean("alwaysBattery", true).apply()
+        }
         _state.value = IslandPrefs(
             enabled = p.getBoolean("enabled", true),
             media = p.getBoolean("media", true),
@@ -619,8 +629,8 @@ object IslandSettings {
             notifications = p.getBoolean("notifications", true),
             battery = p.getBoolean("battery", true),
             pull = p.getBoolean("pull", true),
-            alwaysTime = p.getBoolean("alwaysTime", false),
-            alwaysBattery = p.getBoolean("alwaysBattery", false),
+            alwaysTime = p.getBoolean("alwaysTime", true),
+            alwaysBattery = p.getBoolean("alwaysBattery", true),
             timeSpot = p.getString("timeSpot", null) ?: IslandPrefs.TIME_OUTSIDE,
             hidePopups = p.getBoolean("hidePopups", false),
             alarms = p.getBoolean("alarms", true),
@@ -631,6 +641,7 @@ object IslandSettings {
             headphones = p.getBoolean("headphones", true),
             batteryRing = p.getBoolean("batteryRing", true),
             codes = p.getBoolean("codes", true),
+            hideStatusIcons = p.getBoolean("hideStatusIcons", true),
             offsetX = p.getFloat("offsetX", 0f).coerceIn(PLACE_X_MIN, PLACE_X_MAX),
             offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
             cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),
@@ -676,6 +687,7 @@ object IslandSettings {
             ?.putBoolean("headphones", next.headphones)
             ?.putBoolean("batteryRing", next.batteryRing)
             ?.putBoolean("codes", next.codes)
+            ?.putBoolean("hideStatusIcons", next.hideStatusIcons)
             ?.putFloat("offsetX", next.offsetX)
             ?.putFloat("offsetY", next.offsetY)
             ?.putFloat("cameraSize", next.cameraSize)

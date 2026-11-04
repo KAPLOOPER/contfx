@@ -56,7 +56,7 @@ internal object InkColors {
  */
 @RequiresApi(31)
 internal object Goo {
-    fun effect(blurPx: Float): RenderEffect {
+    fun effect(blurPx: Float, edge: Shader.TileMode = Shader.TileMode.DECAL): RenderEffect {
         val threshold = ColorMatrix(
             floatArrayOf(
                 1f, 0f, 0f, 0f, 0f,
@@ -65,7 +65,7 @@ internal object Goo {
                 0f, 0f, 0f, 22f, -10f * 255f,
             ),
         )
-        val blur = android.graphics.RenderEffect.createBlurEffect(blurPx, blurPx, Shader.TileMode.DECAL)
+        val blur = android.graphics.RenderEffect.createBlurEffect(blurPx, blurPx, edge)
         val sharpen = android.graphics.RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(threshold))
         return android.graphics.RenderEffect.createChainEffect(sharpen, blur).asComposeRenderEffect()
     }

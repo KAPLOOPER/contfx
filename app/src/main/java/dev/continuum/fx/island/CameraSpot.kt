@@ -24,6 +24,8 @@ data class CameraSpot(
     /** False when no cutout was found and the spot is a best guess at the top centre. */
     val detected: Boolean,
     val landscape: Boolean,
+    /** The status bar's height, which the island's ink keeps within. */
+    val bar: Float = 0f,
 )
 
 object CameraLocator {
@@ -34,6 +36,9 @@ object CameraLocator {
         val (w, h) = screenSize(wm)
         val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || w > h
 
+        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        val bar = if (id > 0) context.resources.getDimensionPixelSize(id).toFloat() else 24f * density
+
         val rect = topCutout(wm)?.let { cutout ->
             cutout.boundingRects
                 .filter { it.top <= (4 * density) && it.width() < w / 2 && !it.isEmpty }
@@ -41,13 +46,11 @@ object CameraLocator {
         }
         if (rect != null) {
             val r = (min(rect.width(), rect.height()) / 2f).coerceIn(9f * density, 22f * density)
-            return CameraSpot(rect.exactCenterX(), rect.exactCenterY(), r, w, h, detected = true, landscape = landscape)
+            return CameraSpot(rect.exactCenterX(), rect.exactCenterY(), r, w, h, detected = true, landscape = landscape, bar = bar)
         }
 
-        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
-        val bar = if (id > 0) context.resources.getDimensionPixelSize(id).toFloat() else 24f * density
         val r = 10f * density
-        return CameraSpot(w / 2f, (bar / 2f).coerceAtLeast(r + 2f * density), r, w, h, detected = false, landscape = landscape)
+        return CameraSpot(w / 2f, (bar / 2f).coerceAtLeast(r + 2f * density), r, w, h, detected = false, landscape = landscape, bar = bar)
     }
 
     private fun screenSize(wm: WindowManager): Pair<Int, Int> {

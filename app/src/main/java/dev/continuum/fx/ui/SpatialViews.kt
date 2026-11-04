@@ -72,7 +72,7 @@ import dev.continuum.fx.dsp.SpeakerRole
 import dev.continuum.fx.island.ui.InkFeel
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.Libron
@@ -230,13 +230,13 @@ private fun SetupEditor(s: SpatialSetup) {
         Txt("${sp.role.label} · ${angleText(sp.angle)} · ${"%.1f".format(sp.distance)} m", 17.sp, p.text)
         fun change(next: Speaker) = set { it.copy(speakers = place(it.speakers, next, mirror)) }
         val hSpan = SpatialSetup.MAX_HEIGHT - SpatialSetup.MIN_HEIGHT
-        SliderField("Height", if (sp.height.roundToInt() == 0) "ear level" else "${sp.height.roundToInt()}° ${if (sp.height > 0) "up" else "down"}", (sp.height - SpatialSetup.MIN_HEIGHT) / hSpan) { v ->
+        SliderField("Height", if (sp.height.roundToInt() == 0) "ear level" else "${sp.height.roundToInt()}° ${if (sp.height > 0) "up" else "down"}", (sp.height - SpatialSetup.MIN_HEIGHT) / hSpan, hear = "Raises or lowers this speaker around your head.") { v ->
             change(sp.copy(height = ((SpatialSetup.MIN_HEIGHT + v * hSpan) / 5f).roundToInt() * 5f))
         }
-        SliderField("Distance", "%.1f m".format(sp.distance), distanceToFraction(sp.distance)) { v ->
+        SliderField("Distance", "%.1f m".format(sp.distance), distanceToFraction(sp.distance), hear = "Further away sounds softer and more of the room.") { v ->
             change(sp.copy(distance = (fractionToDistance(v) * 10).roundToInt() / 10f))
         }
-        SliderField("Level", dbText(sp.levelDb), (sp.levelDb + 12f) / 18f) { v ->
+        SliderField("Level", dbText(sp.levelDb), (sp.levelDb + 12f) / 18f, hear = "This speaker louder or quieter than the rest.") { v ->
             change(sp.copy(levelDb = ((-12f + v * 18f) * 2).roundToInt() / 2f))
         }
     }
@@ -257,7 +257,7 @@ private fun SetupEditor(s: SpatialSetup) {
 
     Spacer(Modifier.size(14.dp))
     Txt("Width", 15.sp, p.sub)
-    SliderField("Space kept wide", "${(s.space * 100).roundToInt()}%", s.space) { v -> set { it.copy(space = (v * 20).roundToInt() / 20f) } }
+    SliderField("Space kept wide", "${(s.space * 100).roundToInt()}%", s.space, hear = "Keeps the mix's own width as well as the room's.") { v -> set { it.copy(space = (v * 20).roundToInt() / 20f) } }
     Txt(
         "Speakers in front of you narrow a mix: each ear hears both. This much of its space (reverb, ambience, everything that differs between the channels) goes straight to your ears instead, as wide as plain headphones, while voices and instruments still come from the speakers.",
         13.sp, p.sub,
@@ -280,11 +280,11 @@ private fun SetupEditor(s: SpatialSetup) {
         13.sp, p.sub,
     )
     if (s.room != RoomKind.None) {
-        SliderField("Reflections", "${(s.reflections * 100).roundToInt()}%", s.reflections) { v -> set { it.copy(reflections = (v * 20).roundToInt() / 20f) } }
+        SliderField("Reflections", "${(s.reflections * 100).roundToInt()}%", s.reflections, hear = "More of the walls: the sound moves out of your head.") { v -> set { it.copy(reflections = (v * 20).roundToInt() / 20f) } }
     }
-    SliderField("Tail", s.tailDb?.let { dbText(it) } ?: "Off", s.tail) { v -> set { it.copy(tail = (v * 20).roundToInt() / 20f) } }
+    SliderField("Tail", s.tailDb?.let { dbText(it) } ?: "Off", s.tail, hear = "More of the room ringing on after each sound.") { v -> set { it.copy(tail = (v * 20).roundToInt() / 20f) } }
     if (s.tailDb != null) {
-        SliderField("Decay", "%.2f s".format(s.decay), (s.decay - 0.1f) / 1.4f) { v -> set { it.copy(decay = ((0.1f + v * 1.4f) * 20).roundToInt() / 20f) } }
+        SliderField("Decay", "%.2f s".format(s.decay), (s.decay - 0.1f) / 1.4f, hear = "A bigger room: the ring lasts longer.") { v -> set { it.copy(decay = ((0.1f + v * 1.4f) * 20).roundToInt() / 20f) } }
     }
     Txt("The tail is the room's echo after the reflections. Leave it low for a dry, close sound.", 13.sp, p.sub)
 
@@ -293,9 +293,9 @@ private fun SetupEditor(s: SpatialSetup) {
         if (s.layout != SpatialLayout.Stereo) {
             Spacer(Modifier.size(14.dp))
             Txt("Mix", 15.sp, p.sub)
-            SliderField("Front width", "${(s.width * 100).roundToInt()}%", (s.width - 0.5f)) { v -> set { it.copy(width = ((0.5f + v) * 20).roundToInt() / 20f) } }
-            SliderField("Centre", dbText(s.centreDb), (s.centreDb + 12f) / 21f) { v -> set { it.copy(centreDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
-            SliderField("Surrounds", dbText(s.surroundDb), (s.surroundDb + 12f) / 21f) { v -> set { it.copy(surroundDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
+            SliderField("Front width", "${(s.width * 100).roundToInt()}%", (s.width - 0.5f), hear = "The front speakers spread further apart.") { v -> set { it.copy(width = ((0.5f + v) * 20).roundToInt() / 20f) } }
+            SliderField("Centre", dbText(s.centreDb), (s.centreDb + 12f) / 21f, hear = "Voices in films come forward.") { v -> set { it.copy(centreDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
+            SliderField("Surrounds", dbText(s.surroundDb), (s.surroundDb + 12f) / 21f, hear = "More of the space from around and behind you.") { v -> set { it.copy(surroundDb = ((-12f + v * 21f) * 2).roundToInt() / 2f) } }
             Txt("Centre lifts voices in films; surrounds set how much of the space comes from around and behind.", 13.sp, p.sub)
         }
 
@@ -512,7 +512,7 @@ private fun AppLinks(lib: SpatialLibrary, id: String, what: String) {
                             13.sp, p.sub, maxLines = 1,
                         )
                     }
-                    OnOffDot(on, R.drawable.ic_check, "$name: $what", toggle)
+                    InkSwitch(on, "$name: $what", toggle)
                 }
             }
         }

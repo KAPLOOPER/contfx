@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -48,6 +49,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -113,7 +115,7 @@ import dev.continuum.fx.ui.components.choice
 import dev.continuum.fx.ui.components.EqGraph
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.InkSlider
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
@@ -268,7 +270,19 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         }
     }
 
-    CompositionLocalProvider(LocalSeeds provides seeds) {
+    // How far down a page is read before its title has shrunk all it will.
+    val collapsePx = with(androidx.compose.ui.platform.LocalDensity.current) { 120.dp.toPx() }
+    val stepPad = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.roundToPx() }
+
+    // Where each effect sits on its page, so the dock can step through the ones that are on.
+    val effectSpots = remember { EffectSpots() }
+    effectSpots.scroll = scrolls.getValue(Section.Effects)
+    val stepEffects: () -> Unit = {
+        val keys = activeEffects(FxStore.state.value, dev.continuum.fx.audio.SpatialStore.state.value.enabled)
+        effectSpots.next(keys, stepPad)?.let { y -> scope.launch { scrolls.getValue(Section.Effects).animateScrollTo(y, Motion.flow()) } }
+    }
+
+    CompositionLocalProvider(LocalSeeds provides seeds, LocalEffectSpots provides effectSpots) {
     Box(Modifier.fillMaxSize().background(p.ground)) {
         Column(Modifier.fillMaxSize()) {
             PivotHeader(
@@ -283,6 +297,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     }
                 },
                 modifier = Modifier.statusBarsPadding().padding(top = 22.dp),
+                collapseOf = { i -> scrolls.getValue(sections[i]).value / collapsePx },
             )
             Box(
                 Modifier
@@ -337,6 +352,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             translationX = shift * size.width * 0.55f
                             alpha = (1f - abs(shift) * 1.3f).coerceIn(0f, 1f)
                         }
+                        .onGloballyPositioned { if (state.section == Section.Effects) effectSpots.viewTop = it.positionInRoot().y }
                         .verticalScroll(scrolls.getValue(state.section))
                         // On a tablet or an open foldable, a comfortable reading width, kept to
                         // the left edge the titles start from.
@@ -347,8 +363,8 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 ) {
                     UpdateCard(
                         update = state.update,
-                        title = { "Build ${it.build} is ready" },
-                        subtitle = "Your settings and permissions stay as they are.",
+                        title = { "Continuum Kit build ${it.build}" },
+                        subtitle = "Settings and permissions stay.",
                         actionLabel = "Update now",
                         installingNote = "Installing. Continuum Kit closes for a moment while it updates, then it's back as it was.",
                         onAction = actions::installUpdate,
@@ -389,7 +405,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
 
         SeedOverlay(seeds)
         DockMessage(state.message, dockRect, actions::dismissMessage)
-        Dock(state, actions, Modifier.align(Alignment.BottomEnd), tucked = dockTucked && !state.setupOpen, onUntuck = { dockTucked = false }) { dockRect.value = it }
+        Dock(state, actions, Modifier.align(Alignment.BottomEnd), tucked = dockTucked && !state.setupOpen, onUntuck = { dockTucked = false }, onStepEffects = stepEffects) { dockRect.value = it }
     }
     }
 }
@@ -400,7 +416,6 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     val library = state.library
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
-    var adding by rememberSaveable { mutableStateOf(false) }
     var fitting by rememberSaveable { mutableStateOf(false) }
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var linksOpen by rememberSaveable { mutableStateOf(false) }
@@ -415,17 +430,9 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         EngineStatus.comparing.value = on
     }
     Column {
-        // The EQ you're listening through, set large, with all of them as drops beneath it.
-        EqHero(library, store, onAdd = { adding = !adding })
+        // The EQ you're listening through, set large; tap its name for all of them.
+        EqHero(library, store, actions, fitting = fitting, onFit = { fitting = !fitting })
         Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
-            if (adding) {
-                Gap(6.dp)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    PillButton("Import", { adding = false; actions.importFile() }, icon = R.drawable.ic_import)
-                    PillButton("Paste", { adding = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
-                    PillButton(if (fitting) "Done fitting" else "Fit to a target", { fitting = !fitting }, icon = R.drawable.ic_tune)
-                }
-            }
             if (fitting) {
                 Gap(12.dp)
                 FitCard(actions)
@@ -487,7 +494,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                             .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Txt("Filters", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                        OpensName("Filters", filtersOpen, p.text, Modifier.weight(1f))
                         ValueNote(if (profile.bands.isEmpty()) "none" else "${profile.bands.size}")
                     }
                 },
@@ -538,7 +545,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                         .clickable(interactionSource = linksSource, indication = null, role = Role.Button) { linksOpen = !linksOpen },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Txt("Comes on by itself", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                    OpensName("Comes on by itself", linksOpen, p.text, Modifier.weight(1f))
                     val parts = listOfNotNull(
                         if (linkedHere) output?.name else null,
                         when (appCount) {
@@ -583,18 +590,20 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
 }
 
 /**
- * The EQ you're listening through, set large; swipe it for the next. Under it, every EQ as a
- * drop: "Off" a ring, the one you're on the ink pill, and + for a new one.
+ * The EQ you're listening through, set large; swipe it for the next. Its name ends in a chevron:
+ * tap it and every EQ drops down under it, each with a small drawing of its curve, "Off" at the
+ * top, and the ways to bring in a new one at the bottom.
  */
 @OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
-private fun EqHero(library: Library, store: ProfileStore, onAdd: () -> Unit) {
+private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, fitting: Boolean, onFit: () -> Unit) {
     val p = LocalPalette.current
     val view = LocalView.current
     val profiles = library.profiles
     val eqOn = library.eqEnabled
     val index = if (!eqOn) 0 else 1 + profiles.indexOfFirst { it.id == library.activeId }.coerceAtLeast(0)
     var dir by remember { mutableIntStateOf(1) }
+    var listOpen by rememberSaveable { mutableStateOf(false) }
     fun choose(i: Int) {
         if (i == index || i < 0 || i > profiles.size) return
         dir = if (i > index) 1 else -1
@@ -610,96 +619,108 @@ private fun EqHero(library: Library, store: ProfileStore, onAdd: () -> Unit) {
     val latestIndex by rememberUpdatedState(index)
     Kicker(if (eqOn) "Listening through" else "No EQ", if (eqOn) "$index of ${profiles.size}" else "off")
     Gap(6.dp)
-    androidx.compose.animation.AnimatedContent(
-        targetState = if (eqOn) library.active.name else "Off",
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                var dx = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { dx = 0f },
-                    onDragEnd = {
-                        val threshold = 36.dp.toPx()
-                        if (dx < -threshold) latestChoose(latestIndex + 1) else if (dx > threshold) latestChoose(latestIndex - 1)
-                    },
-                ) { change, amount ->
-                    change.consume()
-                    dx += amount
-                }
-            },
-        transitionSpec = {
-            val d = dir
-            (androidx.compose.animation.slideInHorizontally(Motion.flow()) { w -> d * w / 6 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))) togetherWith
-                (androidx.compose.animation.slideOutHorizontally(Motion.flow()) { w -> -d * w / 6 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)))
-        },
-        label = "eqName",
-    ) { name ->
-        HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 34.sp)
-    }
-    Gap(12.dp)
-    EqDrops(count = profiles.size, index = index, onPick = { latestChoose(it) }, onAdd = onAdd)
-}
-
-/** Every EQ as a drop in a row: "Off" a ring, the chosen one the ink pill, and + at the end. */
-@Composable
-private fun EqDrops(count: Int, index: Int, onPick: (Int) -> Unit, onAdd: () -> Unit) {
-    val p = LocalPalette.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    BoxWithConstraints(Modifier.fillMaxWidth().height(28.dp)) {
-        val n = count + 1
-        val maxStep = with(density) { 26.dp.toPx() }
-        val step = minOf(maxStep, constraints.maxWidth.toFloat() / (n + 1.5f))
-        val pad = with(density) { 7.dp.toPx() }
-        fun xOf(i: Int) = pad + i * step
-        val pillW = with(density) { 22.dp.toPx() }.coerceAtMost(step * 0.9f)
-        val left = remember { androidx.compose.animation.core.Animatable(xOf(index)) }
-        val right = remember { androidx.compose.animation.core.Animatable(xOf(index) + pillW) }
-        val first = remember { booleanArrayOf(true) }
-        LaunchedEffect(index, step) {
-            val tl = xOf(index) - pillW / 2f
-            val tr = tl + pillW
-            if (first[0]) {
-                first[0] = false
-                left.snapTo(tl)
-                right.snapTo(tr)
-                return@LaunchedEffect
-            }
-            val toRight = tl > left.value
-            val lead = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.843f, stiffness = 620f)
-            val trail = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.72f, stiffness = 130f)
-            launch { left.animateTo(tl, if (toRight) trail else lead) }
-            launch { right.animateTo(tr, if (toRight) lead else trail) }
-        }
-        val pick by rememberUpdatedState(onPick)
-        val add by rememberUpdatedState(onAdd)
-        Canvas(
+    val source = remember { MutableInteractionSource() }
+    InkSection(listOpen, header = {
+        Row(
             Modifier
-                .matchParentSize()
-                .pointerInput(n, step) {
-                    detectTapGestures { o ->
-                        val i = ((o.x - pad) / step).roundToInt()
-                        when {
-                            i in 0 until n -> pick(i)
-                            i == n -> add()
-                        }
+                .fillMaxWidth()
+                .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = if (listOpen) "Close the list" else "Show every EQ") {
+                    listOpen = !listOpen
+                }
+                .pointerInput(Unit) {
+                    var dx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dx = 0f },
+                        onDragEnd = {
+                            val threshold = 36.dp.toPx()
+                            if (dx < -threshold) latestChoose(latestIndex + 1) else if (dx > threshold) latestChoose(latestIndex - 1)
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        dx += amount
                     }
                 },
+            verticalAlignment = Alignment.Top,
         ) {
-            val cy = size.height / 2f
-            val r = 3.5.dp.toPx()
-            // "Off" is a ring; each EQ a drop; + adds one.
-            drawCircle(p.quiet, r - 0.7.dp.toPx(), androidx.compose.ui.geometry.Offset(xOf(0), cy), style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
-            for (i in 1 until n) drawCircle(p.quiet, r, androidx.compose.ui.geometry.Offset(xOf(i), cy))
-            val px = xOf(n)
-            val arm = 4.5.dp.toPx()
-            drawLine(p.quiet, androidx.compose.ui.geometry.Offset(px - arm, cy), androidx.compose.ui.geometry.Offset(px + arm, cy), strokeWidth = 1.5.dp.toPx())
-            drawLine(p.quiet, androidx.compose.ui.geometry.Offset(px, cy - arm), androidx.compose.ui.geometry.Offset(px, cy + arm), strokeWidth = 1.5.dp.toPx())
-            // The chosen one: the ink pill, flowing from drop to drop.
-            val h = 9.dp.toPx()
-            val l = minOf(left.value, right.value - h)
-            val w = maxOf(right.value, left.value + h) - l
-            drawRoundRect(p.primary, androidx.compose.ui.geometry.Offset(l, cy - h / 2f), androidx.compose.ui.geometry.Size(w, h), androidx.compose.ui.geometry.CornerRadius(h / 2f))
+            androidx.compose.animation.AnimatedContent(
+                targetState = if (eqOn) library.active.name else "Off",
+                modifier = Modifier.weight(1f, fill = false),
+                transitionSpec = {
+                    val d = dir
+                    (androidx.compose.animation.slideInHorizontally(Motion.flow()) { w -> d * w / 6 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))) togetherWith
+                        (androidx.compose.animation.slideOutHorizontally(Motion.flow()) { w -> -d * w / 6 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140)))
+                },
+                label = "eqName",
+            ) { name ->
+                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 34.sp)
+            }
+            Box(Modifier.padding(start = 8.dp, top = 12.dp)) { Chevron(listOpen, p.quiet, 20.dp) }
         }
+    }) {
+        Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
+            EqListRow("Off", null, chosen = !eqOn) {
+                latestChoose(0)
+                listOpen = false
+            }
+            profiles.forEachIndexed { i, pr ->
+                androidx.compose.runtime.key(pr.id) {
+                    EqListRow(pr.name, pr, chosen = eqOn && pr.id == library.activeId) {
+                        latestChoose(i + 1)
+                        listOpen = false
+                    }
+                }
+            }
+            Gap(6.dp)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                PillButton("Import", { listOpen = false; actions.importFile() }, icon = R.drawable.ic_import)
+                PillButton("Paste", { listOpen = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
+                PillButton(if (fitting) "Done fitting" else "Fit to a target", { listOpen = false; onFit() }, icon = R.drawable.ic_tune)
+            }
+        }
+    }
+}
+
+/** One EQ in the list: a small drawing of its curve, its name, and "now" on the one playing. */
+@Composable
+private fun EqListRow(name: String, profile: dev.continuum.fx.dsp.EqProfile?, chosen: Boolean, onPick: () -> Unit) {
+    val p = LocalPalette.current
+    val source = remember { MutableInteractionSource() }
+    val curve = remember(profile) { profile?.let { EqResponse.curve(it, 48) } }
+    val color = if (chosen) p.text else p.sub
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clickable(interactionSource = source, indication = null, role = Role.RadioButton, onClick = onPick)
+            .semantics { contentDescription = if (chosen) "$name, playing now" else name },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Canvas(Modifier.size(width = 44.dp, height = 22.dp)) {
+            val mid = size.height / 2f
+            val line = 1.7.dp.toPx()
+            if (curve == null || curve.isEmpty()) {
+                // Off: the sound as it is, flat.
+                drawLine(color, androidx.compose.ui.geometry.Offset(0f, mid), androidx.compose.ui.geometry.Offset(size.width, mid), strokeWidth = line, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                return@Canvas
+            }
+            // Scaled to its own biggest move (at least 6 dB), so a gentle EQ still shows its shape.
+            val most = maxOf(6.0, curve.maxOf { abs(it) })
+            val k = (size.height / 2f - line) / most.toFloat()
+            drawLine(p.line, androidx.compose.ui.geometry.Offset(0f, mid), androidx.compose.ui.geometry.Offset(size.width, mid), strokeWidth = 1.dp.toPx())
+            val path = androidx.compose.ui.graphics.Path()
+            curve.forEachIndexed { i, db ->
+                val x = size.width * i / (curve.size - 1).toFloat()
+                val y = mid - db.toFloat() * k
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(
+                path, color,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(line, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round),
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Txt(name, 17.sp, color, bold = chosen, maxLines = 1, modifier = Modifier.weight(1f))
+        if (chosen) Note("Now", p.sub, Modifier.padding(start = 12.dp))
     }
 }
 
@@ -710,7 +731,8 @@ private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) ->
     val span = EqLimits.MAX_PREAMP - EqLimits.MIN_PREAMP
     val auto = kotlin.math.abs(preampDb - suggested) < 0.05
     val source = remember { MutableInteractionSource() }
-    Column(Modifier.fillMaxWidth()) {
+    var held by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Txt("Preamp", 17.sp, p.text, maxLines = 1)
             // Set by hand, the word offers to hand it back.
@@ -729,7 +751,15 @@ private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) ->
             value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
             onChange = { t -> onPreamp(Fmt.round1(EqLimits.MIN_PREAMP + t * span)) },
             label = Fmt.db(preampDb),
+            onHeld = { h: Boolean -> held = h },
         )
+        if (held) {
+            Txt(
+                if (preampDb > suggested + 0.05) "Louder, but the EQ's boosts may clip: auto keeps them clean."
+                else "Everything quieter together, leaving room for the EQ's boosts.",
+                14.sp, p.text,
+            )
+        }
     }
 }
 
@@ -766,7 +796,7 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
                 14.sp, p.sub, maxLines = 1,
             )
         }
-        OnOffDot(linked, R.drawable.ic_check, "Link ${profile.name} to ${device.name}") { onLink(!linked) }
+        InkSwitch(linked, "Link ${profile.name} to ${device.name}") { onLink(!linked) }
     }
 }
 
@@ -839,7 +869,7 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt("Polarity", 17.sp, p.text, maxLines = 1)
+                OpensName("Polarity", open, p.text)
                 Txt(
                     when {
                         flipped && direct -> "Needs Capture mode to turn the sound over"
@@ -907,13 +937,13 @@ private fun BandCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Txt(band.type.shortLabel, 14.sp, if (band.enabled) p.text else p.sub, bold = true, modifier = Modifier.width(36.dp))
-            Txt(Fmt.freq(band.frequency), 17.sp, textColor, modifier = Modifier.weight(1f), maxLines = 1)
+            OpensName(Fmt.freq(band.frequency), expanded, textColor, Modifier.weight(1f))
             if (band.type.usesGain) {
                 Txt(Fmt.db(band.gainDb), 16.sp, textColor, maxLines = 1)
                 Spacer(Modifier.width(12.dp))
             }
             Txt("Q ${Fmt.q(band.q)}", 16.sp, p.sub, maxLines = 1)
-            OnOffDot(band.enabled, R.drawable.ic_check, "Filter on") { onChange(band.copy(enabled = !band.enabled)) }
+            InkSwitch(band.enabled, "Filter on") { onChange(band.copy(enabled = !band.enabled)) }
         }
     }) {
             Column(Modifier.padding(bottom = 16.dp)) {
@@ -926,16 +956,16 @@ private fun BandCard(
                     }
                 }
                 Gap(10.dp)
-                SliderField("Frequency", Fmt.freq(band.frequency), Fmt.freqToT(band.frequency)) { t ->
+                SliderField("Frequency", Fmt.freq(band.frequency), Fmt.freqToT(band.frequency), hear = "Moves it along: left for the bass, right for the treble.") { t ->
                     onChange(band.copy(frequency = Fmt.roundFreq(Fmt.tToFreq(t))))
                 }
                 if (band.type.usesGain) {
                     val gSpan = EqLimits.MAX_GAIN - EqLimits.MIN_GAIN
-                    SliderField("Gain", Fmt.db(band.gainDb), ((band.gainDb - EqLimits.MIN_GAIN) / gSpan).toFloat()) { t ->
+                    SliderField("Gain", Fmt.db(band.gainDb), ((band.gainDb - EqLimits.MIN_GAIN) / gSpan).toFloat(), hear = "Up brings this part of the sound forward; down sets it back.") { t ->
                         onChange(band.copy(gainDb = Fmt.round1(EqLimits.MIN_GAIN + t * gSpan)))
                     }
                 }
-                SliderField("Q", Fmt.q(band.q), Fmt.qToT(band.q)) { t ->
+                SliderField("Q", Fmt.q(band.q), Fmt.qToT(band.q), hear = "Right narrows it to a few notes; left spreads it wide and gentle.") { t ->
                     onChange(band.copy(q = Fmt.roundQ(Fmt.tToQ(t))))
                 }
                 Gap(8.dp)
@@ -944,15 +974,23 @@ private fun BandCard(
     }
 }
 
+/**
+ * A labelled slider. With [hear], while your finger is on it a line under it says what you hear
+ * change as it moves, and goes again when you let go.
+ */
 @Composable
-internal fun SliderField(label: String, valueText: String, value: Float, onChange: (Float) -> Unit) {
+internal fun SliderField(label: String, valueText: String, value: Float, hear: String? = null, onChange: (Float) -> Unit) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+    var held by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).animateContentSize(Motion.flow())) {
         Row(Modifier.fillMaxWidth()) {
             Txt(label, 15.sp, p.sub, modifier = Modifier.weight(1f))
             Txt(valueText, 15.sp, p.text)
         }
-        InkSlider(value = value, onChange = onChange, label = valueText)
+        InkSlider(value = value, onChange = onChange, label = valueText, onHeld = { h: Boolean -> held = h })
+        if (held && hear != null) {
+            Txt(hear, 14.sp, p.text, modifier = Modifier.padding(bottom = 6.dp))
+        }
     }
 }
 
@@ -967,6 +1005,7 @@ private fun Dock(
     modifier: Modifier = Modifier,
     tucked: Boolean = false,
     onUntuck: () -> Unit = {},
+    onStepEffects: () -> Unit = {},
     onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     val p = LocalPalette.current
@@ -1006,7 +1045,7 @@ private fun Dock(
                 section == Section.Island -> IslandDockBar(state, actions)
                 section == Section.Volume -> VolumeDockBar(state, actions)
                 section == Section.Keyboard -> KeyboardDockBar(state, actions)
-                else -> DockBar(state, actions)
+                else -> DockBar(state, actions, onStepEffects.takeIf { section == Section.Effects })
             }
         }
     }
@@ -1040,8 +1079,13 @@ private fun TuckedDock(state: UiState, section: Section, onUntuck: () -> Unit) {
     }
 }
 
+/**
+ * The processing dock, for Sound and Effects. On the Effects page ([onStepEffects] given) it's
+ * about the effects: how many are on; hold the words to hear the music without them, tap to be
+ * taken to each one that's on in turn.
+ */
 @Composable
-private fun DockBar(state: UiState, actions: AppActions) {
+private fun DockBar(state: UiState, actions: AppActions, onStepEffects: (() -> Unit)? = null) {
     val p = LocalPalette.current
     val library = state.library
     val mode by EngineSettings.mode.collectAsState()
@@ -1049,8 +1093,10 @@ private fun DockBar(state: UiState, actions: AppActions) {
     val effects = fx.onNames().size
     val withFx = if (effects == 0) "" else " · $effects ${if (effects == 1) "effect" else "effects"}"
     // The page shows the EQ; the dock says what it's working on.
+    val priv = state.privileges
     val subtitle = when {
-        !readyFor(mode, state.privileges) && !state.running -> "Tap to set up"
+        !readyFor(mode, priv) && !state.running ->
+            if (mode == EngineMode.Direct) setupSteps(0, 1) else setupSteps(listOf(priv.recordAudio, priv.dump).count { it }, 2)
         state.running && state.processing.isNotEmpty() -> state.processing.joinToString() + withFx
         state.running -> "Waiting for something to play"
         !library.eqEnabled -> "EQ off$withFx"
@@ -1087,13 +1133,119 @@ private fun DockBar(state: UiState, actions: AppActions) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PowerButton(state.running, R.drawable.ic_power, actions::togglePower, waiting = state.running && state.processing.isEmpty())
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Txt(if (state.running) "Processing" else "Off", 18.sp, p.onInk, bold = true, maxLines = 1)
-                Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
+            val spatialOn by dev.continuum.fx.audio.SpatialStore.state.collectAsState()
+            val ready = readyFor(mode, priv)
+            if (onStepEffects != null && (ready || state.running)) {
+                val active = activeEffects(fx, spatialOn.enabled).size
+                EffectsDockText(
+                    title = when {
+                        !fx.enabled -> "Effects off"
+                        active == 0 -> "No effects on"
+                        else -> "$active ${if (active == 1) "effect" else "effects"} active"
+                    },
+                    subtitle = when {
+                        active == 0 -> if (fx.enabled) "Switch one on below" else "The EQ plays on its own"
+                        !state.running -> "Start processing to hear them"
+                        else -> "Hold to compare · tap to find them"
+                    },
+                    canCompare = state.running && active > 0,
+                    onStep = if (active > 0) onStepEffects else null,
+                )
+            } else {
+                DockText(if (state.running) "Processing" else "Off", subtitle, "Open setup") { actions.setSetupOpen(true) }
             }
             IconBubble(R.drawable.ic_setup, "Setup", onClick = { actions.setSetupOpen(true) }, on = Surface.Ink)
         }
     }
+}
+
+/**
+ * The dock's words. All of them open setup (or whatever comes next), so there's no small target
+ * to hunt for: the gear beside them is only the sign of it.
+ */
+@Composable
+internal fun androidx.compose.foundation.layout.RowScope.DockText(title: String, subtitle: String, label: String, onClick: () -> Unit) {
+    val p = LocalPalette.current
+    val source = remember { MutableInteractionSource() }
+    Column(
+        Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(start = 14.dp, end = 4.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Column(Modifier.squash(source, pill = true)) {
+            Txt(title, 18.sp, p.onInk, bold = true, maxLines = 1)
+            Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * The Effects page's dock words. Held, the music plays without the EQ and effects (at the same
+ * loudness) for as long as you hold; tapped, the page goes to the next effect that's on.
+ */
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.EffectsDockText(title: String, subtitle: String, canCompare: Boolean, onStep: (() -> Unit)?) {
+    val p = LocalPalette.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val compare by rememberUpdatedState(canCompare)
+    val step by rememberUpdatedState(onStep)
+    var comparing by remember { mutableStateOf(false) }
+    // Nothing to compare any more (stopped, or the last effect off): let go.
+    LaunchedEffect(canCompare) { if (!canCompare && comparing) { comparing = false; EngineStatus.comparing.value = false } }
+    val squeeze by animateFloatAsState(if (comparing) 1f else 0f, Motion.snap(), label = "dockHold")
+    Column(
+        Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .semantics {
+                role = Role.Button
+                contentDescription = "$title. $subtitle"
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        var held = false
+                        val hold = scope.launch {
+                            delay(260)
+                            if (compare) {
+                                held = true
+                                comparing = true
+                                InkFeel.detent(view)
+                                EngineStatus.comparing.value = true
+                            }
+                        }
+                        val released = tryAwaitRelease()
+                        hold.cancel()
+                        if (held) {
+                            comparing = false
+                            EngineStatus.comparing.value = false
+                        } else if (released) {
+                            step?.let {
+                                InkFeel.detent(view)
+                                it()
+                            }
+                        }
+                    },
+                )
+            }
+            .padding(start = 14.dp, end = 4.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Column(Modifier.graphicsLayer { val k = 1f - 0.04f * squeeze; scaleX = k; scaleY = k }) {
+            Txt(if (comparing) "Without them" else title, 18.sp, p.onInk, bold = true, maxLines = 1)
+            Txt(if (comparing) "Let go to hear them again" else subtitle, 14.sp, p.onInkSub, maxLines = 1)
+        }
+    }
+}
+
+/** Setup still to do, said as how far along it is: "Tap to set up · 2 steps", "1 of 2 steps done". */
+internal fun setupSteps(done: Int, total: Int): String = when {
+    done <= 0 -> "Tap to set up · $total ${if (total == 1) "step" else "steps"}"
+    else -> "$done of $total steps done · tap to finish"
 }
 
 /** How many bands of the music move inside the dock. */

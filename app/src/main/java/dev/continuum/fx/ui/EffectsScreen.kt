@@ -35,6 +35,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import dev.continuum.fx.R
 import dev.continuum.fx.audio.FxEnvironment
 import dev.continuum.fx.audio.FxStore
@@ -52,7 +54,8 @@ import dev.continuum.fx.dsp.StageMode
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSection
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
@@ -88,26 +91,30 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
     val names = fx.onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
 
     Column {
-        // What's on, said as a sentence, with one switch for all of it.
+        // What's on, said once as a sentence, with the one switch for all of it beside it.
         val waiting = fx.copy(enabled = true).onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
-        Kicker(if (fx.enabled) "On now" else "Effects off", if (fx.enabled) "${names.size} of $EFFECTS" else null)
+        Kicker(
+            if (fx.enabled) "On now" else "Off",
+            when {
+                fx.enabled -> "${names.size} of $EFFECTS"
+                waiting.isNotEmpty() -> "${waiting.size} set to come back"
+                else -> null
+            },
+        )
         Gap(6.dp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             HeroLine(
                 when {
-                    !fx.enabled -> "Only the EQ plays."
+                    !fx.enabled -> "Effects are off."
                     names.isEmpty() -> "Nothing on yet."
                     else -> inWords(names)
                 },
                 if (fx.enabled && names.isNotEmpty()) p.text else p.sub,
                 Modifier.weight(1f).padding(end = 12.dp),
             )
-            Box(Modifier.padding(top = 2.dp)) {
-                OnOffDot(fx.enabled, R.drawable.ic_check, "Effects", onClick = { set { it.copy(enabled = !it.enabled) } })
-            }
+            MasterSwitch(fx.enabled, "All effects") { set { it.copy(enabled = !it.enabled) } }
         }
         val quiet = listOfNotNull(
-            if (!fx.enabled && waiting.isNotEmpty()) "${waiting.size} waiting" else null,
             if (fx.enabled && names.isNotEmpty() && !state.running) "Start processing to hear them" else null,
             if (ctx.direct) "Direct · a few work more simply" else null,
         )
@@ -127,7 +134,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         EffectCard(
             "Analog bass",
             if (fx.bassOn) "Lift at ${FxSettings.PULTEC_FREQS[fx.pultecFreq.coerceIn(0, 3)].toInt()} Hz · drive ${pct(fx.bassDrive)}" else "Console warmth and a Pultec-style lift",
-            expanded = open == "bass", onExpand = { expand("bass") },
+            spot = "bass", expanded = open == "bass", onExpand = { expand("bass") },
             on = fx.bassOn, onToggle = { set { it.copy(bassOn = !it.bassOn) } },
             about = "A vintage console's way with the low end. The Pultec trick lifts and cuts at once: the bass swells while " +
                 "the muddy region just above it dips away. Drive adds harmonics that make bass thicker and easier to hear, " +
@@ -142,17 +149,17 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 }
             }
             Gap(8.dp)
-            SliderField("Lift", db1(8.0 * fx.pultecBoost), fx.pultecBoost.toFloat()) { v -> set { it.copy(pultecBoost = v.toDouble()) } }
-            SliderField("Cut", db1(-5.0 * fx.pultecCut), fx.pultecCut.toFloat()) { v -> set { it.copy(pultecCut = v.toDouble()) } }
-            SliderField("Drive", pct(fx.bassDrive), fx.bassDrive.toFloat()) { v -> set { it.copy(bassDrive = v.toDouble()) } }
-            SliderField("Warmth", pct(fx.bassWarmth), fx.bassWarmth.toFloat()) { v -> set { it.copy(bassWarmth = v.toDouble()) } }
-            SliderField("Drift", pct(fx.bassDrift), fx.bassDrift.toFloat()) { v -> set { it.copy(bassDrift = v.toDouble()) } }
+            SliderField("Lift", db1(8.0 * fx.pultecBoost), fx.pultecBoost.toFloat(), hear = "The bass swells, round and deep.") { v -> set { it.copy(pultecBoost = v.toDouble()) } }
+            SliderField("Cut", db1(-5.0 * fx.pultecCut), fx.pultecCut.toFloat(), hear = "The boxy, muddy part just above the bass thins out.") { v -> set { it.copy(pultecCut = v.toDouble()) } }
+            SliderField("Drive", pct(fx.bassDrive), fx.bassDrive.toFloat(), hear = "Bass grows thicker and easier to hear, even on small drivers.") { v -> set { it.copy(bassDrive = v.toDouble()) } }
+            SliderField("Warmth", pct(fx.bassWarmth), fx.bassWarmth.toFloat(), hear = "The drive turns from edgy to round.") { v -> set { it.copy(bassWarmth = v.toDouble()) } }
+            SliderField("Drift", pct(fx.bassDrift), fx.bassDrift.toFloat(), hear = "The colour wanders, very slightly, as old gear does.") { v -> set { it.copy(bassDrift = v.toDouble()) } }
         }
         Gap(8.dp)
         EffectCard(
             "Punch",
             if (fx.punch == PunchMode.Off) "Kicks and bass notes hit harder" else "Up to ${db1(fx.punch.maxDb)} at each note's start",
-            expanded = open == "punch", onExpand = { expand("punch") },
+            spot = "punch", expanded = open == "punch", onExpand = { expand("punch") },
             on = fx.punch != PunchMode.Off, mode = fx.punch.label,
             about = "The bass is lifted at the start of each note, by how much faster it's rising than its average, and left " +
                 "alone while it's held. Kicks and plucked bass punch; a held note doesn't swell or boom.",
@@ -171,21 +178,21 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 fx.speakerBassOn -> "Strength ${pct(fx.speakerBass)}"
                 else -> "Bass you can hear from the phone's own speaker"
             },
-            expanded = open == "speakerBass", onExpand = { expand("speakerBass") },
+            spot = "speakerBass", expanded = open == "speakerBass", onExpand = { expand("speakerBass") },
             on = fx.speakerBassOn, onToggle = { set { it.copy(speakerBassOn = !it.speakerBassOn) } },
             resting = fx.speakerBassOn && speakerRest != null,
             about = "A phone's speaker can't move enough air for real bass. Speaker bass takes out the deep notes it would only " +
                 "strain at, and adds their harmonics where it can play: hearing fills the notes back in from them.",
             notes = listOfNotNull(speakerRest, if (ctx.direct) FxAvailability.directNote("speakerBass") else null),
         ) {
-            SliderField("Strength", pct(fx.speakerBass), fx.speakerBass.toFloat()) { v -> set { it.copy(speakerBass = v.toDouble()) } }
+            SliderField("Strength", pct(fx.speakerBass), fx.speakerBass.toFloat(), hear = "More bass you can hear from the phone, built from harmonics.") { v -> set { it.copy(speakerBass = v.toDouble()) } }
         }
 
         Group("Clarity", 2)
         EffectCard(
             "Tube warmth",
             if (fx.tubeOn) "Amount ${pct(fx.tube)}" else "The bloom and soft top of valve playback",
-            expanded = open == "tube", onExpand = { expand("tube") },
+            spot = "tube", expanded = open == "tube", onExpand = { expand("tube") },
             on = fx.tubeOn, onToggle = { set { it.copy(tubeOn = !it.tubeOn) } },
             about = "For thin or clinical recordings: a bloom in the low end, a softer top, gentle low-order harmonics (more " +
                 "second than third, as valves give) and a slow glue that rounds off the dynamics without making anything quieter.",
@@ -194,31 +201,31 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 if (fx.tubeOn && fx.dynamics == DynamicsMode.Pure) "Pure dynamics is on, so the glue rests." else null,
             ),
         ) {
-            SliderField("Amount", pct(fx.tube), fx.tube.toFloat()) { v -> set { it.copy(tube = v.toDouble()) } }
+            SliderField("Amount", pct(fx.tube), fx.tube.toFloat(), hear = "Fuller lows and a softer, smoother top.") { v -> set { it.copy(tube = v.toDouble()) } }
         }
         Gap(8.dp)
         EffectCard(
             "Exciter",
             if (fx.exciterOn) "Amount ${pct(fx.exciter)}" else "Presence and sparkle in voices and guitars",
-            expanded = open == "exciter", onExpand = { expand("exciter") },
+            spot = "exciter", expanded = open == "exciter", onExpand = { expand("exciter") },
             on = fx.exciterOn, onToggle = { set { it.copy(exciterOn = !it.exciterOn) } },
             about = "After the BBE and Aphex boxes: the upper mids, where presence lives, get harmonics of themselves, and only " +
                 "that new detail is added back. Clearer and brighter, without a treble boost's hiss.",
             notes = listOfNotNull(if (ctx.direct) FxAvailability.directNote("exciter") else null),
         ) {
-            SliderField("Amount", pct(fx.exciter), fx.exciter.toFloat()) { v -> set { it.copy(exciter = v.toDouble()) } }
+            SliderField("Amount", pct(fx.exciter), fx.exciter.toFloat(), hear = "Voices and guitars step forward, clearer and brighter.") { v -> set { it.copy(exciter = v.toDouble()) } }
         }
         Gap(8.dp)
         EffectCard(
             "Hi-res detail",
             if (fx.airOn) "Up to ${db1(5.5 * fx.air)} of air" else "Brings back what lossy files lose",
-            expanded = open == "air", onExpand = { expand("air") },
+            spot = "air", expanded = open == "air", onExpand = { expand("air") },
             on = fx.airOn, onToggle = { set { it.copy(airOn = !it.airOn) } },
             about = "The air above 5 kHz is lifted while there's music in it, and left alone when there's only hiss. Where a file " +
                 "has cut away its top octave (most streams and MP3s stop at 16 kHz), that octave is rebuilt, faintly, from the one below.",
             notes = listOfNotNull(if (ctx.direct) FxAvailability.directNote("air") else null),
         ) {
-            SliderField("Amount", pct(fx.air), fx.air.toFloat()) { v -> set { it.copy(air = v.toDouble()) } }
+            SliderField("Amount", pct(fx.air), fx.air.toFloat(), hear = "More air and shimmer at the very top.") { v -> set { it.copy(air = v.toDouble()) } }
         }
 
         Group("Space", 3)
@@ -233,7 +240,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         EffectCard(
             "Spatial audio",
             spatialSummary(spaces, if (state.running) nowThrough else null, spatialRest),
-            expanded = open == "spatial", onExpand = { expand("spatial") },
+            spot = "spatial", expanded = open == "spatial", onExpand = { expand("spatial") },
             on = spaces.enabled,
             onToggle = {
                 // Switching it on opens it: the speakers are the point.
@@ -262,7 +269,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 StageMode.Front -> "Voices forward, a little narrower"
                 StageMode.Wide -> "Wide open, the deepest bass centred"
             },
-            expanded = open == "stage", onExpand = { expand("stage") },
+            spot = "stage", expanded = open == "stage", onExpand = { expand("stage") },
             on = fx.stage != StageMode.Off, mode = fx.stage.label,
             resting = spatialPlacing && fx.stage != StageMode.Off,
             about = "Only what differs between your ears is widened, so whatever's in the middle (usually the voice) stays " +
@@ -283,7 +290,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 fx.crossfeedOn -> "Strength ${pct(fx.crossfeed)}"
                 else -> "Headphones that sound like speakers"
             },
-            expanded = open == "crossfeed", onExpand = { expand("crossfeed") },
+            spot = "crossfeed", expanded = open == "crossfeed", onExpand = { expand("crossfeed") },
             on = fx.crossfeedOn, onToggle = { set { it.copy(crossfeedOn = !it.crossfeedOn) } },
             resting = fx.crossfeedOn && (crossRest != null || spatialPlacing),
             about = "On headphones each ear hears only its own side, so hard-panned sounds sit inside your head. Crossfeed lets " +
@@ -291,7 +298,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 "Easier on long listens, and anything in the middle is left exactly as it was.",
             notes = listOfNotNull(crossRest),
         ) {
-            SliderField("Strength", db1(-14.0 + 9.5 * fx.crossfeed) + " across", fx.crossfeed.toFloat()) { v -> set { it.copy(crossfeed = v.toDouble()) } }
+            SliderField("Strength", db1(-14.0 + 9.5 * fx.crossfeed) + " across", fx.crossfeed.toFloat(), hear = "Hard-panned sounds move from inside your head out in front of you.") { v -> set { it.copy(crossfeed = v.toDouble()) } }
         }
 
         Group("Level", 4)
@@ -302,7 +309,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 DynamicsMode.Pure -> "The lightest touch on peaks"
                 DynamicsMode.Restore -> "Squashed masters opened up"
             },
-            expanded = open == "dynamics", onExpand = { expand("dynamics") },
+            spot = "dynamics", expanded = open == "dynamics", onExpand = { expand("dynamics") },
             on = fx.dynamics != DynamicsMode.Off, mode = fx.dynamics.label,
             about = "Pure: peaks are rounded by a soft shoulder rather than stopped at a wall, and nothing else squeezes the " +
                 "music (Tube's glue included). Restore: for loud, flattened masters, quiet passages are let back down a little " +
@@ -319,16 +326,16 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
         EffectCard(
             "Loudness",
             if (fx.loudnessOn) (if (bassNow >= 0.5) "Now ${db1(bassNow)} at 50 Hz" else "Resting at this volume") else "Full bass and treble at low volume",
-            expanded = open == "loudness", onExpand = { expand("loudness") },
+            spot = "loudness", expanded = open == "loudness", onExpand = { expand("loudness") },
             on = fx.loudnessOn, onToggle = { set { it.copy(loudnessOn = !it.loudnessOn) } },
             about = "As the volume comes down, hearing loses bass and treble faster than the middle, so a mix balanced loud " +
                 "sounds thin when quiet. Loudness follows your volume and puts back what's lost, by the ISO 226 equal-loudness " +
                 "contours. At full volume it does nothing.",
             notes = emptyList(),
         ) {
-            SliderField("Amount", pct(fx.loudness), fx.loudness.toFloat()) { v -> set { it.copy(loudness = v.toDouble()) } }
+            SliderField("Amount", pct(fx.loudness), fx.loudness.toFloat(), hear = "More of the bass and treble put back as the volume comes down.") { v -> set { it.copy(loudness = v.toDouble()) } }
             val span = FxSettings.MAX_REF - FxSettings.MIN_REF
-            SliderField("Full volume is", "${fx.loudnessRef.roundToInt()} phon", ((fx.loudnessRef - FxSettings.MIN_REF) / span).toFloat()) { v ->
+            SliderField("Full volume is", "${fx.loudnessRef.roundToInt()} phon", ((fx.loudnessRef - FxSettings.MIN_REF) / span).toFloat(), hear = "Lower: more is put back at every volume. Higher: less.") { v ->
                 set { it.copy(loudnessRef = (FxSettings.MIN_REF + v * span).roundToInt().toDouble()) }
             }
             Txt("How loud full volume is for you: lower it if even full volume is a quiet listen.", 13.sp, p.sub)
@@ -342,7 +349,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
                 fx.bluetoothCare -> "Easing the top octave"
                 else -> "Less for Bluetooth's basic codec to struggle with"
             },
-            expanded = open == "bt", onExpand = { expand("bt") },
+            spot = "bt", expanded = open == "bt", onExpand = { expand("bt") },
             on = fx.bluetoothCare, onToggle = { set { it.copy(bluetoothCare = !it.bluetoothCare) } },
             resting = fx.bluetoothCare && btRest != null,
             about = "Bluetooth's basic codec (SBC) shares a fixed budget of bits across the spectrum, every few milliseconds. " +
@@ -357,6 +364,54 @@ internal fun EffectsContent(state: UiState, actions: AppActions) {
 
 @Composable
 private fun Group(title: String, index: Int) = SectionLabel(title, index = index)
+
+/** The effects that are on, by the names their cards go by, in the page's order. */
+internal fun activeEffects(fx: FxSettings, spatial: Boolean): List<String> {
+    if (!fx.enabled) return emptyList()
+    return listOfNotNull(
+        "bass".takeIf { fx.bassOn },
+        "punch".takeIf { fx.punch != PunchMode.Off },
+        "speakerBass".takeIf { fx.speakerBassOn },
+        "tube".takeIf { fx.tubeOn },
+        "exciter".takeIf { fx.exciterOn },
+        "air".takeIf { fx.airOn },
+        "spatial".takeIf { spatial },
+        "stage".takeIf { fx.stage != StageMode.Off },
+        "crossfeed".takeIf { fx.crossfeedOn },
+        "dynamics".takeIf { fx.dynamics != DynamicsMode.Off },
+        "loudness".takeIf { fx.loudnessOn },
+        "bt".takeIf { fx.bluetoothCare },
+    )
+}
+
+/**
+ * Where each effect's card sits down the page, so the dock can take you from one that's on to
+ * the next. Kept up to date as the page lays out; plain numbers rather than state, since nothing
+ * is drawn from them.
+ */
+internal class EffectSpots {
+    private val tops = HashMap<String, Int>()
+    /** The page's scroll, and where its window starts on screen. */
+    var scroll: androidx.compose.foundation.ScrollState? = null
+    var viewTop = 0f
+    private var last: String? = null
+
+    fun place(key: String, rootY: Float) {
+        val s = scroll ?: return
+        tops[key] = (rootY - viewTop + s.value).toInt()
+    }
+
+    /** Where to scroll to show the next effect that's on after the last one shown, round again. */
+    fun next(keys: List<String>, pad: Int): Int? {
+        val known = keys.filter { it in tops }
+        if (known.isEmpty()) return null
+        val key = known[(known.indexOf(last) + 1) % known.size]
+        last = key
+        return (tops.getValue(key) - pad).coerceAtLeast(0)
+    }
+}
+
+internal val LocalEffectSpots = androidx.compose.runtime.staticCompositionLocalOf<EffectSpots?> { null }
 
 /** How many effects the page holds. */
 private const val EFFECTS = 12
@@ -376,7 +431,7 @@ private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick:
                 .clickable(interactionSource = source, indication = null, role = Role.Button) { open = !open },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Txt("Listening on", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+            OpensName("Listening on", open, p.text, Modifier.weight(1f))
             ValueNote(if (phone || current == Listener.Unsure) name else "$name · ${current.label}")
         }
     }) {
@@ -406,6 +461,8 @@ private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick:
 private fun EffectCard(
     title: String,
     summary: String,
+    /** Its name for the dock, which steps through the effects that are on. */
+    spot: String,
     expanded: Boolean,
     onExpand: () -> Unit,
     on: Boolean,
@@ -418,36 +475,41 @@ private fun EffectCard(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    // Off, an effect is just its name, quiet; on, it says what it's doing.
-    InkSection(expanded, quiet = !on, header = {
+    var how by rememberSaveable(title) { mutableStateOf(false) }
+    val spots = LocalEffectSpots.current
+    // Off, the line under its name says what it would do; on, what it's doing.
+    InkSection(expanded, quiet = !on, modifier = Modifier.onGloballyPositioned { c -> spots?.place(spot, c.positionInRoot().y) }, header = {
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = if (on) 64.dp else 52.dp)
+                .heightIn(min = 64.dp)
                 .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onExpand)
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Txt(title, 17.sp, if (on) p.text else p.sub, maxLines = 1)
-                if (on) Txt(summary, 14.sp, if (!resting) p.text else p.sub, maxLines = 1)
+                OpensName(title, expanded, p.text)
+                Txt(summary, 14.sp, if (on && !resting) p.text else p.sub, maxLines = 1)
             }
             if (onToggle != null) {
-                OnOffDot(on, R.drawable.ic_check, title, onToggle)
+                InkSwitch(on, title, onToggle)
             } else if (mode != null) {
                 Spacer(Modifier.width(12.dp))
-                if (on) Txt(mode, 15.sp, p.text, maxLines = 1) else Note("Off", p.quiet)
+                if (on) Txt(mode, 15.sp, p.text, maxLines = 1) else Note("Off", p.sub)
             }
         }
     }) {
-        Column(Modifier.padding(top = 2.dp, bottom = 18.dp)) {
-            Txt(about, 14.sp, p.sub)
+        // What you set comes first; why it works is there for whoever wants it.
+        Column(Modifier.padding(top = 2.dp, bottom = 12.dp)) {
+            content()
             notes.forEach { n ->
                 Gap(6.dp)
                 Txt(n, 14.sp, p.text)
             }
-            Gap(10.dp)
-            content()
+            Gap(4.dp)
+            MoreSection(how, { how = !how }, label = "How it works") {
+                Txt(about, 14.sp, p.sub, modifier = Modifier.padding(bottom = 10.dp))
+            }
         }
     }
 }

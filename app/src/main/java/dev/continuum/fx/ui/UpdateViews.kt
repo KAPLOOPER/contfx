@@ -34,6 +34,11 @@ import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Txt
 import dev.continuum.fx.update.Release
 import dev.continuum.fx.update.UpdateState
+import dev.continuum.fx.update.changeOf
+import dev.continuum.fx.ui.theme.Note
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 
 /** An ink card at the top of every tab while there's a newer build to install. */
 @Composable
@@ -77,7 +82,8 @@ private fun UpdateCardBody(
     onDismiss: () -> Unit,
 ) {
     val p = LocalPalette.current
-    val notes = release.notes.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(4).joinToString("\n")
+    var whatsNew by rememberSaveable { mutableStateOf(false) }
+    val changes = release.changes.ifEmpty { listOfNotNull(changeOf(release.build, release.notes)) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -95,21 +101,44 @@ private fun UpdateCardBody(
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Txt(title(release), 18.sp, p.onInk, bold = true, maxLines = 1)
-                Txt(subtitle, 13.sp, p.onInkSub, maxLines = 2)
+                Txt(subtitle, 13.sp, p.onInkSub, maxLines = 1)
             }
             if (update is UpdateState.Available || update is UpdateState.Failed) {
                 IconBubble(R.drawable.ic_chevron_down, "Later", onClick = onDismiss, on = Surface.Ink)
             }
         }
-        if (notes.isNotEmpty()) {
-            Gap(10.dp)
-            Txt(notes, 14.sp, p.onInkSub, maxLines = 5)
+        // What's new: each change since your build, in a line, with its paragraph under it.
+        if (whatsNew && changes.isNotEmpty()) {
+            Gap(6.dp)
+            changes.take(MAX_CHANGES).forEach { c ->
+                Gap(12.dp)
+                Note(listOfNotNull(c.area, "build ${c.build}").joinToString(" · "), p.onInkSub)
+                Gap(4.dp)
+                Txt(c.headline, 16.sp, p.onInk, bold = true)
+                if (c.detail.isNotEmpty()) {
+                    Gap(2.dp)
+                    Txt(c.detail, 14.sp, p.onInkSub, maxLines = 8)
+                }
+            }
+            if (changes.size > MAX_CHANGES) {
+                Gap(12.dp)
+                Txt("And ${changes.size - MAX_CHANGES} more before those.", 14.sp, p.onInkSub)
+            }
         }
         Gap(14.dp)
         Column(Modifier.padding(end = 8.dp)) {
             when (update) {
-                is UpdateState.Available ->
+                is UpdateState.Available -> Row(verticalAlignment = Alignment.CenterVertically) {
                     PillButton(actionLabel, onAction, icon = R.drawable.ic_import, primary = true, on = Surface.Ink)
+                    if (changes.isNotEmpty()) {
+                        val label = when {
+                            whatsNew -> "Hide what's new"
+                            changes.size > 1 -> "What's new · ${changes.size} builds"
+                            else -> "What's new"
+                        }
+                        PillButton(label, { whatsNew = !whatsNew }, on = Surface.Ink)
+                    }
+                }
                 is UpdateState.Downloading -> {
                     val shown by animateFloatAsState(update.progress, Motion.flow(), label = "updateProgress")
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(p.inkTonal)) {
@@ -135,6 +164,9 @@ private fun UpdateCardBody(
         }
     }
 }
+
+/** How many builds' changes the card lists before saying how many more there are. */
+private const val MAX_CHANGES = 8
 
 /** The build you're on, with a manual check, at the bottom of every tab. */
 @Composable

@@ -45,7 +45,7 @@ import dev.continuum.fx.audio.HeardApps
 import dev.continuum.fx.data.Library
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.IconBubble
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -156,7 +156,7 @@ internal fun AppsList(library: Library, actions: AppActions) {
                         Txt(name, 16.sp, if (on) p.text else p.sub, maxLines = 1)
                         if (own != null && !on) Txt("Uses ${own.name}", 13.sp, p.sub, maxLines = 1)
                     }
-                    OnOffDot(on, R.drawable.ic_check, "$name uses ${profile.name}", toggle)
+                    InkSwitch(on, "$name uses ${profile.name}", toggle)
                 }
             }
         }

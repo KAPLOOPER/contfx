@@ -27,7 +27,52 @@ data class Release(
     val notes: String,
     val apkUrl: String,
     val size: Long,
+    /** What's changed since the build you have, newest first: this one and any you skipped. */
+    val changes: List<Change> = emptyList(),
 )
+
+/**
+ * One build's change, said for people: the part of the app it's in ("Island"), what changed in a
+ * line, and the paragraph after it, unwrapped.
+ */
+data class Change(val build: Int, val area: String?, val headline: String, val detail: String)
+
+/**
+ * Reads a release's notes (a commit message: "Area: what changed", a blank line, then prose
+ * wrapped at 72 columns) into a [Change], dropping the sign-off lines.
+ */
+internal fun changeOf(build: Int, notes: String): Change? {
+    val lines = notes.replace("\r", "").lines()
+        .filterNot { it.startsWith("Co-Authored-By:") || it.startsWith("Claude-Session:") || it.startsWith("Signed-off-by:") }
+    val subject = lines.firstOrNull { it.isNotBlank() }?.trim() ?: return null
+    val colon = subject.indexOf(": ")
+    val area = subject.substring(0, colon.coerceAtLeast(0)).takeIf { colon in 1..24 && it.count { c -> c == ' ' } <= 2 }
+    val headline = (if (area != null) subject.substring(colon + 2) else subject).trim().replaceFirstChar { it.uppercase() }
+    // The rest, as paragraphs: wrapped lines joined back up, list items kept on their own lines.
+    val rest = lines.dropWhile { it.trim() != subject }.drop(1)
+    val paragraphs = mutableListOf<String>()
+    val current = StringBuilder()
+    fun flush() {
+        if (current.isNotBlank()) paragraphs += current.toString().trim()
+        current.clear()
+    }
+    for (raw in rest) {
+        val line = raw.trim()
+        when {
+            line.isEmpty() -> flush()
+            line.startsWith("- ") || line.startsWith("* ") -> {
+                flush()
+                current.append("· ").append(line.drop(2))
+            }
+            else -> {
+                if (current.isNotEmpty()) current.append(' ')
+                current.append(line)
+            }
+        }
+    }
+    flush()
+    return Change(build, area, headline, paragraphs.joinToString("\n\n"))
+}
 
 sealed interface UpdateState {
     data object Idle : UpdateState
@@ -86,7 +131,7 @@ abstract class UpdateChannel(
         val before = state.value
         if (!quiet) state.value = UpdateState.Checking
         try {
-            val latest = withContext(Dispatchers.IO) { latestRelease() }
+            val latest = withContext(Dispatchers.IO) { latestRelease(currentBuild(context)) }
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putLong("lastCheck-$id", System.currentTimeMillis()).apply()
             state.value = when {
@@ -164,14 +209,17 @@ abstract class UpdateChannel(
 
     // ---- GitHub ----
 
-    private fun latestRelease(): Release? {
+    /** The newest build, with what's changed in every build after [since]. */
+    private fun latestRelease(since: Int): Release? {
         val text = get("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases?per_page=60")
         val list = JSONArray(text)
         var best: Release? = null
+        val changes = mutableListOf<Change>()
         for (i in 0 until list.length()) {
             val o = list.getJSONObject(i)
             if (o.optBoolean("draft")) continue
             val build = tag.matchEntire(o.optString("tag_name"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            if (build > since) changeOf(build, o.optString("body"))?.let { changes += it }
             val assets = o.optJSONArray("assets") ?: continue
             var url: String? = null
             var size = 0L
@@ -188,7 +236,7 @@ abstract class UpdateChannel(
                 best = Release(build, o.optString("name"), o.optString("body"), url, size)
             }
         }
-        return best
+        return best?.copy(changes = changes.sortedByDescending { it.build })
     }
 
     private fun open(url: String): HttpURLConnection =

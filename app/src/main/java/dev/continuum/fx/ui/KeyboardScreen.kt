@@ -47,10 +47,18 @@ data class KeyboardStatus(
 }
 
 private fun statusText(k: KeyboardStatus) = when {
-    !k.installed -> "Not installed yet"
-    !k.enabled -> "Installed · switch it on"
-    !k.selected -> "On · not in use right now"
+    !k.installed -> setupSteps(0, 3)
+    !k.enabled -> setupSteps(1, 3)
+    !k.selected -> setupSteps(2, 3)
     else -> "In use · build ${k.build}"
+}
+
+/** The next step towards typing with it, or its settings once it's in use. */
+private fun nextKeyboardStep(k: KeyboardStatus, actions: AppActions) = when {
+    !k.installed -> actions.installKeyboard()
+    !k.enabled -> actions.enableKeyboard()
+    !k.selected -> actions.chooseKeyboard()
+    else -> actions.openKeyboardSettings(null)
 }
 
 /** The Keyboard tab: get Continuum Keyboard going, then jump into its settings. */
@@ -73,8 +81,8 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
 
         UpdateCard(
             update = k.update,
-            title = { if (k.installed) "Keyboard build ${it.build} is ready" else "Continuum Keyboard" },
-            subtitle = if (k.installed) "Your words, settings and layouts stay as they are."
+            title = { if (k.installed) "Keyboard build ${it.build}" else "Continuum Keyboard" },
+            subtitle = if (k.installed) "Your words and settings stay."
             else "Build ${(k.update as? UpdateState.Available)?.release?.build ?: ""} · Continuum's own keyboard".trim(),
             actionLabel = if (k.installed) "Update now" else "Install",
             installingNote = "Installing Continuum Keyboard. Android may ask you to confirm.",
@@ -136,8 +144,9 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
     }
 }
 
+/** A numbered step of setting something up, on a page; done, its number turns to a tick. */
 @Composable
-private fun SetupStep(number: Int, done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
+internal fun SetupStep(number: Int, done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp)) {
         Box(
@@ -180,10 +189,15 @@ internal fun KeyboardDockBar(state: UiState, actions: AppActions) {
                 colorFilter = ColorFilter.tint(if (k.selected) p.ink else p.onInk),
             )
         }
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt("Continuum Keyboard", 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(statusText(k), 14.sp, p.onInkSub, maxLines = 1)
-        }
+        DockText(
+            "Continuum Keyboard", statusText(k),
+            when {
+                !k.installed -> "Install"
+                !k.enabled -> "Open keyboard list"
+                !k.selected -> "Choose keyboard"
+                else -> "Keyboard settings"
+            },
+        ) { nextKeyboardStep(k, actions) }
         if (k.installed) {
             IconBubble(R.drawable.ic_setup, "Keyboard settings", onClick = { actions.openKeyboardSettings(null) }, on = Surface.Ink)
         }

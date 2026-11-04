@@ -42,7 +42,8 @@ import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import dev.continuum.fx.ui.components.InkSection
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
@@ -91,9 +92,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                 if (on && shown.isNotEmpty()) p.text else p.sub,
                 Modifier.weight(1f).padding(end = 12.dp),
             )
-            Box(Modifier.padding(top = 2.dp)) {
-                OnOffDot(prefs.enabled && state.privileges.islandReady, R.drawable.ic_check, "The island", actions::toggleIsland)
-            }
+            MasterSwitch(prefs.enabled && state.privileges.islandReady, "Island", actions::toggleIsland)
         }
         val waitingFor = when {
             !on -> null
@@ -107,21 +106,10 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         Gap(22.dp)
 
-        // Samples, folded into one line until you want them.
-        var trying by rememberSaveable { mutableStateOf(false) }
-        val trySource = remember { MutableInteractionSource() }
-        InkSection(trying, header = {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp)
-                    .clickable(interactionSource = trySource, indication = null, role = Role.Button) { trying = !trying },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Txt("Try it", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
-                ValueNote(if (state.islandLive) "12 samples" else "after setup")
-            }
-        }) {
+        // The island itself, in the page: samples play into it even before it's set up.
+        IslandPreview()
+        Gap(12.dp)
+        dev.continuum.fx.ui.theme.Note("Try it", p.sub)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -140,10 +128,18 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
             PillButton("Clear", { IslandRepository.demo("clear") }, height = 38.dp)
         }
-        Gap(14.dp)
+        Gap(8.dp)
+
+        // Until Android has given the island what it needs, setting it up is the page's first part.
+        val ready = state.privileges.islandReady
+        val first = if (ready) 1 else 2
+        if (!ready) {
+            SectionLabel("Set it up", index = 1)
+            Gap(4.dp)
+            IslandChecklist(state, actions)
         }
 
-        SectionLabel("Show in the island", index = 1)
+        SectionLabel("Show in the island", index = first)
         Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
@@ -211,9 +207,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             }
         }
 
-        PopupsSection(state, actions)
+        PopupsSection(state, actions, index = first + 1)
 
-        SectionLabel("In the bar", index = 3)
+        SectionLabel("In the bar", index = first + 2)
         Gap(4.dp)
         Column(Modifier.fillMaxWidth()) {
             ToggleRow("Time", "A drop at the left of the status bar; tap it for the date", prefs.alwaysTime) {
@@ -228,7 +224,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             )
         }
 
-        PlacementSection(prefs, actions)
+        PlacementSection(prefs, actions, index = first + 3)
         Gap(20.dp)
 
         MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
@@ -247,7 +243,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
  * lens, or resize it, and it shows itself as you go so you can line it up.
  */
 @Composable
-private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
+private fun PlacementSection(prefs: IslandPrefs, actions: AppActions, index: Int) {
     val p = LocalPalette.current
     val context = LocalContext.current
     val detected = remember {
@@ -273,7 +269,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     fun pct(v: Float) = "${Math.round(v * 100)}%"
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        SectionLabel("Placement", modifier = Modifier.weight(1f), index = 4)
+        SectionLabel("Placement", modifier = Modifier.weight(1f), index = index)
         if (prefs.placed) PillButton("Reset", { place { it.unplaced() } }, height = 36.dp)
     }
     // Said only when it isn't simply fitted to the camera.
@@ -325,12 +321,12 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
 
 /** Android's own pop-ups: off while the island shows notifications, so you only see one. */
 @Composable
-private fun PopupsSection(state: UiState, actions: AppActions) {
+private fun PopupsSection(state: UiState, actions: AppActions, index: Int) {
     val p = LocalPalette.current
     val prefs = state.island
     val priv = state.privileges
     val context = LocalContext.current
-    SectionLabel("Android's own", index = 2)
+    SectionLabel("Android's own", index = index)
     Gap(4.dp)
     Column(Modifier.fillMaxWidth()) {
         ToggleRow(
@@ -392,7 +388,40 @@ internal fun ToggleRow(title: String, body: String, on: Boolean, always: Boolean
             Txt(title, 17.sp, if (on) p.text else p.sub, maxLines = 1)
             if (on || always) Txt(body, 14.sp, p.sub, maxLines = 2)
         }
-        OnOffDot(on, R.drawable.ic_check, title, onToggle)
+        InkSwitch(on, title, onToggle)
+    }
+}
+
+/**
+ * Setting the island up, on its page: Shizuku's one tap if it's there, then the two switches
+ * Android needs, each ticked off as it's done. The dock's sheet keeps the way from a computer.
+ */
+@Composable
+private fun IslandChecklist(state: UiState, actions: AppActions) {
+    val p = LocalPalette.current
+    val priv = state.privileges
+    Column(Modifier.fillMaxWidth()) {
+        Txt("Android needs two switches for the island. Shizuku can flip both at once.", 15.sp, p.sub)
+        Gap(6.dp)
+        val label = when (priv.shizuku) {
+            ShizukuState.READY -> "Switch on with Shizuku"
+            ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
+            ShizukuState.NOT_RUNNING -> "Use Shizuku"
+        }
+        PillButton(label, actions::grantIslandWithShizuku, primary = true)
+        SetupStep(1, priv.islandOverlay, "Draw the island", "An accessibility service draws it over apps and the lock screen. It reads nothing on screen.") {
+            Column {
+                PillButton("Open accessibility settings", actions::openAccessibilitySettings)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    Txt("Greyed out? Open App info, tap the menu in the corner and choose Allow restricted settings.", 14.sp, p.sub)
+                    PillButton("App info", actions::openAppInfo)
+                }
+            }
+        }
+        SetupStep(2, priv.islandListener, "See what's live", "Notification access lets it show music, calls, timers and new notifications.") {
+            PillButton("Open notification access", actions::openListenerSettings)
+        }
+        PillButton("From a computer instead", { actions.setSetupOpen(true) }, height = 38.dp)
     }
 }
 
@@ -409,7 +438,7 @@ internal fun IslandDockBar(state: UiState, actions: AppActions) {
         if (prefs.battery) add("charging")
     }
     val subtitle = when {
-        !state.privileges.islandReady -> "Tap to set up"
+        !state.privileges.islandReady -> setupSteps(listOf(state.privileges.islandOverlay, state.privileges.islandListener).count { it }, 2)
         !prefs.enabled -> "Switched off"
         sources.isEmpty() -> "Nothing selected to show"
         else -> sources.joinToString(", ").replaceFirstChar { it.uppercase() }
@@ -419,10 +448,7 @@ internal fun IslandDockBar(state: UiState, actions: AppActions) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PowerButton(on, R.drawable.ic_island, actions::toggleIsland, what = "the island")
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt(if (on) "Island on" else "Island off", 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
-        }
+        DockText(if (on) "Island on" else "Island off", subtitle, "Open island setup") { actions.setSetupOpen(true) }
         IconBubble(R.drawable.ic_setup, "Island setup", onClick = { actions.setSetupOpen(true) }, on = Surface.Ink)
     }
 }

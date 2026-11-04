@@ -33,7 +33,10 @@ data class Palette(
     val surface: Color,
     val text: Color,
     val sub: Color,
-    /** Quieter than [sub]: counts and the numbers in the margin. */
+    /**
+     * Quieter than [sub]: counts and the numbers in the margin. Still 4.5:1 on the ground, so it
+     * reads; what sets it apart from [sub] is the small capitals it's set in, not fading.
+     */
     val quiet: Color,
     val line: Color,
     val ink: Color,
@@ -55,7 +58,7 @@ val LightPalette = Palette(
     surface = Color(0xFFE0E0DC),
     text = Color(0xFF121211),
     sub = Color(0xFF5C5C58),
-    quiet = Color(0xFF8C8C87),
+    quiet = Color(0xFF6B6B66),
     line = Color(0xFFCFCFCA),
     ink = Color(0xFF000000),
     onInk = Color(0xFFF4F4F1),
@@ -76,7 +79,7 @@ val DarkPalette = LightPalette.copy(
     surface = Color(0xFF262624),
     text = Color(0xFFEDEDEA),
     sub = Color(0xFFA3A39E),
-    quiet = Color(0xFF6F6F6B),
+    quiet = Color(0xFF8C8C87),
     line = Color(0xFF3A3A37),
     primary = Color(0xFFEDEDEA),
     onPrimary = Color(0xFF121211),
@@ -106,10 +109,10 @@ fun Note(text: String, color: Color, modifier: Modifier = Modifier) {
         modifier = modifier,
         style = TextStyle(
             color = color,
-            fontSize = 9.5.sp,
+            fontSize = 10.5.sp,
             fontFamily = Mark,
             fontWeight = FontWeight.Medium,
-            letterSpacing = 1.3.sp,
+            letterSpacing = 1.2.sp,
             fontFeatureSettings = "tnum, case",
         ),
         maxLines = 1,

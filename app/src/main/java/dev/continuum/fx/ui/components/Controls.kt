@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import dev.continuum.fx.island.ui.InkFeel
 import kotlin.math.max
 import kotlin.math.sqrt
+import kotlin.math.abs
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.animateDpAsState
@@ -381,66 +382,120 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
 }
 
 /**
- * A switch: off, a small dim dot; on, it swells into a drop (a little past, then back), pulled
- * out into a four-point glint for a moment as it comes on, and the tick surfaces; off again, it
- * shrinks back to the dot. No socket, no border: just the ink.
+ * A switch, in ink. Off, it's a hairline channel with a drop resting at its near end. Turned on,
+ * the drop slides to the far end, drawn out a little by its speed, and ink pours into the channel
+ * after it, from a bead at the near end out to the whole channel; the drop is left in the page's
+ * own colour with a tick in it. Off again, the ink drains back first and the drop follows it home.
+ * The hairline keeps 3:1 against the ground, so an off switch is still plainly a switch.
  */
 @Composable
-fun OnOffDot(on: Boolean, @DrawableRes checkIcon: Int, description: String, onClick: () -> Unit) {
+fun InkSwitch(
+    on: Boolean,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    surface: Surface = Surface.Ground,
+) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val view = LocalView.current
-    val dot = remember { Animatable(if (on) 1f else 0f) }
-    val glintU = remember { Animatable(1f) }
+    val pos = remember { Animatable(if (on) 1f else 0f) }
+    val flood = remember { Animatable(if (on) 1f else 0f) }
     LaunchedEffect(on) {
-        val target = if (on) 1f else 0f
-        if (dot.targetValue == target) return@LaunchedEffect
-        if (on) {
-            launch {
-                glintU.snapTo(0f)
-                glintU.animateTo(1f, tween(620, easing = LinearEasing))
-            }
-        }
-        dot.animateTo(target, if (on) SWELL else Motion.snap())
+        val t = if (on) 1f else 0f
+        if (pos.targetValue == t && flood.targetValue == t) return@LaunchedEffect
+        launch { pos.animateTo(t, SLIDE) }
+        flood.animateTo(t, if (on) POUR else DRAIN)
     }
-    val off = p.sub.copy(alpha = 0.45f)
+    val pressed by source.collectIsPressedAsState()
+    val press by animateFloatAsState(if (pressed) 1f else 0f, Motion.snap(), label = "switchPress")
+    val onInk = surface == Surface.Ink
+    val ink = if (onInk) p.onInk else p.primary
+    val paper = if (onInk) p.ink else p.onPrimary
+    val rim = if (onInk) p.onInkSub else p.quiet
+    val resting = if (onInk) p.onInkSub else p.sub
     Box(
-        Modifier
-            .size(44.dp)
-            .toggleable(on, interactionSource = source, indication = null, role = Role.Checkbox) {
+        modifier
+            .size(width = 56.dp, height = 44.dp)
+            .toggleable(on, interactionSource = source, indication = null, role = Role.Switch) {
                 InkFeel.toggle(view, !on)
                 onClick()
             }
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.squash(source).size(30.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.matchParentSize()) {
-                // From the 9 dp dot to the full 30 dp drop; pulled four ways at the glint.
-                val v = dot.value.coerceAtLeast(0f)
-                val pull = glintPull(glintU.value)
-                val r = size.minDimension / 2f * (0.3f + 0.7f * v) * (1f + 0.6f * pull)
-                val color = lerp(off, p.primary, dot.value.coerceIn(0f, 1f))
-                if (pull > 0.002f) drawPath(inkStar(center.x, center.y, r, 2f - 1.6f * pull, 0.32f * pull), color)
-                else drawCircle(color, r, center)
-            }
-            Image(
-                painterResource(checkIcon),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp).graphicsLayer {
-                    val t = ((dot.value - 0.6f) / 0.4f).coerceIn(0f, 1f)
-                    alpha = t
-                    scaleX = 0.6f + 0.4f * t
-                    scaleY = 0.6f + 0.4f * t
-                },
-                colorFilter = ColorFilter.tint(p.onPrimary),
+        Canvas(Modifier.size(width = 42.dp, height = 24.dp)) {
+            val w = size.width
+            val h = size.height
+            val r = h / 2f
+            val cy = h / 2f
+            val x0 = r
+            val x1 = w - r
+            val hair = 1.4.dp.toPx()
+            drawRoundRect(
+                rim, Offset(hair / 2f, hair / 2f), Size(w - hair, h - hair), CornerRadius(r - hair / 2f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(hair),
             )
+            // The ink in the channel: a bead at the near end that swells to fill it as it pours.
+            val f = flood.value.coerceIn(0f, 1f)
+            if (f > 0.002f) {
+                val rr = r * min(1f, 0.35f + f * 3f)
+                val left = x0 - rr
+                val right = lerpF(x0, x1, f) + rr
+                drawRoundRect(ink, Offset(left, cy - rr), Size(right - left, rr * 2f), CornerRadius(rr))
+            }
+            // The drop, drawn out along its way by its speed, and a touch fuller under a finger.
+            val v = pos.value
+            val cx = lerpF(x0, x1, v.coerceIn(0f, 1f))
+            val stretch = (abs(pos.velocity) * 0.035f).coerceAtMost(0.3f)
+            val dr = (r - 4.dp.toPx()) * (1f + 0.12f * press)
+            val color = lerp(resting, paper, ((v - 0.25f) / 0.6f).coerceIn(0f, 1f))
+            drawOval(
+                color,
+                Offset(cx - dr * (1f + stretch), cy - dr * (1f - stretch * 0.45f)),
+                Size(dr * 2f * (1f + stretch), dr * 2f * (1f - stretch * 0.45f)),
+            )
+            // Its tick, surfacing as it arrives.
+            val t = ((v - 0.65f) / 0.35f).coerceIn(0f, 1f)
+            if (t > 0.01f) {
+                val k = dr * (0.7f + 0.3f * t)
+                val tick = Path().apply {
+                    moveTo(cx - 0.45f * k, cy + 0.02f * k)
+                    lineTo(cx - 0.12f * k, cy + 0.34f * k)
+                    lineTo(cx + 0.47f * k, cy - 0.3f * k)
+                }
+                drawPath(
+                    tick, ink.copy(alpha = ink.alpha * t),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        1.9.dp.toPx(), cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                    ),
+                )
+            }
         }
     }
 }
 
-/** A drop filling its socket: past it by a tenth, then back. */
-private val SWELL = spring<Float>(dampingRatio = 0.42f, stiffness = 420f)
+/**
+ * The one switch for a whole page, with its name under it in small capitals, so it's plain what
+ * it turns off: "All effects", "Island", "Panel".
+ */
+@Composable
+fun MasterSwitch(on: Boolean, label: String, onClick: () -> Unit) {
+    val p = LocalPalette.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        InkSwitch(on, label, onClick)
+        dev.continuum.fx.ui.theme.Note(label, p.sub)
+    }
+}
+
+/** The drop crosses quickly and settles with the slightest give. */
+private val SLIDE = spring<Float>(dampingRatio = 0.72f, stiffness = 520f)
+
+/** Ink pours in after the drop, a little behind it. */
+private val POUR = spring<Float>(dampingRatio = 1f, stiffness = 230f)
+
+/** And drains back ahead of it. */
+private val DRAIN = spring<Float>(dampingRatio = 1f, stiffness = 760f)
 
 /** The value's bubble rises bouncily and sinks back on Snap. */
 private val RISE = spring<Float>(dampingRatio = 0.55f, stiffness = 300f)
@@ -472,10 +527,13 @@ fun InkSlider(
     modifier: Modifier = Modifier,
     label: String? = null,
     muted: Boolean = false,
+    /** Told when a finger takes hold of the slider and when it lets go. */
+    onHeld: ((Boolean) -> Unit)? = null,
 ) {
     val p = LocalPalette.current
     val ink = if (muted) p.sub else p.primary
-    val track = p.sub.copy(alpha = 0.3f)
+    // Enough to see where the slider runs to (about 2:1), well under the ink of the value.
+    val track = p.sub.copy(alpha = 0.42f)
     val onInk = p.onPrimary
     val thread = LocalInkThread.current
     val view = LocalView.current
@@ -486,9 +544,11 @@ fun InkSlider(
     val lift = remember { Animatable(0f) }
     val grab = remember { Animatable(0f) }
     val first = remember { booleanArrayOf(true) }
+    val heldTo = rememberUpdatedState(onHeld)
     LaunchedEffect(held) {
         if (!first[0]) {
             if (held) InkFeel.split(view) else InkFeel.merge(view)
+            heldTo.value?.invoke(held)
         }
         first[0] = false
         launch { lift.animateTo(if (held) 1f else 0f, if (held) RISE else Motion.snap()) }

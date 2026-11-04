@@ -1,7 +1,8 @@
 package dev.continuum.fx.ui
 
 import dev.continuum.fx.ui.components.InkSection
-import dev.continuum.fx.ui.components.OnOffDot
+import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
@@ -115,9 +116,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                 if (on) p.text else p.sub,
                 Modifier.weight(1f).padding(end = 12.dp),
             )
-            Box(Modifier.padding(top = 2.dp)) {
-                OnOffDot(on, R.drawable.ic_check, "The volume panel", actions::toggleVolume)
-            }
+            MasterSwitch(on, "Panel", actions::toggleVolume)
         }
         Gap(22.dp)
 
@@ -132,7 +131,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
                     .clickable(interactionSource = trySource, indication = null, role = Role.Button) { trying = !trying },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt("Try it", 17.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f))
+                OpensName("Try it", trying, p.text, Modifier.weight(1f))
                 ValueNote(if (serviceOn) "or press a key" else "after setup")
             }
         }) {
@@ -395,7 +394,7 @@ internal fun VolumeDockBar(state: UiState, actions: AppActions) {
     val prefs by VolumeSettings.state.collectAsState()
     val on = volumeOn(state, prefs)
     val subtitle = when {
-        !state.privileges.volumeService -> "Tap to set up"
+        !state.privileges.volumeService -> setupSteps(0, 1)
         !prefs.enabled -> "Android's own panel"
         else -> "Volume keys open the ink panel"
     }
@@ -404,10 +403,7 @@ internal fun VolumeDockBar(state: UiState, actions: AppActions) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PowerButton(on, R.drawable.ic_volume, actions::toggleVolume, what = "the volume panel")
-        Column(Modifier.weight(1f).padding(start = 14.dp)) {
-            Txt(if (on) "Volume panel on" else "Volume panel off", 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
-        }
+        DockText(if (on) "Volume panel on" else "Volume panel off", subtitle, "Open volume setup") { actions.setSetupOpen(true) }
         IconBubble(R.drawable.ic_setup, "Volume setup", onClick = { actions.setSetupOpen(true) }, on = Surface.Ink)
     }
 }

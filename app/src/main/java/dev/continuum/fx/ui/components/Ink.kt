@@ -462,9 +462,13 @@ internal fun InkSection(
                     // The drip at the thread's tip while it runs.
                     if (q in 0.02f..0.97f) drawCircle(ink, 4.5.dp.toPx(), Offset(x, tip))
                 }
-                // The drop: small while closed; it swells a moment as it starts to drip.
-                val r = 3.5.dp.toPx() + 1.5.dp.toPx() * min(1f, q * 4f) + 2.dp.toPx() * min(1f, q * 3f) * (1f - q)
-                drawCircle(ink, r, Offset(x, y), alpha = if (quiet && q < 0.01f) 0.45f else 1f)
+                // The drop the thread hangs from: it gathers in the margin as the row opens (the
+                // chevron says that it opens), swells a moment as it starts to drip, and is drawn
+                // back in with the thread.
+                if (q > 0.001f) {
+                    val r = (5.dp.toPx() + 2.dp.toPx() * min(1f, q * 3f) * (1f - q)) * min(1f, q * 5f)
+                    drawCircle(ink, r, Offset(x, y))
+                }
             },
     ) { measurables, constraints ->
         val margin = MARGIN.roundToPx()

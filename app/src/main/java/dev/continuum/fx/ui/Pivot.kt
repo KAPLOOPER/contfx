@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -105,9 +106,12 @@ internal object PivotMath {
 /**
  * The page titles as a pivot, after Windows Phone: big lowercase titles in a row, the current one
  * against the left margin and the rest running off the edge, wrapping round. Swiping the page
- * slides them along. Continuum's part is the ink: a drop under the current title that, as you
- * swipe, stretches out to reach the next one on a neck that thins (and, swiped far enough,
- * snaps), its tail letting go of the title that's leaving, then gathers itself under the new one.
+ * slides them along. Continuum's part is the ink: under the title, one small drop for each page,
+ * the current page's drawn out into the ink pill. As you swipe, the pill stretches out to reach
+ * the next drop on a neck that thins, its tail letting go of the one it's leaving, then gathers
+ * itself there; from the last page round to the first it drains out of the end and gathers again
+ * at the start. Tap a drop to go to its page. [collapseOf] says, for each page, how far it's
+ * scrolled down (0 to 1): the titles shrink a little as the page they're over is read.
  */
 @Composable
 internal fun PivotHeader(
@@ -115,6 +119,7 @@ internal fun PivotHeader(
     pivot: PivotState,
     onSelect: (slot: Int) -> Unit,
     modifier: Modifier = Modifier,
+    collapseOf: (Int) -> Float = { 0f },
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -137,18 +142,38 @@ internal fun PivotHeader(
         glintU.animateTo(1f, tween(700, easing = LinearEasing))
     }
 
+    // The page drops: where each sits, and the pill's size.
+    val pillW = px(22f)
+    val pillH = px(9f)
+    val step = px(22f)
+    fun dropX(i: Int) = x0 + px(2f) + pillW / 2f + i * step
+    val dropY = textH - px(3f)
+    val latestCollapse = androidx.compose.runtime.rememberUpdatedState(collapseOf)
+
     Column(modifier) {
         val seeds = LocalSeeds.current
         BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
-                .height(with(density) { textH.toDp() } + 16.dp)
+                .height(with(density) { textH.toDp() } + 22.dp)
+                .graphicsLayer {
+                    // A little smaller while the page under them is being read, eased across a swipe.
+                    val s = pivot.slot.value
+                    val b = floor(s).toInt()
+                    val t = s - b
+                    val c0 = latestCollapse.value(pivot.indexOf(b)).coerceIn(0f, 1f)
+                    val c1 = latestCollapse.value(pivot.indexOf(b + 1)).coerceIn(0f, 1f)
+                    val k = 1f - SHRINK * (c0 + (c1 - c0) * t)
+                    scaleX = k
+                    scaleY = k
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin((x0 / size.width.coerceAtLeast(1f)).coerceIn(0f, 1f), 0f)
+                }
                 .onGloballyPositioned { coords ->
-                    // Where the drop rests, for ink cards on the page to grow out of.
+                    // Where the pill rests, for ink cards on the page to grow out of.
                     val o = coords.positionInRoot()
-                    val left = o.x + x0 + px(2f)
-                    val top = o.y + textH - px(3f)
-                    seeds?.drop = androidx.compose.ui.geometry.Rect(left, top, left + px(30f), top + px(9f))
+                    val left = o.x + dropX(pivot.indexOf(pivot.contentSlot)) - pillW / 2f
+                    val top = o.y + dropY
+                    seeds?.drop = androidx.compose.ui.geometry.Rect(left, top, left + pillW, top + pillH)
                 }
                 .clipToBounds(),
         ) {
@@ -186,19 +211,56 @@ internal fun PivotHeader(
                 }
             }
 
-            // The drop rests on the margin, under whichever title is current. Mid-swipe it reaches
-            // both ways at once: its tail clinging to the title leaving, its head to the one
-            // arriving, the middle pinching as it stretches. Then it gathers again on the margin.
+            // A drop for every page, quiet.
+            Canvas(Modifier.matchParentSize()) {
+                for (i in titles.indices) drawCircle(p.quiet, px(3f), Offset(dropX(i), dropY + pillH / 2f))
+            }
+            // The pill, on the current page's drop. Mid-swipe it reaches both ways at once: its
+            // tail clinging to the drop it's leaving, its head to the one arriving, the middle
+            // pinching as it stretches. Round from the last page to the first, it drains out of
+            // the end and gathers at the start.
             Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = goo }) {
-                val m = x0 + px(2f)
-                val dw = px(30f)
-                val h = px(9f)
-                val left = m - (m - (x(base) + px(2f))) * (1f - f) * REACH
-                val rightEdge = m + dw + ((x(base + 1) + px(2f)) - m) * f * REACH
-                drawDrop(p.text, left, rightEdge - left, textH - px(3f), dw, h)
+                val bi = pivot.indexOf(base)
+                val ni = pivot.indexOf(base + 1)
+                if (ni == bi + 1) {
+                    val head = (f * 1.6f).coerceIn(0f, 1f)
+                    val tail = ((f - 0.375f) * 1.6f).coerceIn(0f, 1f)
+                    val span = dropX(ni) - dropX(bi)
+                    val left = dropX(bi) - pillW / 2f + span * tail
+                    val rightEdge = dropX(bi) + pillW / 2f + span * head
+                    drawDrop(p.text, left, rightEdge - left, dropY, pillW, pillH)
+                } else {
+                    fun part(i: Int, a: Float) {
+                        if (a < 0.02f) return
+                        val w = pillW * a
+                        val hh = pillH * minOf(1f, 0.4f + a)
+                        drawRoundRect(p.text, Offset(dropX(i) - w / 2f, dropY + (pillH - hh) / 2f), Size(w, hh), CornerRadius(hh / 2f))
+                    }
+                    part(bi, 1f - f)
+                    part(ni, f)
+                }
             }
             Canvas(Modifier.matchParentSize()) {
-                glint(Offset(x0 + px(2f) + px(30f), textH - px(3f) + px(4.5f)), px(13f), glintU.value, p.text)
+                val cur = pivot.indexOf(pivot.contentSlot)
+                glint(Offset(dropX(cur) + pillW / 2f, dropY + pillH / 2f), px(13f), glintU.value, p.text)
+            }
+            // Each drop takes you to its page.
+            titles.forEachIndexed { i, title ->
+                val source = remember(i) { MutableInteractionSource() }
+                val current = pivot.indexOf(pivot.contentSlot) == i
+                Box(
+                    Modifier
+                        .offset { IntOffset((dropX(i) - step / 2f).roundToInt(), (dropY + pillH / 2f - px(18f)).roundToInt()) }
+                        .size(with(density) { step.toDp() }, 36.dp)
+                        .semantics {
+                            selected = current
+                            contentDescription = if (current) "$title, this page" else "Go to $title"
+                        }
+                        .clickable(interactionSource = source, indication = null, role = Role.Tab) {
+                            if (!current) InkFeel.split(view)
+                            onSelect(pivot.nearest(i, pivot.contentSlot))
+                        },
+                )
             }
         }
     }
@@ -218,5 +280,5 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDrop(color: Col
     drawRect(color, Offset(left + end * 0.5f, y + (h - neck) / 2f), Size(len - end, neck))
 }
 
-/** How far toward the neighbouring titles the drop reaches mid-swipe. */
-private const val REACH = 0.38f
+/** How much smaller the titles get while their page is scrolled down. */
+private const val SHRINK = 0.16f

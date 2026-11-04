@@ -87,7 +87,7 @@ internal fun SectionLabel(text: String, modifier: Modifier = Modifier, top: andr
         androidx.compose.foundation.text.BasicText(
             text.uppercase(),
             style = androidx.compose.ui.text.TextStyle(
-                color = p.sub.copy(alpha = 0.8f),
+                color = p.sub,
                 fontSize = 11.sp,
                 fontFamily = dev.continuum.fx.ui.theme.Libron,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
@@ -145,7 +145,7 @@ internal fun Modifier.bleed(by: Dp): Modifier = layout { measurable, constraints
 
 /**
  * The quiet line at the end of a group that shows the rest of it: the finer settings stay out
- * of the way until asked for. Its drop in the margin is the sign that it opens.
+ * of the way until asked for. The chevron after it is the sign that it opens.
  */
 @Composable
 internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", modifier: Modifier = Modifier) {
@@ -158,7 +158,27 @@ internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", m
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onToggle),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Txt(if (open) "Less" else label, 15.sp, p.sub, maxLines = 1)
+        OpensName(label, open, p.sub, size = 15.sp)
+    }
+}
+
+/**
+ * A row's name with a quiet chevron after it: the one sign that tapping the row opens it in
+ * place. The chevron turns over once it's open.
+ */
+@Composable
+internal fun OpensName(
+    text: String,
+    open: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.TextUnit = 17.sp,
+) {
+    val p = LocalPalette.current
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Txt(text, size, color, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(6.dp))
+        Chevron(open, p.quiet, 15.dp)
     }
 }
 
@@ -170,10 +190,11 @@ internal fun MoreSection(open: Boolean, onToggle: () -> Unit, label: String = "M
 
 /**
  * The one sign that a row leads somewhere: pointing right for a deeper page, or down (and up
- * once open) for something that opens in place. A dot is always a switch; a word, a value.
+ * once open) for something that opens in place. A channel with a drop is always a switch; a
+ * word, a value.
  */
 @Composable
-internal fun Chevron(open: Boolean?, color: Color) {
+internal fun Chevron(open: Boolean?, color: Color, size: Dp = 18.dp) {
     val turn by animateFloatAsState(
         when (open) {
             null -> -90f
@@ -186,7 +207,7 @@ internal fun Chevron(open: Boolean?, color: Color) {
     Image(
         painterResource(R.drawable.ic_chevron_down),
         contentDescription = null,
-        modifier = Modifier.size(18.dp).rotate(turn),
+        modifier = Modifier.size(size).rotate(turn),
         colorFilter = ColorFilter.tint(color),
     )
 }

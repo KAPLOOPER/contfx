@@ -796,7 +796,7 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
                 14.sp, p.sub, maxLines = 1,
             )
         }
-        InkSwitch(linked, "Link ${profile.name} to ${device.name}") { onLink(!linked) }
+        InkSwitch(linked, "Link ${profile.name} to ${device.name}", onClick = { onLink(!linked) })
     }
 }
 
@@ -943,7 +943,7 @@ private fun BandCard(
                 Spacer(Modifier.width(12.dp))
             }
             Txt("Q ${Fmt.q(band.q)}", 16.sp, p.sub, maxLines = 1)
-            InkSwitch(band.enabled, "Filter on") { onChange(band.copy(enabled = !band.enabled)) }
+            InkSwitch(band.enabled, "Filter on", onClick = { onChange(band.copy(enabled = !band.enabled)) })
         }
     }) {
             Column(Modifier.padding(bottom = 16.dp)) {

@@ -221,9 +221,15 @@ fun VolumePanel(
     // The capsule: hidden, it sits just past the edge; it slides out as it emerges.
     val capNear = margin - (1f - o) * (w + margin + px(10f))
     val near = lerpF(-past, capNear, wv)
-    val capsule = side(near, lerpF(sliverWidth, w, wv), capTop, capBottom)
-    // What of it is on the screen.
-    val shown = Rect(max(capsule.left, 0f), capsule.top, min(capsule.right, stripW), capsule.bottom)
+    // The sliver is a little shorter than the capsule; opening, it grows to the capsule's length.
+    val sliverH = baseH * 0.78f
+    val rTop = lerpF(cy - sliverH / 2f - extraH * 0.78f, capTop, wc)
+    val rBottom = lerpF(cy + sliverH / 2f, capBottom, wc)
+    val capsule = side(near, lerpF(sliverWidth, w, wv), rTop, rBottom)
+    // At rest the sliver is drawn crisp, as itself: flush with the edge, its ends rounded off,
+    // a hairline rim round it. The goo takes over once it starts to open.
+    val crisp = wc < 0.02f && e < 0.01f
+    val crispRect = side(-sliverW, sliverW + sliverW * o.coerceIn(0f, 1f), rTop, rBottom)
 
     val cardW = min(stripW - margin * 2f, px(360f))
     val cardH = min(
@@ -262,7 +268,7 @@ fun VolumePanel(
     val innerTop = capsule.top + ins
     val innerBottom = capsule.bottom - ins
     // The liquid runs from the bottom to the top of the capsule proper; a boost tops it up above.
-    val fullY = capBottom - baseH + ins
+    val fullY = rBottom - lerpF(sliverH, baseH, wc) + ins
     val liquidY = lerpF(innerBottom, fullY, fill.value.coerceIn(0f, 1f))
     val surfaceY = if (extraH > 0.5f) innerTop else liquidY
     val tellCy = if (innerBottom - innerTop > tellH) surfaceY.coerceIn(innerTop + tellH / 2f, innerBottom - tellH / 2f) else capsule.center.y
@@ -312,14 +318,23 @@ fun VolumePanel(
     val areaH = with(density) { area.height.toDp() }
 
     Box(Modifier.fillMaxSize()) {
+        if (crisp) {
+            Canvas(Modifier.fillMaxSize()) {
+                val r = crispRect
+                val g = px(1.2f)
+                val rad = min(r.width, r.height) / 2f
+                drawRoundRect(Rim, r.topLeft - Offset(g, g), Size(r.width + g * 2f, r.height + g * 2f), CornerRadius(rad + g))
+                drawRoundRect(InkColors.ink, r.topLeft, r.size, CornerRadius(rad))
+            }
+        }
         // The rim, then the ink: both through the goo, so they fuse into one liquid shape.
-        Canvas(
+        if (!crisp) Canvas(
             Modifier
                 .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
                 .size(areaW, areaH)
                 .graphicsLayer { renderEffect = rim },
         ) { translate(-area.left, -area.top) { ink(Rim, px(1.3f)) } }
-        Canvas(
+        if (!crisp) Canvas(
             Modifier
                 .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
                 .size(areaW, areaH)
@@ -333,9 +348,11 @@ fun VolumePanel(
         val liquid = if (stream == VolStream.Call) InkColors.live else InkColors.on
         // The liquid shows at full strength early on, rather than greying in with the capsule.
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e * 2.2f).coerceIn(0f, 1f) * ((o - 0.15f) / 0.35f).coerceIn(0f, 1f) }) {
+            val box = if (crisp) crispRect else capsule
             val inner = RoundRect(
-                Rect(shown.left + ins, innerTop, shown.right - ins, innerBottom),
-                CornerRadius(((shown.width - ins * 2f) / 2f).coerceAtLeast(0f)),
+                // In the sliver it runs right to the edge, the ink's source.
+                Rect(box.left + ins, innerTop, box.right - ins, innerBottom),
+                CornerRadius(((box.width - ins * 2f) / 2f).coerceAtLeast(0f)),
             )
             val clip = Path().apply { addRoundRect(inner) }
             // The liquid's surface bulges with its speed: up as it rises, down as it falls.
@@ -353,7 +370,7 @@ fun VolumePanel(
                 if (extraH > 0.5f) {
                     drawRect(InkColors.live, Offset(inner.left, innerTop), Size(inner.width, (fullY - innerTop + px(2f)).coerceAtLeast(0f)))
                     val steps = if (stream == VolStream.Media) boostSteps else 0
-                    if (steps > 0) {
+                    if (steps > 0 && wc > 0.5f) {
                         val each = (fullY - innerTop) / steps
                         val r = min(px(2.4f), each * 0.3f)
                         for (i in 0 until steps) drawCircle(InkColors.ink.copy(alpha = 0.6f), r, Offset((inner.left + inner.right) / 2f, fullY - each * (i + 0.5f)))

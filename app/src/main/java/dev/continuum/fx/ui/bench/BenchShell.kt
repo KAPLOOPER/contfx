@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -102,16 +103,15 @@ fun BenchSection(index: Int?, name: String, trail: String? = null) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 26.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(top = 32.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (index != null) {
-            Note("%02d".format(index), p.quiet, Modifier.padding(bottom = 1.5.dp))
+            Note("%02d".format(index), p.quiet)
             Spacer(Modifier.width(10.dp))
         }
         BasicText(
             name.uppercase(),
-            modifier = Modifier.alignByBaseline(),
             style = TextStyle(
                 color = p.sub,
                 fontSize = 13.sp,
@@ -123,16 +123,16 @@ fun BenchSection(index: Int?, name: String, trail: String? = null) {
             softWrap = false,
         )
         Spacer(Modifier.width(8.dp))
+        // The rule runs level with the name's middle, out to the edge.
         Box(
             Modifier
                 .weight(1f)
-                .alignByBaseline()
                 .height(1.dp)
                 .background(p.line),
         )
         if (trail != null) {
             Spacer(Modifier.width(8.dp))
-            Note(trail, p.quiet, Modifier.padding(bottom = 1.5.dp))
+            Note(trail, p.quiet)
         }
     }
 }
@@ -182,7 +182,7 @@ fun BenchRow(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp)
+                    .heightIn(min = 60.dp)
                     .onGloballyPositioned {
                         placed[0] = it
                         measureLabel()
@@ -197,12 +197,14 @@ fun BenchRow(
                                 onClick = { onExpand?.invoke() },
                             )
                         } else Modifier,
-                    ),
+                    )
+                    // Room above and below, so rows with two-line captions don't run together.
+                    .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // The drop's column: the ink is drawn by the section, so the label never moves.
                 Spacer(Modifier.width(26.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Txt(
                         label, 16.5.sp, if (on) p.text else p.sub, maxLines = 1,
                         modifier = Modifier.onGloballyPositioned {
@@ -210,7 +212,7 @@ fun BenchRow(
                             measureLabel()
                         },
                     )
-                    if (caption != null) Txt(caption, 13.sp, p.sub, maxLines = 2)
+                    if (caption != null) Txt(caption, 13.5.sp, p.sub, maxLines = 2)
                 }
                 if (opens) {
                     Spacer(Modifier.width(if (onToggle != null) 8.dp else 10.dp))
@@ -253,7 +255,7 @@ fun BenchValueRow(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 56.dp)
+                    .heightIn(min = 60.dp)
                     .then(
                         if (opens) {
                             Modifier.clickable(

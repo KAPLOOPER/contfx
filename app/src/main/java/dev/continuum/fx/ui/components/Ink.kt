@@ -476,7 +476,9 @@ internal fun InkSection(
                     )
                 }
                 val x = thread.threadX
-                val y = thread.dropY
+                // Read here as well as in layout, so the drop follows the label the moment it's
+                // measured rather than waiting for something else to redraw the row.
+                val y = dropAt?.invoke()?.takeIf { it > 0f && it < thread.headerH } ?: thread.dropY
                 val q = pr.coerceIn(0f, 1f)
                 val line = if (fine) 2.dp.toPx() else 3.dp.toPx()
                 if (q > 0.001f) {

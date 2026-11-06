@@ -227,9 +227,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             actions.updateIsland { it.copy(alarms = !it.alarms) }
         }
         if (prefs.alarms) {
-            ChoiceRow(Modifier.padding(top = 2.dp, bottom = 8.dp), scroll = false) {
+            ChoiceRow(Modifier.padding(start = 26.dp, bottom = 10.dp)) {
                 Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } })
-                Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } })
+                Chip("Always", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } })
             }
         }
         IslandRow(
@@ -275,11 +275,11 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         if (prefs.hidePopups && !prefs.notifications) {
             Txt(
                 "Turn on Notifications above too, or nothing will show new messages.",
-                14.sp, p.sub, modifier = Modifier.padding(top = 4.dp),
+                14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp),
             )
         }
         if ((prefs.hidePopups || prefs.hideStatusIcons) && !state.privileges.popups) {
-            Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
+            Column(Modifier.padding(start = 26.dp, top = 8.dp, bottom = 12.dp)) {
                 Txt(
                     "Android needs one more permission before the island can step its own pieces aside. Grant it once:",
                     14.sp, p.text,
@@ -308,7 +308,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         ) { actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) } }
         Txt(
             "Hold any drop in the bar and slide it along to move it. Reset, under Placement, puts them all back.",
-            14.sp, p.sub, modifier = Modifier.padding(top = 6.dp),
+            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 6.dp),
         )
 
         Gap(8.dp)
@@ -377,7 +377,7 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     BenchSection(2, "Placement")
     // Said only when it isn't simply fitted to the camera.
     if (!detected) {
-        Txt("No camera cutout was found, so the island sits at the top centre. Move it over your camera here.", 14.sp, p.sub)
+        Txt("No camera cutout was found, so the island sits at the top centre. Move it over your camera here.", 14.sp, p.sub, modifier = Modifier.padding(start = 26.dp))
     }
     Column(
         Modifier.fillMaxWidth().padding(top = 8.dp),

@@ -191,13 +191,13 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         VolumeRow("Remember each app's volume", "An app you've turned down starts there next time. Back to full forgets it.", prefs.rememberApps) {
             actions.updateVolume { it.copy(rememberApps = !it.rememberApps) }
         }
-        Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(top = 10.dp))
-        ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp), scroll = false) {
+        Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 10.dp))
+        ChoiceRow(Modifier.padding(start = 26.dp, top = 6.dp, bottom = 6.dp), scroll = false) {
             Chip("Right", !prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_RIGHT) } })
             Chip("Left", prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_LEFT) } })
         }
-        Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(top = 6.dp))
-        ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp), scroll = false) {
+        Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 6.dp))
+        ChoiceRow(Modifier.padding(start = 26.dp, top = 6.dp, bottom = 6.dp), scroll = false) {
             Chip("Higher", prefs.height == VolumePrefs.HEIGHT_HIGHER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_HIGHER) } })
             Chip("Middle", prefs.height == VolumePrefs.HEIGHT_MIDDLE, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_MIDDLE) } })
             Chip("Lower", prefs.height == VolumePrefs.HEIGHT_LOWER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_LOWER) } })
@@ -210,9 +210,9 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
             Txt(
                 "At full media volume, press volume up twice to go louder in 5% steps; volume down brings it back. " +
                     "With the EQ processing, its limiter keeps it clean; otherwise it needs Shizuku. It can distort, and very loud sound can harm your hearing.",
-                14.sp, p.sub, modifier = Modifier.padding(top = 2.dp),
+                14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 2.dp),
             )
-            ChoiceRow(Modifier.padding(top = 8.dp, bottom = 6.dp), scroll = false) {
+            ChoiceRow(Modifier.padding(start = 26.dp, top = 8.dp, bottom = 6.dp)) {
                 listOf(2, 4, 7, 10).forEach { n ->
                     Chip(
                         "${BoostPolicy.percent(n)}% · +${BoostPolicy.db(n).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }} dB",

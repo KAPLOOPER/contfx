@@ -186,7 +186,11 @@ internal fun OpensName(
 /** [More], and the rest of the group it opens, written out by the ink. */
 @Composable
 internal fun MoreSection(open: Boolean, onToggle: () -> Unit, label: String = "More", content: @Composable () -> Unit) {
-    dev.continuum.fx.ui.components.InkSection(open, header = { More(open, onToggle, label) }, content = content)
+    // On the ledger's column like every row: the thread drips from the words' first column and
+    // what it opens hangs under the words.
+    dev.continuum.fx.ui.components.InkSection(open, threadIn = 3.5.dp, header = { More(open, onToggle, label) }) {
+        androidx.compose.foundation.layout.Column(Modifier.padding(start = 26.dp)) { content() }
+    }
 }
 
 /**

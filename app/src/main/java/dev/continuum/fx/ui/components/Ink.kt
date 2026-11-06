@@ -1,5 +1,6 @@
 package dev.continuum.fx.ui.components
 
+import androidx.compose.ui.unit.Dp
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -380,6 +381,12 @@ internal class InkThread(open: Boolean) {
 internal val LocalInkThread = compositionLocalOf<InkThread?> { null }
 
 private val DRIP = spring<Float>(dampingRatio = 0.75f, stiffness = 90f)
+
+/** A row's drop coming in: past its size by a little, then back. */
+private val SWELL_IN = spring<Float>(dampingRatio = 0.45f, stiffness = 380f)
+
+/** And drying away. */
+private val DRY = spring<Float>(dampingRatio = 1f, stiffness = 520f)
 private val DRAW_BACK = spring<Float>(dampingRatio = 0.9f, stiffness = 160f)
 
 /** Where the thread runs: this far into the page's margin. */
@@ -395,6 +402,12 @@ private val MARGIN = 24.dp
  * stays while it's open, the controls hanging off it.
  *
  * It uses the page's side margin, so it belongs at the page's edge (or inside another section).
+ *
+ * A ledger row ([threadIn] given) keeps its drop in the row's own first column instead, that far
+ * in from the content's edge, finer: there the drop is also the row's state, resting beside the
+ * label while it's [on] (quiet while [resting]), swelling in as it's switched on and drying away
+ * as it's switched off; opening drips the thread from it whether it's on or not. [dropAt] puts
+ * the drop on the label's line (pixels down from the row's top) when a caption sits under it.
  */
 @Composable
 internal fun InkSection(
@@ -402,12 +415,21 @@ internal fun InkSection(
     modifier: Modifier = Modifier,
     /** Its drop sits quieter in the margin (for something that's off). */
     quiet: Boolean = false,
+    threadIn: Dp? = null,
+    dropAt: (() -> Float)? = null,
+    on: Boolean = false,
+    resting: Boolean = false,
     header: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
     val ink = p.primary
     val thread = remember { InkThread(open) }
+    val fine = threadIn != null
+    // The row's state, as a drop: in with a swell, out by drying.
+    val held = remember { Animatable(if (on) 1f else 0f) }
+    LaunchedEffect(on) { held.animateTo(if (on) 1f else 0f, if (on) SWELL_IN else DRY) }
+    val heldColor = if (resting) p.quiet else ink
     val view = LocalView.current
     var composed by remember { mutableStateOf(open) }
     val first = remember { booleanArrayOf(true) }
@@ -456,19 +478,22 @@ internal fun InkSection(
                 val x = thread.threadX
                 val y = thread.dropY
                 val q = pr.coerceIn(0f, 1f)
+                val line = if (fine) 2.dp.toPx() else 3.dp.toPx()
                 if (q > 0.001f) {
                     val tip = thread.tip.coerceIn(y, max(y, thread.end))
-                    drawLine(ink, Offset(x, y), Offset(x, tip), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+                    drawLine(ink, Offset(x, y), Offset(x, tip), strokeWidth = line, cap = StrokeCap.Round)
                     // The drip at the thread's tip while it runs.
-                    if (q in 0.02f..0.97f) drawCircle(ink, 4.5.dp.toPx(), Offset(x, tip))
+                    if (q in 0.02f..0.97f) drawCircle(ink, if (fine) 3.dp.toPx() else 4.5.dp.toPx(), Offset(x, tip))
                 }
-                // The drop the thread hangs from: it gathers in the margin as the row opens (the
-                // chevron says that it opens), swells a moment as it starts to drip, and is drawn
-                // back in with the thread.
-                if (q > 0.001f) {
-                    val r = (5.dp.toPx() + 2.dp.toPx() * min(1f, q * 3f) * (1f - q)) * min(1f, q * 5f)
-                    drawCircle(ink, r, Offset(x, y))
-                }
+                // The drop the thread hangs from: it gathers as the row opens (the chevron says
+                // that it opens), swells a moment as it starts to drip, and is drawn back in with
+                // the thread. A ledger row's drop is also its state, there while it's on.
+                val base = if (fine) 3.5.dp.toPx() else 5.dp.toPx()
+                val opening = if (q > 0.001f) (base + 2.dp.toPx() * min(1f, q * 3f) * (1f - q)) * min(1f, q * 5f) else 0f
+                val h = held.value
+                val state = if (fine && h > 0.001f) base * h else 0f
+                val r = max(opening, state)
+                if (r > 0.2f) drawCircle(if (opening >= state) ink else heldColor, r, Offset(x, y))
             },
     ) { measurables, constraints ->
         val margin = MARGIN.roundToPx()
@@ -478,9 +503,9 @@ internal fun InkSection(
         val headerH = heads.maxOfOrNull { it.height } ?: 0
         val bodies = measurables[1].map { it.measure(fixed) }
         val full = headerH + bodies.sumOf { it.height }
-        thread.threadX = margin - THREAD_IN.toPx()
+        thread.threadX = if (threadIn != null) margin + threadIn.toPx() else margin - THREAD_IN.toPx()
         thread.headerH = headerH.toFloat()
-        thread.dropY = headerH / 2f
+        thread.dropY = dropAt?.invoke()?.takeIf { it > 0f && it < headerH } ?: (headerH / 2f)
         thread.end = max(thread.dropY, full - 10.dp.toPx())
         // The controls fade in over the last stretch above the drip; a slider's branch waits
         // until the fade has passed it, so it grows out in solid ink.

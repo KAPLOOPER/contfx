@@ -53,6 +53,7 @@ import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
@@ -92,7 +93,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         Gap(6.dp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             HeroLine(if (on) "Island on." else "Island off.", if (on) p.text else p.sub, Modifier.weight(1f).padding(end = 12.dp))
-            InkSwitch(prefs.enabled && state.privileges.islandReady, "Island", actions::toggleIsland)
+            MasterSwitch(prefs.enabled && state.privileges.islandReady, "Island", actions::toggleIsland)
         }
         val waitingFor = when {
             !on -> null
@@ -106,21 +107,15 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         Gap(18.dp)
 
-        // The island itself, in the page: the top of a screen, ruled off rather than carded, with
-        // the ink drawing itself inside it. Samples from Try it play into it even before setup.
+        // The island itself, in the page: the top of a phone's screen, square where the ink comes
+        // off its edge and rounded where it runs on down, the real drops drawing themselves into
+        // it. Samples from Try it play into it even before setup.
         BenchHero {
-            // The screen's edges, ruled open at the top: the island's ink comes off the page
-            // there, as it comes off the phone's edge, so nothing is drawn above it.
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        val w = 1.dp.toPx()
-                        val line = p.line
-                        drawLine(line, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, size.height), w)
-                        drawLine(line, androidx.compose.ui.geometry.Offset(size.width, 0f), androidx.compose.ui.geometry.Offset(size.width, size.height), w)
-                        drawLine(line, androidx.compose.ui.geometry.Offset(0f, size.height - w / 2f), androidx.compose.ui.geometry.Offset(size.width, size.height - w / 2f), w)
-                    },
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
+                    .background(p.surface),
             ) { IslandPreview() }
         }
         Gap(18.dp)

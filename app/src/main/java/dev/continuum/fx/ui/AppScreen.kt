@@ -99,8 +99,6 @@ import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
-import dev.continuum.fx.ui.bench.BenchPage
-import dev.continuum.fx.ui.bench.BenchStatus
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSection
@@ -255,11 +253,21 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         seeds.pageAt = System.currentTimeMillis()
         0
     }
-    // The setup sheet is the only ink left floating: its rect is where messages bud off.
     val dockRect = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
-    // How far down a page is read before its header has folded all it will.
-    val collapsePx = with(androidx.compose.ui.platform.LocalDensity.current) { 120.dp.toPx() }
+    // Read down a page and the pivot folds out of the way; back near the top it opens out. Two
+    // marks rather than one, so a page that's only just long enough doesn't flicker between them.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val foldAt = with(density) { 56.dp.toPx() }
+    val openAt = with(density) { 12.dp.toPx() }
+    var folded by remember { mutableStateOf(false) }
+    LaunchedEffect(state.section) {
+        androidx.compose.runtime.snapshotFlow { scrolls.getValue(state.section).value }.collect { reading ->
+            if (!folded && reading > foldAt) folded = true
+            if (folded && reading < openAt) folded = false
+        }
+    }
+    val fold by animateFloatAsState(if (folded) 1f else 0f, Motion.flow(), label = "pivotFold")
     val stepPad = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.roundToPx() }
 
     // Where each effect sits on its page, so the dock can step through the ones that are on.
@@ -272,32 +280,30 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
 
     CompositionLocalProvider(LocalSeeds provides seeds, LocalEffectSpots provides effectSpots) {
     Box(Modifier.fillMaxSize().background(p.ground)) {
-        BenchPage(
-            title = state.section.name.lowercase(),
-            note = null,
-            collapsed = scrolls.getValue(state.section).value / collapsePx > 0.5f,
-            pageIndex = state.section.ordinal + 1,
-            sections = sections.map { it.name.lowercase() },
-            railCurrent = pivot.indexOf(pivot.contentSlot),
-            railProgress = { pivot.slot.value },
-            onRailPick = { i ->
-                if (i == pivot.indexOf(pivot.contentSlot)) {
-                    // The current word takes its page back to the top.
-                    scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
-                } else {
-                    go(pivot.nearest(i, pivot.contentSlot))
-                }
-            },
-            status = { StatusStrip(state, actions, stepEffects) },
-            dimmed = state.setupOpen,
-        ) {
+        // The page is a column: the pivot at the top, the page, and the dock's place at the
+        // bottom. Nothing is ever drawn over the page but the dock's own ink when you open it.
+        Column(Modifier.fillMaxSize()) {
+            PivotHeader(
+                titles = sections.map { it.name.lowercase() },
+                pivot = pivot,
+                onSelect = { slot ->
+                    if (slot == pivot.contentSlot) {
+                        // The current title takes its page back to the top.
+                        scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
+                    } else {
+                        go(slot)
+                    }
+                },
+                modifier = Modifier.statusBarsPadding().padding(top = 14.dp),
+                fold = { fold },
+            )
             Box(
                 Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxWidth()
                     .clipToBounds()
                     .pointerInput(Unit) {
-                        // Swiping the page sideways turns the pivot, the rail's ink following
-                        // the finger.
+                        // Swiping the page sideways turns the pivot, the titles following the finger.
                         val tracker = VelocityTracker()
                         detectHorizontalDragGestures(
                             onDragStart = {
@@ -355,7 +361,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         update = state.update,
                         title = { "Continuum Kit build ${it.build}" },
                         subtitle = "Settings and permissions stay.",
-                        actionLabel = "Update",
+                        actionLabel = "Update now",
                         installingNote = "Installing. Continuum Kit closes for a moment while it updates, then it's back as it was.",
                         onAction = actions::installUpdate,
                         onAllow = actions::allowInstalls,
@@ -383,16 +389,40 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     Gap(30.dp)
                     UpdateFooter(state, actions)
                 }
+                // The page dissolves into the ground under the titles and above the dock, so a
+                // row is never sliced by either.
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(14.dp)
+                        .background(Brush.verticalGradient(listOf(p.ground, p.ground.copy(alpha = 0f)))),
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .background(Brush.verticalGradient(listOf(p.ground.copy(alpha = 0f), p.ground))),
+                )
+                // With setup open, the page sits back behind the dock's ink.
+                val dim by animateFloatAsState(if (state.setupOpen) 0.72f else 0f, Motion.flow(), label = "pageDim")
+                if (dim > 0.01f) Box(Modifier.matchParentSize().background(p.ground.copy(alpha = dim)))
             }
+            // The dock's place: it sits here, under the page, never on it.
+            Spacer(Modifier.navigationBarsPadding().height(DOCK_H + DOCK_GAP))
         }
 
         SeedOverlay(seeds)
         DockMessage(state.message, dockRect, actions::dismissMessage)
-        // The dock's ink lives on as the setup sheet, rising from above the rail; nothing floats.
-        Dock(state, actions, Modifier.align(Alignment.BottomEnd)) { dockRect.value = it }
+        Dock(state, actions, Modifier.align(Alignment.BottomCenter), onStepEffects = stepEffects) { dockRect.value = it }
     }
     }
 }
+
+/** The dock's height closed, and the ground left under it. */
+private val DOCK_H = 72.dp
+private val DOCK_GAP = 10.dp
 
 @Composable
 private fun SoundContent(state: UiState, store: ProfileStore, actions: AppActions) {
@@ -425,6 +455,8 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         Gap(10.dp)
 
         val comparing by EngineStatus.comparing.collectAsState()
+        // A flat EQ needs little room; one with filters to shape gets the room to shape them in.
+        val graphH by animateDpAsState(if (eqOn && profile.bands.isNotEmpty()) 236.dp else 172.dp, Motion.flow(), label = "graphHeight")
         EqGraph(
             profile = profile,
             live = state.running,
@@ -436,7 +468,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             // Edge to edge: the centre of the page.
             modifier = Modifier.bleed(24.dp),
             inset = 24.dp,
-            height = 172.dp,
+            height = graphH,
             // Hold the graph anywhere away from a dot to hear the music without the EQ.
             onCompare = compare.takeIf { canCompare },
             onQ = { i, q ->
@@ -621,9 +653,9 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, f
                 },
                 label = "eqName",
             ) { name ->
-                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 24.sp)
+                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 30.sp)
             }
-            Box(Modifier.padding(start = 8.dp, top = 1.dp)) { Chevron(listOpen, p.quiet, 17.dp) }
+            Box(Modifier.padding(start = 8.dp, top = 10.dp)) { Chevron(listOpen, p.quiet, 18.dp) }
         }
     }) {
         Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
@@ -964,31 +996,36 @@ internal fun SliderField(label: String, valueText: String, value: Float, hear: S
 }
 
 /**
- * The dock's ink, now as the setup sheet. Closed, it gathers to nothing just above the rail;
- * [state.setupOpen] and it rises straight up into the sheet, whatever section it's for. Nothing
- * floats over the page any more; the power action and the "Tap to set up" line live in the
- * status strip, and the sheet is the dock's remaining half.
+ * The ink dock: the capsule along the bottom that holds the page's power, what it's doing and the
+ * way into setup. It has its own place under the page (the page ends above it, so it never covers
+ * a row), and grows straight up into the setup sheet rather than opening a separate panel: the
+ * same ink, reshaped, the page sitting back behind it while it's open.
  */
 @Composable
 private fun Dock(
     state: UiState,
     actions: AppActions,
     modifier: Modifier = Modifier,
+    onStepEffects: () -> Unit = {},
     onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     val p = LocalPalette.current
     val config = LocalConfiguration.current
     val openHeight = (config.screenHeightDp - 120).coerceIn(420, 660).dp
-    val height by animateDpAsState(if (state.setupOpen) openHeight else 0.dp, Motion.flow(), label = "dockHeight")
-    // A bench, not a card: the sheet comes up square from the rail, the full width of the surface,
-    // and the page behind it stays where it is.
+    val height by animateDpAsState(if (state.setupOpen) openHeight else DOCK_H, Motion.flow(), label = "dockHeight")
+    val side by animateDpAsState(if (state.setupOpen) 8.dp else 12.dp, Motion.flow(), label = "dockSide")
+    // Its full width is the screen's (to a comfortable reading width on large screens).
+    val width = minOf(config.screenWidthDp.dp, CONTENT_MAX + 24.dp) - side * 2
+    val shape = RoundedCornerShape(36.dp)
     Box(
         modifier
-            .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(bottom = 56.dp)
+            .padding(bottom = DOCK_GAP)
+            .width(width)
             .height(height)
             .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
+            .then(if (p.dark) Modifier.border(1.dp, p.edge, shape) else Modifier)
+            .clip(shape)
             .background(p.ink),
     ) {
         Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
@@ -996,218 +1033,12 @@ private fun Dock(
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Volume -> VolumeSetupSheet(state, actions)
                 open && (section == Section.Sound || section == Section.Effects) -> SetupSheet(state, actions)
-                // Closed, there is nothing here: the status strip says what's what.
+                section == Section.Island -> IslandDockBar(state, actions)
+                section == Section.Volume -> VolumeDockBar(state, actions)
+                section == Section.Keyboard -> KeyboardDockBar(state, actions)
+                else -> DockBar(state, actions, onStepEffects.takeIf { section == Section.Effects })
             }
         }
-    }
-}
-
-/**
- * The status strip: what the dock bars became. The power action on the left (or the island's,
- * the volume panel's, the keyboard's next step), the state word and the line in the middle
- * (tapping it opens setup, or takes the keyboard's next step), and setup at the end. Every
- * control the dock held is here; none floats over the page any more.
- */
-@Composable
-private fun StatusStrip(state: UiState, actions: AppActions, onStepEffects: () -> Unit) {
-    val mode by EngineSettings.mode.collectAsState()
-    when (state.section) {
-        Section.Sound, Section.Effects -> {
-            val fx by FxStore.state.collectAsState()
-            val effects = fx.onNames().size
-            val withFx = if (effects == 0) "" else " · $effects ${if (effects == 1) "effect" else "effects"}"
-            val priv = state.privileges
-            val ready = readyFor(mode, priv)
-            val subtitle = when {
-                !ready && !state.running ->
-                    if (mode == EngineMode.Direct) setupSteps(0, 1) else setupSteps(listOf(priv.recordAudio, priv.dump).count { it }, 2)
-                state.running && state.processing.isNotEmpty() -> state.processing.joinToString() + withFx
-                state.running -> "Waiting for something to play"
-                !state.library.eqEnabled -> "EQ off$withFx"
-                else -> state.library.active.name + withFx
-            }
-            if (state.section == Section.Effects && (ready || state.running)) {
-                BenchStatus(
-                    icon = R.drawable.ic_power,
-                    on = state.running,
-                    state = if (state.running) "On" else if (fx.onNames().isNotEmpty()) "Set" else "Off",
-                    line = subtitle,
-                    onToggle = actions::togglePower,
-                    toggleDescription = if (state.running) "Turn processing off" else "Turn processing on",
-                    action = { actions.setSetupOpen(true) },
-                    actionLabel = "Open setup",
-                    trailing = { StripCompare(state, onStepEffects) },
-                )
-            } else {
-                BenchStatus(
-                    icon = R.drawable.ic_power,
-                    on = state.running,
-                    state = if (state.running) "On" else "Off",
-                    line = subtitle,
-                    onToggle = actions::togglePower,
-                    toggleDescription = if (state.running) "Turn processing off" else "Turn processing on",
-                    action = { actions.setSetupOpen(true) },
-                    actionLabel = "Open setup",
-                    trailing = null,
-                )
-            }
-        }
-        Section.Island -> {
-            val on = islandOn(state)
-            val prefs = state.island
-            val sources = buildList {
-                if (prefs.media) add("music")
-                if (prefs.calls) add("calls")
-                if (prefs.timers) add("timers")
-                if (prefs.notifications) add("alerts")
-                if (prefs.battery) add("charging")
-            }
-            val subtitle = when {
-                !state.privileges.islandReady -> setupSteps(listOf(state.privileges.islandOverlay, state.privileges.islandListener).count { it }, 2)
-                !prefs.enabled -> "Switched off"
-                sources.isEmpty() -> "Nothing selected to show"
-                else -> sources.joinToString(", ").replaceFirstChar { it.uppercase() }
-            }
-            BenchStatus(
-                icon = R.drawable.ic_island,
-                on = on,
-                state = if (on) "On" else "Off",
-                line = subtitle,
-                onToggle = actions::toggleIsland,
-                toggleDescription = if (on) "Turn the island off" else "Turn the island on",
-                action = { actions.setSetupOpen(true) },
-                actionLabel = "Open island setup",
-            )
-        }
-        Section.Volume -> {
-            val prefs by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
-            val on = volumeOn(state, prefs)
-            val subtitle = when {
-                !state.privileges.volumeService -> setupSteps(0, 1)
-                !prefs.enabled -> "Android's own panel"
-                else -> "Volume keys open the ink panel"
-            }
-            BenchStatus(
-                icon = R.drawable.ic_volume,
-                on = on,
-                state = if (on) "On" else "Off",
-                line = subtitle,
-                onToggle = actions::toggleVolume,
-                toggleDescription = if (on) "Turn the volume panel off" else "Turn the volume panel on",
-                action = { actions.setSetupOpen(true) },
-                actionLabel = "Open volume setup",
-            )
-        }
-        Section.Keyboard -> {
-            val k = state.keyboard
-            val label = when {
-                !k.installed -> "Install"
-                !k.enabled -> "Open keyboard list"
-                !k.selected -> "Choose keyboard"
-                else -> "Keyboard settings"
-            }
-            BenchStatus(
-                icon = R.drawable.ic_keyboard,
-                on = k.selected,
-                state = if (k.selected) "In use" else "Off",
-                // The state is already said on the left; the line is the one fact it adds.
-                line = if (k.selected) "Build ${k.build} · your keyboard" else statusText(k),
-                onToggle = { nextKeyboardStep(k, actions) },
-                toggleDescription = label,
-                action = { nextKeyboardStep(k, actions) },
-                actionLabel = label,
-                trailing = if (k.installed) {
-                    { StripSetup("Settings", "Keyboard settings") { actions.openKeyboardSettings(null) } }
-                } else null,
-            )
-        }
-    }
-}
-
-/** The strip's last control: setup, or the keyboard's own settings when it's in use. */
-@Composable
-private fun StripSetup(label: String, description: String, onClick: () -> Unit) {
-    val p = LocalPalette.current
-    Box(
-        Modifier
-            .height(48.dp)
-            .padding(horizontal = 6.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClickLabel = description,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Note(label, p.text)
-    }
-}
-
-/**
- * The strip's move on the Effects page, said as a word you can read. The word is "Compare" in the
- * note face, 48dp tall: held, the music plays without the EQ and effects (at the same loudness)
- * for as long as you hold — it says what you're hearing while you do; tapped, the page goes to
- * the next effect that's on. Quiet until there's something to compare with.
- */
-@Composable
-private fun StripCompare(state: UiState, onStep: () -> Unit) {
-    val p = LocalPalette.current
-    val view = LocalView.current
-    val scope = rememberCoroutineScope()
-    val fx by FxStore.state.collectAsState()
-    val spatialOn by dev.continuum.fx.audio.SpatialStore.state.collectAsState()
-    val active = activeEffects(fx, spatialOn.enabled).size
-    val can = state.running && active > 0
-    val step by rememberUpdatedState(onStep)
-    val canCompare by rememberUpdatedState(can)
-    var comparing by remember { mutableStateOf(false) }
-    // Nothing to compare any more (stopped, or the last effect off): let go.
-    LaunchedEffect(can) { if (!can && comparing) { comparing = false; EngineStatus.comparing.value = false } }
-    Box(
-        Modifier
-            .height(48.dp)
-            .semantics {
-                role = Role.Button
-                contentDescription = if (comparing) {
-                    "Without them · let go to hear them again"
-                } else {
-                    "Compare · hold to hear the music without them, tap to go to the next one that's on"
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        var held = false
-                        val hold = scope.launch {
-                            delay(260)
-                            if (canCompare) {
-                                held = true
-                                comparing = true
-                                InkFeel.detent(view)
-                                EngineStatus.comparing.value = true
-                            }
-                        }
-                        val released = tryAwaitRelease()
-                        hold.cancel()
-                        if (held) {
-                            comparing = false
-                            EngineStatus.comparing.value = false
-                        } else if (released && canCompare) {
-                            InkFeel.detent(view)
-                            step()
-                        }
-                    },
-                )
-            }
-            .padding(start = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Note(
-            if (comparing) "Without them" else "Compare",
-            if (can || comparing) p.text else p.quiet,
-        )
     }
 }
 

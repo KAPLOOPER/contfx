@@ -1,5 +1,11 @@
 package dev.continuum.fx.ui
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -59,6 +65,7 @@ import dev.continuum.fx.ui.bench.BenchValueRow
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Note
@@ -134,8 +141,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
     fun countOf(g: Int): String? = STAGES[g].count { it.first in active }.let { if (it == 0) null else "$it on" }
 
     Column {
-        // What's on, said once as a counted rule; the master switch carries no caption — the hero
-        // line beside it and the count above are the words.
+        // What's on, said once as a sentence, with the one switch for all of it beside it, named.
         val waiting = fx.copy(enabled = true).onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
         Kicker(if (fx.enabled) "${names.size} of $EFFECTS on" else "Off")
         Gap(6.dp)
@@ -149,7 +155,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
                 if (fx.enabled && names.isNotEmpty()) p.text else p.sub,
                 Modifier.weight(1f).padding(end = 12.dp),
             )
-            InkSwitch(fx.enabled, "All effects", onClick = { set { it.copy(enabled = !it.enabled) } })
+            MasterSwitch(fx.enabled, "All effects") { set { it.copy(enabled = !it.enabled) } }
         }
         val quiet = listOfNotNull(
             if (!fx.enabled && waiting.isNotEmpty()) "${waiting.size} set to come back" else null,
@@ -509,73 +515,94 @@ internal val LocalEffectSpots = androidx.compose.runtime.staticCompositionLocalO
 private const val EFFECTS = 12
 
 /**
- * The chain strip: the twelve stages in their four groups — Bass, Clarity, Space, Level — each
- * group a cluster of its stages' marks with its name under it in the note face: a filled 7dp drop
- * for a stage that's on, a 3dp hollow ring for one that's off, 8dp between marks in a cluster and
- * 20dp between groups. A group's name is `p.text` the moment anything in it is on, `p.sub` when
- * not. Tapping a group goes to its section. 84dp of strip counting its stand before it: 44dp of
- * marks and names, 18dp between the hero line and the clusters, 22dp under them.
+ * The chain: the twelve stages as one thread of ink across the page, in the order the sound runs
+ * through them, in four groups (Bass, Clarity, Space, Level) with their names under them. A stage
+ * that's on is a bead of ink gathered on the thread, the thread swelling into it; switched on, the
+ * bead swells out of the thread, and switched off it's drawn back in. A stage that's off is a
+ * small empty ring sitting on the thread. A group's name is `p.text` while anything in it is on.
+ * Tapping a group goes to its section.
  */
 @Composable
 private fun ChainStrip(on: Set<String>, onTap: (String) -> Unit, modifier: Modifier = Modifier) {
     val p = LocalPalette.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .height(44.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        STAGES.forEachIndexed { g, group ->
-            val anyOn = group.any { it.first in on }
-            val name = GROUP_NAMES[g]
-            val description = "$name. " + group.joinToString(", ") { stage ->
-                "${stage.second}${if (stage.first in on) ", on" else ""}"
-            }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = remember(g) { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = "Go to $name",
-                    ) { onTap(group.first().first) }
-                    .semantics { contentDescription = description },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Canvas(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(12.dp),
-                ) {
-                    val y = size.height / 2f
-                    val step = size.width / (group.size + 1)
-                    val r = 5.dp.toPx()
-                    // The chain: one line the width of the cell, broken where a stage is on, so the
-                    // ink reads as a bead sitting in the wire rather than a dot drawn over it.
-                    val marks = List(group.size) { i -> step * (i + 1) }
-                    var edge = 0f
-                    marks.forEachIndexed { i, x ->
-                        val on_ = group[i].first in on
-                        drawLine(p.line, Offset(edge, y), Offset(if (on_) x - r else x, y), strokeWidth = 1.dp.toPx())
-                        edge = if (on_) x + r else x
-                        if (on_) {
-                            drawCircle(p.text, r, Offset(x, y))
-                        } else {
-                            drawCircle(p.ground, 2.5.dp.toPx(), Offset(x, y))
-                            drawCircle(p.line, 2.5.dp.toPx(), Offset(x, y), style = Stroke(width = 1.dp.toPx()))
-                        }
-                    }
-                    drawLine(p.line, Offset(edge, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+    val density = LocalDensity.current
+    val goo = remember(density) {
+        if (android.os.Build.VERSION.SDK_INT >= 31) dev.continuum.fx.island.ui.Goo.effect(with(density) { 1.8.dp.toPx() }) else null
+    }
+    val keys = remember { STAGES.flatten().map { it.first } }
+    val beads = remember { keys.associateWith { k -> Animatable(if (k in on) 1f else 0f) } }
+    keys.forEach { k ->
+        val lit = k in on
+        LaunchedEffect(lit) {
+            beads.getValue(k).animateTo(if (lit) 1f else 0f, if (lit) BEAD_IN else BEAD_OUT)
+        }
+    }
+    Box(modifier.fillMaxWidth().height(52.dp)) {
+        // Where each stage sits along the page: spaced evenly within its group's quarter.
+        fun DrawScope.stageX(g: Int, i: Int): Float {
+            val cell = size.width / STAGES.size
+            val step = cell / (STAGES[g].size + 1)
+            return cell * g + step * (i + 1)
+        }
+        val wireY = 12.dp
+        // The thread and its beads, in one ink, so the thread swells into a bead.
+        Canvas(Modifier.fillMaxWidth().height(24.dp).graphicsLayer { renderEffect = goo }) {
+            val y = wireY.toPx()
+            drawLine(p.text, Offset(0f, y), Offset(size.width, y), strokeWidth = if (goo != null) 3.dp.toPx() else 1.5.dp.toPx(), cap = StrokeCap.Round)
+            STAGES.forEachIndexed { g, group ->
+                group.forEachIndexed { i, stage ->
+                    val b = beads.getValue(stage.first).value
+                    if (b > 0.01f) drawCircle(p.text, 5.5.dp.toPx() * b, Offset(stageX(g, i), y))
                 }
-                Spacer(Modifier.height(7.dp))
-                Note(name, if (anyOn) p.text else p.sub)
+            }
+        }
+        // The empty sockets of the stages that are off, over the thread.
+        Canvas(Modifier.fillMaxWidth().height(24.dp)) {
+            val y = wireY.toPx()
+            STAGES.forEachIndexed { g, group ->
+                group.forEachIndexed { i, stage ->
+                    val off = 1f - beads.getValue(stage.first).value.coerceIn(0f, 1f)
+                    if (off > 0.02f) {
+                        val c = Offset(stageX(g, i), y)
+                        val r = 3.dp.toPx() * off
+                        drawCircle(p.ground, r, c)
+                        drawCircle(p.quiet, r, c, style = Stroke(width = 1.2.dp.toPx()))
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxSize()) {
+            STAGES.forEachIndexed { g, group ->
+                val anyOn = group.any { it.first in on }
+                val name = GROUP_NAMES[g]
+                val description = "$name. " + group.joinToString(", ") { stage ->
+                    "${stage.second}${if (stage.first in on) ", on" else ""}"
+                }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember(g) { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClickLabel = "Go to $name",
+                        ) { onTap(group.first().first) }
+                        .semantics { contentDescription = description },
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Note(name, if (anyOn) p.text else p.sub, Modifier.padding(bottom = 6.dp))
+                }
             }
         }
     }
 }
+
+/** A bead swelling out of the thread, a little past its size and back. */
+private val BEAD_IN = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.45f, stiffness = 300f)
+
+/** And drawn back into it. */
+private val BEAD_OUT = androidx.compose.animation.core.spring<Float>(dampingRatio = 1f, stiffness = 420f)
 
 /** The chain's groups, in the page's order: the ledger's sections. */
 private val GROUP_NAMES = listOf("Bass", "Clarity", "Space", "Level")

@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -110,8 +111,11 @@ internal object PivotMath {
  * the current page's drawn out into the ink pill. As you swipe, the pill stretches out to reach
  * the next drop on a neck that thins, its tail letting go of the one it's leaving, then gathers
  * itself there; from the last page round to the first it drains out of the end and gathers again
- * at the start. Tap a drop to go to its page. [collapseOf] says, for each page, how far it's
- * scrolled down (0 to 1): the titles shrink a little as the page they're over is read.
+ * at the start. Tap a drop to go to its page.
+ *
+ * Read down a page and the pivot folds ([fold], 0 to 1): the titles and drops shrink towards the
+ * margin to a header the size of a hero line and give the page their room, so only one thing is
+ * ever set large. Back at the top, they open out again.
  */
 @Composable
 internal fun PivotHeader(
@@ -119,7 +123,7 @@ internal fun PivotHeader(
     pivot: PivotState,
     onSelect: (slot: Int) -> Unit,
     modifier: Modifier = Modifier,
-    collapseOf: (Int) -> Float = { 0f },
+    fold: () -> Float = { 0f },
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -148,22 +152,27 @@ internal fun PivotHeader(
     val step = px(22f)
     fun dropX(i: Int) = x0 + px(2f) + pillW / 2f + i * step
     val dropY = textH - px(3f)
-    val latestCollapse = androidx.compose.runtime.rememberUpdatedState(collapseOf)
+    val latestFold = androidx.compose.runtime.rememberUpdatedState(fold)
+    val fullH = with(density) { textH.toDp() } + 22.dp
 
-    Column(modifier) {
+    // Folded, the header gives back the height it no longer needs (read in layout, so a fold
+    // doesn't recompose anything).
+    Column(
+        modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val k = 1f - FOLD * latestFold.value().coerceIn(0f, 1f)
+            val h = (fullH.toPx() * k).roundToInt()
+            layout(placeable.width, h) { placeable.place(0, 0) }
+        },
+    ) {
         val seeds = LocalSeeds.current
         BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
-                .height(with(density) { textH.toDp() } + 22.dp)
+                .height(fullH)
                 .graphicsLayer {
-                    // A little smaller while the page under them is being read, eased across a swipe.
-                    val s = pivot.slot.value
-                    val b = floor(s).toInt()
-                    val t = s - b
-                    val c0 = latestCollapse.value(pivot.indexOf(b)).coerceIn(0f, 1f)
-                    val c1 = latestCollapse.value(pivot.indexOf(b + 1)).coerceIn(0f, 1f)
-                    val k = 1f - SHRINK * (c0 + (c1 - c0) * t)
+                    // Folding: titles and drops shrink towards the margin's top.
+                    val k = 1f - FOLD * latestFold.value().coerceIn(0f, 1f)
                     scaleX = k
                     scaleY = k
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin((x0 / size.width.coerceAtLeast(1f)).coerceIn(0f, 1f), 0f)
@@ -188,7 +197,8 @@ internal fun PivotHeader(
                 return x
             }
             val right = constraints.maxWidth.toFloat()
-            for (k in -1..titles.size) {
+            // The current title and those after it: nothing hangs off the left edge.
+            for (k in 0..titles.size) {
                 val s = base + k
                 val xs = x(s)
                 if (xs > right || xs + w(s) < 0f) continue
@@ -280,5 +290,5 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDrop(color: Col
     drawRect(color, Offset(left + end * 0.5f, y + (h - neck) / 2f), Size(len - end, neck))
 }
 
-/** How much smaller the titles get while their page is scrolled down. */
-private const val SHRINK = 0.16f
+/** How much the pivot gives up, folded: 42sp titles come down to 26sp, a hero line's size. */
+private const val FOLD = 0.38f

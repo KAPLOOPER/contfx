@@ -5,6 +5,7 @@ import dev.continuum.fx.ui.bench.BenchRow
 import dev.continuum.fx.ui.bench.BenchSection
 import dev.continuum.fx.ui.bench.BenchValueRow
 import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.MasterSwitch
 import androidx.compose.runtime.saveable.rememberSaveable
 import android.media.AudioManager
 import android.os.Build
@@ -103,7 +104,7 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
         Gap(6.dp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             HeroLine(if (on) "Volume panel on." else "Volume panel off.", if (on) p.text else p.sub, Modifier.weight(1f).padding(end = 12.dp))
-            InkSwitch(on, "Panel", actions::toggleVolume)
+            MasterSwitch(on, "Panel", actions::toggleVolume)
         }
         Gap(18.dp)
 

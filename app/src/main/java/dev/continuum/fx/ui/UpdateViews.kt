@@ -1,9 +1,8 @@
 package dev.continuum.fx.ui
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,36 +10,43 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.continuum.fx.R
-import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.PillButton
-import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
+import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
+import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.update.Release
 import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.update.changesOf
-import dev.continuum.fx.ui.theme.Note
+import androidx.compose.animation.animateContentSize
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 
-/** An ink card at the top of every tab while there's a newer build to install. */
+/**
+ * News of a newer build, inline like everything else: no card, no filled surface. One 48dp row —
+ * a 5dp drop of ink, the fact at 16.5sp, and the move in the note face at the far right. Tapping
+ * the row opens the release notes under it, plain indented text on a 1dp thread of ink, as every
+ * opened block is.
+ */
 @Composable
 internal fun UpdateCard(
     update: UpdateState,
@@ -50,7 +56,7 @@ internal fun UpdateCard(
     installingNote: String,
     onAction: () -> Unit,
     onAllow: () -> Unit,
-    onDismiss: () -> Unit,
+    @Suppress("UNUSED_PARAMETER") onDismiss: () -> Unit,
 ) {
     val p = LocalPalette.current
     val current = when (update) {
@@ -61,111 +67,104 @@ internal fun UpdateCard(
         is UpdateState.Failed -> update.release
         else -> null
     }
-    // Kept while the card gathers itself back into the title's drop.
-    val release = rememberLastOf(current)
-    val lastUpdate = rememberLastOf(update.takeIf { current != null }) ?: update
-    Seeded(visible = current != null, corner = 28.dp, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)) {
-        if (release != null) UpdateCardBody(lastUpdate, release, title, subtitle, actionLabel, installingNote, onAction, onAllow, onDismiss)
-    }
-}
+    if (current == null) return
+    var notes by rememberSaveable { mutableStateOf(false) }
+    val changes = current.changes.ifEmpty { changesOf(current.build, current.notes) }
 
-@Composable
-private fun UpdateCardBody(
-    update: UpdateState,
-    release: Release,
-    title: (Release) -> String,
-    subtitle: String,
-    actionLabel: String,
-    installingNote: String,
-    onAction: () -> Unit,
-    onAllow: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val p = LocalPalette.current
-    var whatsNew by rememberSaveable { mutableStateOf(false) }
-    val changes = release.changes.ifEmpty { changesOf(release.build, release.notes) }
     Column(
         Modifier
             .fillMaxWidth()
-            .animateContentSize(Motion.flow())
-            .padding(start = 18.dp, end = 10.dp, top = 14.dp, bottom = 18.dp),
+            .padding(top = 6.dp, bottom = 12.dp)
+            .animateContentSize(Motion.flow()),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).background(p.inkTonal), contentAlignment = Alignment.Center) {
-                Image(
-                    painterResource(R.drawable.ic_import),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    colorFilter = ColorFilter.tint(p.onInk),
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = if (notes) "Hide what's new" else "Show what's new",
+                ) { notes = !notes },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The row's drop of ink: this needs you.
+            Box(Modifier.size(5.dp).clip(CircleShape).background(p.text))
+            Spacer(Modifier.width(14.dp))
+            Txt(title(current), 16.5.sp, p.text, maxLines = 1, modifier = Modifier.weight(1f).padding(end = 12.dp))
+            val move: Pair<String, (() -> Unit)>? = when (update) {
+                is UpdateState.Available -> actionLabel to onAction
+                is UpdateState.Failed -> "Try again" to onAction
+                is UpdateState.NeedsPermission -> "Allow" to onAllow
+                else -> null
+            }
+            if (move != null) {
+                dev.continuum.fx.ui.theme.Note(
+                    move.first,
+                    p.text,
+                    Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                        ) { move.second() }
+                        .padding(start = 12.dp, top = 15.dp, bottom = 15.dp),
                 )
             }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Txt(title(release), 18.sp, p.onInk, bold = true, maxLines = 1)
-                Txt(subtitle, 13.sp, p.onInkSub, maxLines = 1)
-            }
-            if (update is UpdateState.Available || update is UpdateState.Failed) {
-                IconBubble(R.drawable.ic_chevron_down, "Later", onClick = onDismiss, on = Surface.Ink)
-            }
         }
-        // What's new: each change since your build, in a line, with its paragraph under it.
-        if (whatsNew && changes.isNotEmpty()) {
-            Gap(6.dp)
-            changes.take(MAX_CHANGES).forEach { c ->
-                Gap(12.dp)
-                Note(listOfNotNull(c.area, "build ${c.build}").joinToString(" · "), p.onInkSub)
-                Gap(4.dp)
-                Txt(c.headline, 16.sp, p.onInk, bold = true)
-                if (c.detail.isNotEmpty()) {
-                    Gap(2.dp)
-                    Txt(c.detail, 14.sp, p.onInkSub, maxLines = 8)
-                }
-            }
-            if (changes.size > MAX_CHANGES) {
-                Gap(12.dp)
-                Txt("And ${changes.size - MAX_CHANGES} more before those.", 14.sp, p.onInkSub)
-            }
-        }
-        Gap(14.dp)
-        Column(Modifier.padding(end = 8.dp)) {
-            when (update) {
-                is UpdateState.Available -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    PillButton(actionLabel, onAction, icon = R.drawable.ic_import, primary = true, on = Surface.Ink)
-                    if (changes.isNotEmpty()) {
-                        val label = when {
-                            whatsNew -> "Hide what's new"
-                            changes.size > 1 -> "What's new · ${changes.size} builds"
-                            else -> "What's new"
+        // What's under the row, threaded like every opened block: 16dp in, 1dp of ink down its left.
+        // For a fresh release this is the release notes, and it only comes out when asked for.
+        if (update !is UpdateState.Available || notes) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .drawBehind {
+                        drawLine(p.text, Offset(0.5.dp.toPx(), 0f), Offset(0.5.dp.toPx(), size.height), strokeWidth = 1.dp.toPx(), cap = StrokeCap.Square)
+                    }
+                    .padding(start = 16.dp, top = 2.dp, bottom = 12.dp),
+            ) {
+                when (update) {
+                    is UpdateState.Available -> {
+                        changes.take(MAX_CHANGES).forEach { c ->
+                            Note(listOfNotNull(c.area, "build ${c.build}").joinToString(" · "), p.quiet)
+                            Spacer(Modifier.height(3.dp))
+                            Txt(c.headline, 16.sp, p.text)
+                            if (c.detail.isNotEmpty()) {
+                                Spacer(Modifier.height(2.dp))
+                                Txt(c.detail, 14.sp, p.sub)
+                            }
+                            Spacer(Modifier.height(10.dp))
                         }
-                        PillButton(label, { whatsNew = !whatsNew }, on = Surface.Ink)
+                        if (changes.size > MAX_CHANGES) {
+                            Txt("And ${changes.size - MAX_CHANGES} more before those.", 14.sp, p.sub)
+                        }
+                        if (changes.isEmpty()) {
+                            Txt(subtitle, 14.sp, p.sub)
+                        }
                     }
-                }
-                is UpdateState.Downloading -> {
-                    val shown by animateFloatAsState(update.progress, Motion.flow(), label = "updateProgress")
-                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)).background(p.inkTonal)) {
-                        Box(Modifier.fillMaxWidth(shown.coerceIn(0f, 1f)).fillMaxHeight().clip(RoundedCornerShape(50)).background(p.onInk))
+                    is UpdateState.Downloading -> {
+                        val shown = update.progress.toFloat().coerceIn(0f, 1f)
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(p.line)) {
+                            Box(Modifier.fillMaxWidth(shown).fillMaxHeight().background(p.text))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Note("Downloading · ${(update.progress * 100).toInt()}%", p.sub)
                     }
-                    Gap(8.dp)
-                    Txt("Downloading · ${(update.progress * 100).toInt()}%", 14.sp, p.onInk, maxLines = 1)
+                    is UpdateState.Installing -> Txt(installingNote, 14.sp, p.sub)
+                    is UpdateState.NeedsPermission -> Txt(
+                        "Android needs your OK first: allow Continuum Kit to install apps, then come back.",
+                        14.sp, p.text,
+                    )
+                    is UpdateState.Failed -> Txt(update.message, 14.sp, p.sub)
+                    else -> Unit
                 }
-                is UpdateState.Installing ->
-                    Txt(installingNote, 14.sp, p.onInk)
-                is UpdateState.NeedsPermission -> {
-                    Txt("Android needs your OK first: allow Continuum Kit to install apps, then come back.", 14.sp, p.onInk)
-                    Gap(12.dp)
-                    PillButton("Allow", onAllow, primary = true, on = Surface.Ink)
-                }
-                is UpdateState.Failed -> {
-                    Txt(update.message, 14.sp, p.onInk)
-                    Gap(12.dp)
-                    PillButton("Try again", onAction, on = Surface.Ink)
-                }
-                else -> Unit
             }
         }
     }
 }
 
-/** How many builds' changes the card lists before saying how many more there are. */
+/** How many builds' changes the row lists before saying how many more there are. */
 private const val MAX_CHANGES = 8
 
 /** The build you're on, with a manual check, at the bottom of every tab. */
@@ -177,9 +176,27 @@ internal fun UpdateFooter(state: UiState, actions: AppActions) {
         UpdateState.UpToDate -> "Up to date"
         else -> "Check for updates"
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Txt("Continuum Kit · build ${state.build}", 14.sp, p.sub, maxLines = 1, modifier = Modifier.weight(1f))
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Note("Continuum Kit · build ${state.build}", p.quiet, Modifier.weight(1f))
         Spacer(Modifier.width(8.dp))
-        PillButton(label, actions::checkForUpdates, height = 38.dp)
+        Box(
+            Modifier
+                .height(48.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClick = actions::checkForUpdates,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Note(label, p.sub)
+        }
     }
 }

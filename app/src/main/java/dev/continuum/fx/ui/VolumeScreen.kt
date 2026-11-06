@@ -1,21 +1,17 @@
 package dev.continuum.fx.ui
 
-import dev.continuum.fx.ui.components.InkSection
+import dev.continuum.fx.ui.bench.BenchField
+import dev.continuum.fx.ui.bench.BenchRow
+import dev.continuum.fx.ui.bench.BenchSection
+import dev.continuum.fx.ui.bench.BenchValueRow
 import dev.continuum.fx.ui.components.InkSwitch
-import dev.continuum.fx.ui.components.MasterSwitch
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.layout.heightIn
 import android.media.AudioManager
 import android.os.Build
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,63 +95,48 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
     }
 
     Column {
-        // What the volume keys do, said as a sentence, with the switch beside it.
+        // One line — the panel off or on — and the master ink switch beside it, with no caption
+        // under it because the hero line is it.
         val on = volumeOn(state, prefs)
         val media = snap[VolStream.Media]
-        Kicker(if (on) "Volume keys" else "Volume panel off", "Media ${media.percent}%" + if (boost > 0) " + ${BoostPolicy.percent(boost) - 100}%" else "")
+        Kicker(if (on) "Volume panel on" else "Volume panel off", "Media ${media.percent}%" + if (boost > 0) " + ${BoostPolicy.percent(boost) - 100}%" else "")
         Gap(6.dp)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            HeroLine(
-                when {
-                    !state.privileges.volumeService -> "Finish setup to start."
-                    !prefs.enabled -> "Android's own panel, for now."
-                    serviceOn -> "They open the ink panel."
-                    else -> "Starting."
-                },
-                if (on) p.text else p.sub,
-                Modifier.weight(1f).padding(end = 12.dp),
-            )
-            MasterSwitch(on, "Panel", actions::toggleVolume)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            HeroLine(if (on) "Volume panel on." else "Volume panel off.", if (on) p.text else p.sub, Modifier.weight(1f).padding(end = 12.dp))
+            InkSwitch(on, "Panel", actions::toggleVolume)
         }
-        Gap(22.dp)
+        Gap(18.dp)
 
-        // Showing the panel from here, folded into one line.
+        // Showing the panel from here: a row that leads to its two moves, on the ink thread.
         var trying by rememberSaveable { mutableStateOf(false) }
-        val trySource = remember { MutableInteractionSource() }
-        InkSection(trying, header = {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 54.dp)
-                    .clickable(interactionSource = trySource, indication = null, role = Role.Button) { trying = !trying },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OpensName("Try it", trying, p.text, Modifier.weight(1f))
-                ValueNote(if (serviceOn) "or press a key" else "after setup")
-            }
-        }) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PillButton("Show the panel", { actions.showVolumePanel(false) }, icon = R.drawable.ic_volume, height = 38.dp)
-                PillButton("Opened out", { actions.showVolumePanel(true) }, icon = R.drawable.ic_tune, height = 38.dp)
+        BenchValueRow(
+            "Try it",
+            if (serviceOn) "or press a key" else "after setup",
+            expanded = trying,
+            onExpand = { trying = !trying },
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillButton("Show the panel", { actions.showVolumePanel(false) }, icon = R.drawable.ic_volume, height = 44.dp)
+                PillButton("Opened out", { actions.showVolumePanel(true) }, icon = R.drawable.ic_tune, height = 44.dp)
             }
         }
 
-        SectionLabel("Levels", index = 1)
-        Gap(4.dp)
-        Column(Modifier.fillMaxWidth()) {
+        // The five streams, each one field: name and value in the note face above, the ink under.
+        BenchSection(1, "Levels")
+        Column(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
             VolStream.entries.forEach { s ->
                 val lv = snap[s]
                 val muted = s == VolStream.Notification && snap.ringer != AudioManager.RINGER_MODE_NORMAL
-                StreamControl(s, lv, snap.ringer, muted, if (s == VolStream.Media && boost > 0) BoostPolicy.percent(boost) else null)
+                StreamField(s, lv, snap.ringer, muted, if (s == VolStream.Media && boost > 0) BoostPolicy.percent(boost) else null)
             }
-            ChoiceRow(Modifier.padding(top = 8.dp, bottom = 10.dp)) {
-                Chip("Ring", snap.ringer == AudioManager.RINGER_MODE_NORMAL, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_NORMAL) }, on = Surface.Card)
-                Chip("Vibrate", snap.ringer == AudioManager.RINGER_MODE_VIBRATE, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_VIBRATE) }, on = Surface.Card)
-                Chip("Silent", snap.ringer == AudioManager.RINGER_MODE_SILENT, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_SILENT) }, on = Surface.Card)
-            }
+        }
+        ChoiceRow(Modifier.padding(start = 26.dp, top = 10.dp, bottom = 6.dp), scroll = false) {
+            Chip("Ring", snap.ringer == AudioManager.RINGER_MODE_NORMAL, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_NORMAL) })
+            Chip("Vibrate", snap.ringer == AudioManager.RINGER_MODE_VIBRATE, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_VIBRATE) })
+            Chip("Silent", snap.ringer == AudioManager.RINGER_MODE_SILENT, onClick = { VolumeModel.setRinger(AudioManager.RINGER_MODE_SILENT) })
         }
         val problem by VolumeModel.problem.collectAsState()
         problem?.let {
@@ -168,8 +148,8 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
             }
         }
 
-        SectionLabel("Apps", index = 2)
-        Gap(4.dp)
+        // Each app its own level, and those that play alongside each other, all under one rule.
+        BenchSection(2, "Apps")
         when {
             !helper -> Rest(
                 "Each app can have its own volume, with Shizuku.",
@@ -181,121 +161,125 @@ internal fun VolumeContent(state: UiState, actions: AppActions) {
             else -> Unit
         }
         if (helper && apps.isNotEmpty()) {
-            Column(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 // Each row belongs to its app, not to its place in the list.
                 apps.forEach { a ->
-                    key(a.pkg) { AppControl(a.pkg, a.label, a.volume) { v -> AppVolumes.setVolume(a.pkg, v) } }
+                    key(a.pkg) { AppField(a.pkg, a.label, a.volume) { v -> AppVolumes.setVolume(a.pkg, v) } }
                 }
             }
         }
-
         PlaysAlongside(helper, known, actions)
 
-        SectionLabel("Panel", index = 4)
-        Gap(4.dp)
-        Column(Modifier.fillMaxWidth()) {
-            ToggleRow("Replace Android's panel", "The volume keys open the ink panel. Off hands them straight back to Android.", prefs.enabled) {
-                actions.updateVolume { it.copy(enabled = !it.enabled) }
-            }
-            ToggleRow("Open with every stream", "The first press opens the panel out, with every stream and app.", prefs.openExpanded) {
-                actions.updateVolume { it.copy(openExpanded = !it.openExpanded) }
-            }
-            ToggleRow("Feel each step", "A light tick on every step, from the keys or your finger.", prefs.haptics) {
-                actions.updateVolume { it.copy(haptics = !it.haptics) }
-            }
-            ToggleRow("Camera keeps its shutter", "In the camera app, the volume keys take pictures as usual.", prefs.cameraKeys) {
-                actions.updateVolume { it.copy(cameraKeys = !it.cameraKeys) }
-            }
-            ToggleRow("Remember each app's volume", "An app you've turned down starts there next time. Back to full forgets it.", prefs.rememberApps) {
-                actions.updateVolume { it.copy(rememberApps = !it.rememberApps) }
-            }
-            Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(top = 10.dp))
-            ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
-                Chip("Right", !prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_RIGHT) } }, on = Surface.Card)
-                Chip("Left", prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_LEFT) } }, on = Surface.Card)
-            }
-            Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(top = 6.dp))
-            ChoiceRow(Modifier.padding(top = 6.dp, bottom = 12.dp)) {
-                Chip("Higher", prefs.height == VolumePrefs.HEIGHT_HIGHER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_HIGHER) } }, on = Surface.Card)
-                Chip("Middle", prefs.height == VolumePrefs.HEIGHT_MIDDLE, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_MIDDLE) } }, on = Surface.Card)
-                Chip("Lower", prefs.height == VolumePrefs.HEIGHT_LOWER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_LOWER) } }, on = Surface.Card)
-            }
+        // How the keys behave, as plain rows.
+        BenchSection(3, "Panel")
+        VolumeRow("Replace Android's panel", "The volume keys open the ink panel. Off hands them straight back to Android.", prefs.enabled) {
+            actions.updateVolume { it.copy(enabled = !it.enabled) }
+        }
+        VolumeRow("Open with every stream", "The first press opens the panel out, with every stream and app.", prefs.openExpanded) {
+            actions.updateVolume { it.copy(openExpanded = !it.openExpanded) }
+        }
+        VolumeRow("Feel each step", "A light tick on every step, from the keys or your finger.", prefs.haptics) {
+            actions.updateVolume { it.copy(haptics = !it.haptics) }
+        }
+        VolumeRow("Camera keeps its shutter", "In the camera app, the volume keys take pictures as usual.", prefs.cameraKeys) {
+            actions.updateVolume { it.copy(cameraKeys = !it.cameraKeys) }
+        }
+        VolumeRow("Remember each app's volume", "An app you've turned down starts there next time. Back to full forgets it.", prefs.rememberApps) {
+            actions.updateVolume { it.copy(rememberApps = !it.rememberApps) }
+        }
+        Txt("Side", 15.sp, p.sub, modifier = Modifier.padding(top = 10.dp))
+        ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp), scroll = false) {
+            Chip("Right", !prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_RIGHT) } })
+            Chip("Left", prefs.left, onClick = { actions.updateVolume { it.copy(side = VolumePrefs.SIDE_LEFT) } })
+        }
+        Txt("Height", 15.sp, p.sub, modifier = Modifier.padding(top = 6.dp))
+        ChoiceRow(Modifier.padding(top = 6.dp, bottom = 6.dp), scroll = false) {
+            Chip("Higher", prefs.height == VolumePrefs.HEIGHT_HIGHER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_HIGHER) } })
+            Chip("Middle", prefs.height == VolumePrefs.HEIGHT_MIDDLE, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_MIDDLE) } })
+            Chip("Lower", prefs.height == VolumePrefs.HEIGHT_LOWER, onClick = { actions.updateVolume { it.copy(height = VolumePrefs.HEIGHT_LOWER) } })
         }
 
-        SectionLabel("Boost", index = 5)
-        Gap(4.dp)
-        Column(Modifier.fillMaxWidth()) {
-            ToggleRow(
-                "Go past 100%",
+        // Past 100%, as its own rule, with the warning said out whole under its row.
+        BenchSection(4, "Boost")
+        BenchRow("Go past 100%", null, on = prefs.boost, onToggle = { actions.updateVolume { it.copy(boost = !it.boost) } }, switchDescription = "Go past 100%")
+        if (prefs.boost) {
+            Txt(
                 "At full media volume, press volume up twice to go louder in 5% steps; volume down brings it back. " +
                     "With the EQ processing, its limiter keeps it clean; otherwise it needs Shizuku. It can distort, and very loud sound can harm your hearing.",
-                prefs.boost,
-            ) { actions.updateVolume { it.copy(boost = !it.boost) } }
-            if (prefs.boost) {
-                ChoiceRow(Modifier.padding(top = 4.dp, bottom = 12.dp)) {
-                    listOf(2, 4, 7, 10).forEach { n ->
-                        Chip(
-                            "${BoostPolicy.percent(n)}% · +${BoostPolicy.db(n).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }} dB",
-                            prefs.boostSteps == n,
-                            onClick = { actions.updateVolume { it.copy(boostSteps = n) } },
-                            on = Surface.Card,
-                        )
-                    }
+                14.sp, p.sub, modifier = Modifier.padding(top = 2.dp),
+            )
+            ChoiceRow(Modifier.padding(top = 8.dp, bottom = 6.dp), scroll = false) {
+                listOf(2, 4, 7, 10).forEach { n ->
+                    Chip(
+                        "${BoostPolicy.percent(n)}% · +${BoostPolicy.db(n).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }} dB",
+                        prefs.boostSteps == n,
+                        onClick = { actions.updateVolume { it.copy(boostSteps = n) } },
+                    )
                 }
             }
         }
     }
 }
 
-/** One stream: its name and level, then − and + either side of a slider. */
+/** A panel row of the volume's: its caption says what it does, the ink and the switch carry the state. */
 @Composable
-private fun StreamControl(s: VolStream, lv: Level, ringer: Int, muted: Boolean, boostPercent: Int?) {
+private fun VolumeRow(label: String, caption: String, on: Boolean, onToggle: () -> Unit) {
+    BenchRow(label, caption, on = on, onToggle = onToggle, switchDescription = label)
+}
+
+/** One stream as a field: its name and level in the note face, the ink under it — the stream's speaker mark at the slider's left, the + that keeps stepping at its right. */
+@Composable
+private fun StreamField(s: VolStream, lv: Level, ringer: Int, muted: Boolean, boostPercent: Int?) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                painterResource(streamIcon(s, lv.index == lv.min, ringer)),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                colorFilter = ColorFilter.tint(if (muted) p.sub else p.text),
-            )
-            Spacer(Modifier.width(8.dp))
-            Txt(s.label, 17.sp, if (muted) p.sub else p.text, modifier = Modifier.weight(1f), maxLines = 1)
-            // The percentage and the device's own step, so 73% is plainly step 11 of 15.
-            Txt(
-                boostPercent?.let { "$it% · boosted" } ?: "${lv.percent}% · ${lv.index - lv.min}/${lv.steps}",
-                14.sp, if (boostPercent != null) p.live else p.sub, maxLines = 1,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RepeatBubble(R.drawable.ic_volume_low, "Down") { VolumeModel.step(s, -1) }
-            InkSlider(
-                value = lv.fraction,
-                onChange = { f -> VolumeModel.set(s, lv.indexAt(f)) },
-                modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
-                label = boostPercent?.let { "$it%" } ?: "${lv.percent}%",
-                muted = muted,
-            )
-            RepeatBubble(R.drawable.ic_plus, "Up") { VolumeModel.step(s, 1) }
-        }
+    BenchField(
+        label = s.label,
+        value = boostPercent?.let { "$it% · boosted" } ?: "${lv.percent}% · ${lv.index - lv.min}/${lv.steps}",
+        leading = {
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Image(
+                    painterResource(streamIcon(s, lv.index == lv.min, ringer)),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    colorFilter = ColorFilter.tint(if (muted) p.sub else p.text),
+                )
+            }
+        },
+        trailing = { RepeatBubble(R.drawable.ic_plus, "Up") { VolumeModel.step(s, 1) } },
+        live = boostPercent != null,
+        muted = muted,
+    ) {
+        InkSlider(
+            value = lv.fraction,
+            onChange = { f -> VolumeModel.set(s, lv.indexAt(f)) },
+            label = boostPercent?.let { "$it%" } ?: "${lv.percent}%",
+            muted = muted,
+        )
     }
 }
 
 @Composable
-private fun AppControl(pkg: String, label: String, volume: Float, onChange: (Float) -> Unit) {
-    val p = LocalPalette.current
+private fun AppField(pkg: String, label: String, volume: Float, onChange: (Float) -> Unit) {
     val iconPx = with(LocalDensity.current) { 28.dp.roundToPx() }
     val icon = remember(pkg) { AppVolumes.icon(pkg, iconPx) }
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
-                Image(icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(24.dp).clip(CircleShape))
-                Spacer(Modifier.width(10.dp))
-            }
-            Txt(label, 17.sp, p.text, modifier = Modifier.weight(1f), maxLines = 1)
-            Txt("${(volume * 100f).toInt()}%", 14.sp, p.sub, maxLines = 1)
+    if (icon != null) {
+        BenchField(
+            label = label,
+            value = "${(volume * 100f).toInt()}%",
+            leading = {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Image(icon.asImageBitmap(), contentDescription = null, modifier = Modifier.size(24.dp).clip(CircleShape))
+                }
+            },
+        ) {
+            InkSlider(value = volume, onChange = onChange, label = "${(volume * 100f).toInt()}%")
         }
-        InkSlider(value = volume, onChange = onChange, modifier = Modifier.fillMaxWidth(), label = "${(volume * 100f).toInt()}%")
+    } else {
+        BenchField(label = label, value = "${(volume * 100f).toInt()}%") {
+            InkSlider(value = volume, onChange = onChange, label = "${(volume * 100f).toInt()}%")
+        }
     }
 }
 
@@ -308,7 +292,6 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
     val p = LocalPalette.current
     val alongside by AppVolumes.alongside.collectAsState()
     val problem by AppVolumes.alongsideProblem.collectAsState()
-    SectionLabel("Play alongside", index = 3)
     var how by rememberSaveable { mutableStateOf(false) }
     val list = (alongside.toList() + known).distinct()
     when {
@@ -326,7 +309,7 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
         }
         else -> {
             problem?.let {
-                Gap(6.dp)
+                Gap(8.dp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     dev.continuum.fx.island.ui.RedMark(13.dp)
                     Spacer(Modifier.width(8.dp))
@@ -337,7 +320,7 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
             Column(Modifier.fillMaxWidth()) {
                 list.forEach { pkg ->
                     val on = pkg in alongside
-                    ToggleRow(AppVolumes.label(pkg), "Plays alongside", on) {
+                    VolumeRow(AppVolumes.label(pkg), "Plays alongside", on) {
                         actions.setPlaysAlongside(pkg, !on)
                     }
                 }
@@ -354,14 +337,14 @@ private fun PlaysAlongside(helper: Boolean, known: List<String>, actions: AppAct
     }
 }
 
-/** A round − or + that keeps stepping while held, quicker the longer you hold. */
+/** A round + that keeps stepping while held, quicker the longer you hold. */
 @Composable
 private fun RepeatBubble(icon: Int, description: String, onStep: () -> Unit) {
     val p = LocalPalette.current
     val step by rememberUpdatedState(onStep)
     Box(
         Modifier
-            .size(40.dp)
+            .size(48.dp)
             .semantics { contentDescription = description }
             .pointerInput(Unit) {
                 coroutineScope {
@@ -417,10 +400,10 @@ internal fun VolumeSetupSheet(state: UiState, actions: AppActions) {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt("Set up volume", 24.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
+            Txt("Set up volume", 21.sp, p.onInk, modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_chevron_down, "Close setup", onClick = { actions.setSetupOpen(false) }, on = Surface.Ink)
         }
         Gap(4.dp)
@@ -436,11 +419,11 @@ internal fun VolumeSetupSheet(state: UiState, actions: AppActions) {
             "An accessibility service takes the two volume keys before Android's panel does. It listens to nothing else and reads nothing on screen.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton(shizukuLabel, actions::grantVolumeWithShizuku, primary = true, on = Surface.Ink)
-                PillButton("Open accessibility settings", actions::openAccessibilitySettings, on = Surface.Ink)
+                PillButton(shizukuLabel, actions::grantVolumeWithShizuku, icon = R.drawable.ic_bolt, primary = true, on = Surface.Ink)
+                PillButton("Open accessibility settings", actions::openAccessibilitySettings, icon = R.drawable.ic_island, on = Surface.Ink)
                 if (Build.VERSION.SDK_INT >= 33) {
                     Txt("If the switch is greyed out, open App info, tap the menu in the corner and choose Allow restricted settings.", 14.sp, p.onInkSub)
-                    PillButton("App info", actions::openAppInfo, on = Surface.Ink)
+                    PillButton("App info", actions::openAppInfo, icon = R.drawable.ic_setup, on = Surface.Ink)
                 }
             }
         }
@@ -459,7 +442,7 @@ internal fun VolumeSetupSheet(state: UiState, actions: AppActions) {
             "Notification access (the island uses it too) lets the panel see when something is cast, so the keys move that device instead.",
             optional = true,
         ) {
-            PillButton("Open notification access", actions::openListenerSettings, on = Surface.Ink)
+            PillButton("Open notification access", actions::openListenerSettings, icon = R.drawable.ic_bell, on = Surface.Ink)
         }
     }
 }

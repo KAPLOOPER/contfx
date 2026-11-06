@@ -416,7 +416,7 @@ fun InkSwitch(
     val resting = if (onInk) p.onInkSub else p.sub
     Box(
         modifier
-            .size(width = 56.dp, height = 44.dp)
+            .size(width = 56.dp, height = 48.dp)
             .toggleable(on, interactionSource = source, indication = null, role = Role.Switch) {
                 InkFeel.toggle(view, !on)
                 onClick()

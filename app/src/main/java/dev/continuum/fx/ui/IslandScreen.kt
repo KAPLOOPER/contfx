@@ -4,30 +4,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.foundation.layout.heightIn
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
-import dev.continuum.fx.island.ui.InkFeel
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -39,16 +42,22 @@ import dev.continuum.fx.island.IslandRepository
 import dev.continuum.fx.island.IslandSettings
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
+import dev.continuum.fx.ui.bench.BenchField
+import dev.continuum.fx.ui.bench.BenchHero
+import dev.continuum.fx.ui.bench.BenchMore
+import dev.continuum.fx.ui.bench.BenchRow
+import dev.continuum.fx.ui.bench.BenchSection
+import dev.continuum.fx.ui.bench.BenchWrap
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.IconBubble
+import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.InkSwitch
-import dev.continuum.fx.ui.components.MasterSwitch
-import dev.continuum.fx.ui.components.InkSection
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
+import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
 import kotlin.math.abs
 
@@ -61,10 +70,10 @@ private const val ISLAND_SOURCES = 11
 internal fun IslandContent(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val prefs = state.island
-    var showMore by rememberSaveable { mutableStateOf(false) }
     var aboutInk by rememberSaveable { mutableStateOf(false) }
     Column {
-        // What the island shows, said as a sentence, with its switch beside it.
+        // One line — the island off or on — and the master ink switch on its right with no
+        // caption under it, because the hero line beside it is the caption.
         val on = islandOn(state)
         val shown = buildList {
             if (prefs.media) add("Music")
@@ -79,20 +88,11 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             if (prefs.headphones) add("headphones")
             if (prefs.battery) add("charging")
         }.mapIndexed { i, w -> if (i == 0) w.replaceFirstChar { it.uppercase() } else w }
-        Kicker(if (on) "In the island" else "Island off", if (on) "${shown.size} of $ISLAND_SOURCES" else null)
+        Kicker(if (on) "Island on" else "Island off", if (on) "${shown.size} of $ISLAND_SOURCES" else null)
         Gap(6.dp)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-            HeroLine(
-                when {
-                    !state.privileges.islandReady -> "Finish setup to start."
-                    !prefs.enabled -> "Switched off."
-                    shown.isEmpty() -> "Nothing chosen to show."
-                    else -> inWords(shown)
-                },
-                if (on && shown.isNotEmpty()) p.text else p.sub,
-                Modifier.weight(1f).padding(end = 12.dp),
-            )
-            MasterSwitch(prefs.enabled && state.privileges.islandReady, "Island", actions::toggleIsland)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            HeroLine(if (on) "Island on." else "Island off.", if (on) p.text else p.sub, Modifier.weight(1f).padding(end = 12.dp))
+            InkSwitch(prefs.enabled && state.privileges.islandReady, "Island", actions::toggleIsland)
         }
         val waitingFor = when {
             !on -> null
@@ -102,131 +102,221 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         if (waitingFor != null) {
             Gap(10.dp)
-            dev.continuum.fx.ui.theme.Note(waitingFor, p.sub)
+            Note(waitingFor, p.sub)
         }
-        Gap(22.dp)
+        Gap(18.dp)
 
-        // The island itself, in the page: samples play into it even before it's set up.
-        IslandPreview()
-        Gap(12.dp)
-        dev.continuum.fx.ui.theme.Note("Try it", p.sub)
+        // The island itself, in the page: the top of a screen, ruled off rather than carded, with
+        // the ink drawing itself inside it. Samples from Try it play into it even before setup.
+        BenchHero {
+            // The screen's edges, ruled open at the top: the island's ink comes off the page
+            // there, as it comes off the phone's edge, so nothing is drawn above it.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val w = 1.dp.toPx()
+                        val line = p.line
+                        drawLine(line, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, size.height), w)
+                        drawLine(line, androidx.compose.ui.geometry.Offset(size.width, 0f), androidx.compose.ui.geometry.Offset(size.width, size.height), w)
+                        drawLine(line, androidx.compose.ui.geometry.Offset(0f, size.height - w / 2f), androidx.compose.ui.geometry.Offset(size.width, size.height - w / 2f), w)
+                    },
+            ) { IslandPreview() }
+        }
+        Gap(18.dp)
+        var moreDemos by rememberSaveable { mutableStateOf(false) }
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Modifier.fillMaxWidth().padding(start = 26.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PillButton("Music", { IslandRepository.demo("media") }, icon = R.drawable.ic_music, height = 38.dp)
-            PillButton("Call", { IslandRepository.demo("call") }, icon = R.drawable.ic_call, height = 38.dp)
-            PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer, height = 38.dp)
-            PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island, height = 38.dp)
-            PillButton("Code", { IslandRepository.demo("code") }, icon = R.drawable.ic_copy, height = 38.dp)
-            PillButton("Missed call", { IslandRepository.demo("missed") }, icon = R.drawable.ic_call, height = 38.dp)
-            PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm, height = 38.dp)
-            PillButton("Event", { IslandRepository.demo("event") }, icon = R.drawable.ic_event, height = 38.dp)
-            PillButton("Download", { IslandRepository.demo("download") }, height = 38.dp)
-            PillButton("Sound mode", { IslandRepository.demo("sound") }, icon = R.drawable.ic_bell, height = 38.dp)
-            PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt, height = 38.dp)
-            PillButton("Clear", { IslandRepository.demo("clear") }, height = 38.dp)
+            Note("Try it", p.sub, Modifier.weight(1f))
+            Box(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClickLabel = if (moreDemos) "Show fewer samples" else "Show every sample",
+                    ) { moreDemos = !moreDemos }
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Note(if (moreDemos) "Fewer" else "Every one", p.text)
+            }
         }
-        Gap(8.dp)
-
-        // Until Android has given the island what it needs, setting it up is the page's first part.
-        val ready = state.privileges.islandReady
-        val first = if (ready) 1 else 2
-        if (!ready) {
-            SectionLabel("Set it up", index = 1)
-            Gap(4.dp)
-            IslandChecklist(state, actions)
-        }
-
-        SectionLabel("Show in the island", index = first)
-        Gap(4.dp)
-        Column(Modifier.fillMaxWidth()) {
-            ToggleRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
-                actions.updateIsland { it.copy(media = !it.media) }
-            }
-            ToggleRow("Calls", "Drip down to answer, then a timer", prefs.calls) {
-                actions.updateIsland { it.copy(calls = !it.calls) }
-            }
-            ToggleRow("Timers", "Countdowns and stopwatches", prefs.timers) {
-                actions.updateIsland { it.copy(timers = !it.timers) }
-            }
-            ToggleRow(
-                "Notifications",
-                "Drip down with their buttons, Reply too",
-                prefs.notifications,
-            ) {
-                actions.updateIsland { it.copy(notifications = !it.notifications) }
-            }
-            ToggleRow(
-                "One-time codes",
-                "Large, with Copy, and in the keyboard",
-                prefs.codes,
-            ) {
-                actions.updateIsland { it.copy(codes = !it.codes) }
-            }
-            ToggleRow("Alarms", "Your next alarm, and Snooze and Stop", prefs.alarms) {
-                actions.updateIsland { it.copy(alarms = !it.alarms) }
-            }
-            if (prefs.alarms) {
-                ChoiceRow(Modifier.padding(bottom = 10.dp)) {
-                    Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } }, on = Surface.Card)
-                    Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } }, on = Surface.Card)
-                }
-            }
-            MoreSection(showMore, { showMore = !showMore }) {
-            val eventsOn = prefs.events && state.privileges.calendar
-            ToggleRow(
-                "Calendar events",
-                if (prefs.events && !state.privileges.calendar) "Needs calendar access: tap to allow"
-                else "From 15 minutes before, with Join",
-                eventsOn,
-                always = prefs.events && !state.privileges.calendar,
-            ) {
-                when {
-                    eventsOn -> actions.updateIsland { it.copy(events = false) }
-                    state.privileges.calendar -> actions.updateIsland { it.copy(events = true) }
-                    else -> actions.requestCalendar()
-                }
-            }
-            ToggleRow("Downloads and live updates", "Progress, directions, deliveries, rides", prefs.live) {
-                actions.updateIsland { it.copy(live = !it.live) }
-            }
-            ToggleRow("Sound mode", "Ring, vibrate or silent as you switch", prefs.sound) {
-                actions.updateIsland { it.copy(sound = !it.sound) }
-            }
-            ToggleRow("Headphones", "Headphones, speakers and the car", prefs.headphones) {
-                actions.updateIsland { it.copy(headphones = !it.headphones) }
-            }
-            ToggleRow("Charging and battery", "Plugging in, running low, fully charged", prefs.battery) {
-                actions.updateIsland { it.copy(battery = !it.battery) }
-            }
-            ToggleRow("Pull a drop", "Hold and drag down for recent ones", prefs.pull) {
-                actions.updateIsland { it.copy(pull = !it.pull) }
-            }
+        BenchWrap(Modifier.padding(start = 26.dp)) {
+            PillButton("Music", { IslandRepository.demo("media") }, icon = R.drawable.ic_music)
+            PillButton("Call", { IslandRepository.demo("call") }, icon = R.drawable.ic_call)
+            PillButton("Timer", { IslandRepository.demo("timer") }, icon = R.drawable.ic_timer)
+            PillButton("Notification", { IslandRepository.demo("note") }, icon = R.drawable.ic_island)
+            PillButton("Code", { IslandRepository.demo("code") }, icon = R.drawable.ic_copy)
+            if (moreDemos) {
+                PillButton("Missed call", { IslandRepository.demo("missed") }, icon = R.drawable.ic_call)
+                PillButton("Alarm", { IslandRepository.demo("alarm") }, icon = R.drawable.ic_alarm)
+                PillButton("Event", { IslandRepository.demo("event") }, icon = R.drawable.ic_event)
+                PillButton("Download", { IslandRepository.demo("download") })
+                PillButton("Sound mode", { IslandRepository.demo("sound") }, icon = R.drawable.ic_bell)
+                PillButton("Charging", { IslandRepository.demo("battery") }, icon = R.drawable.ic_bolt)
+                PillButton("Clear", { IslandRepository.demo("clear") })
             }
         }
 
-        PopupsSection(state, actions, index = first + 1)
-
-        SectionLabel("In the bar", index = first + 2)
-        Gap(4.dp)
-        Column(Modifier.fillMaxWidth()) {
-            ToggleRow("Time", "A drop at the left of the status bar; tap it for the date", prefs.alwaysTime) {
-                actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
+        // Getting the island its two Android switches, as rows like every other: the state at the
+        // row's end, the detail (the settings buttons, the restricted-settings note) opened
+        // beneath it on the ink thread.
+        BenchSection(1, "Set it up")
+        var setupOpen by rememberSaveable { mutableStateOf<String?>(null) }
+        fun openSetup(key: String) { setupOpen = if (setupOpen == key) null else key }
+        BenchRow(
+            "Draw the island",
+            "Accessibility · draws over apps, reads nothing",
+            on = state.privileges.islandOverlay,
+            expanded = setupOpen == "draw",
+            onExpand = { openSetup("draw") },
+            trailing = { SetupState(state.privileges.islandOverlay) },
+        ) {
+            PillButton("Open accessibility settings", actions::openAccessibilitySettings, height = 44.dp)
+            if (Build.VERSION.SDK_INT >= 33) {
+                Gap(4.dp)
+                Txt("Greyed out? Open App info, tap the menu in the corner and choose Allow restricted settings.", 14.sp, p.sub)
+                Gap(4.dp)
+                PillButton("App info", actions::openAppInfo, height = 44.dp)
             }
-            ToggleRow("Battery", "A drop at the right, as full as the battery; ink runs into it while charging", prefs.alwaysBattery) {
-                actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) }
-            }
-            Txt(
-                "Hold any drop in the bar and slide it along to move it. Reset, under Placement, puts them all back.",
-                14.sp, p.sub, modifier = Modifier.padding(top = 6.dp),
+        }
+        BenchRow(
+            "See what's live",
+            "Notification access · music, calls, timers",
+            on = state.privileges.islandListener,
+            expanded = setupOpen == "listen",
+            onExpand = { openSetup("listen") },
+            trailing = { SetupState(state.privileges.islandListener) },
+        ) {
+            PillButton("Open notification access", actions::openListenerSettings, height = 44.dp)
+        }
+        if (!state.privileges.islandReady) {
+            // One way in, in the sheet: the two rows above say what each switch is, and the strip
+            // says where to go. A third and fourth call to action on the page would just compete.
+            BenchRow(
+                "All of it at once",
+                "Shizuku can flip both switches, and open them from a computer if it isn't running",
+                on = false,
+                onExpand = { actions.setSetupOpen(true) },
+                trailing = { Note("Set up", p.text) },
+                content = {},
             )
         }
 
-        PlacementSection(prefs, actions, index = first + 3)
-        Gap(20.dp)
+        PlacementSection(prefs, actions)
 
+        // What the island shows, from what it carries to what it steps aside for: plain rows,
+        // the ink in the margin carrying the state.
+        BenchSection(3, "Look")
+        val eventsOn = prefs.events && state.privileges.calendar
+        IslandRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
+            actions.updateIsland { it.copy(media = !it.media) }
+        }
+        IslandRow("Calls", "Drip down to answer, then a timer", prefs.calls) {
+            actions.updateIsland { it.copy(calls = !it.calls) }
+        }
+        IslandRow("Timers", "Countdowns and stopwatches", prefs.timers) {
+            actions.updateIsland { it.copy(timers = !it.timers) }
+        }
+        IslandRow("Notifications", "Drip down with their buttons, Reply too", prefs.notifications) {
+            actions.updateIsland { it.copy(notifications = !it.notifications) }
+        }
+        IslandRow("One-time codes", "Large, with Copy, and in the keyboard", prefs.codes) {
+            actions.updateIsland { it.copy(codes = !it.codes) }
+        }
+        IslandRow("Alarms", "Your next alarm, and Snooze and Stop", prefs.alarms) {
+            actions.updateIsland { it.copy(alarms = !it.alarms) }
+        }
+        if (prefs.alarms) {
+            ChoiceRow(Modifier.padding(top = 2.dp, bottom = 8.dp), scroll = false) {
+                Chip("12 hours before", !prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = false) } })
+                Chip("Whenever one is set", prefs.alarmAlways, onClick = { actions.updateIsland { it.copy(alarmAlways = true) } })
+            }
+        }
+        IslandRow(
+            "Calendar events",
+            if (prefs.events && !state.privileges.calendar) "Needs calendar access: tap to allow"
+            else "From 15 minutes before, with Join",
+            eventsOn,
+            resting = prefs.events && !state.privileges.calendar,
+        ) {
+            when {
+                eventsOn -> actions.updateIsland { it.copy(events = false) }
+                state.privileges.calendar -> actions.updateIsland { it.copy(events = true) }
+                else -> actions.requestCalendar()
+            }
+        }
+        IslandRow("Downloads and live updates", "Progress, directions, deliveries, rides", prefs.live) {
+            actions.updateIsland { it.copy(live = !it.live) }
+        }
+        IslandRow("Sound mode", "Ring, vibrate or silent as you switch", prefs.sound) {
+            actions.updateIsland { it.copy(sound = !it.sound) }
+        }
+        IslandRow("Headphones", "Headphones, speakers and the car", prefs.headphones) {
+            actions.updateIsland { it.copy(headphones = !it.headphones) }
+        }
+        IslandRow("Charging and battery", "Plugging in, running low, fully charged", prefs.battery) {
+            actions.updateIsland { it.copy(battery = !it.battery) }
+        }
+        IslandRow("Pull a drop", "Hold and drag down for recent ones", prefs.pull) {
+            actions.updateIsland { it.copy(pull = !it.pull) }
+        }
+
+        // And what the island steps aside for: Android's own pieces, silenced one by one.
+        IslandRow(
+            "Only the island's pop-ups",
+            "No banners while the island shows them; the shade keeps everything",
+            prefs.hidePopups,
+        ) { actions.updateIsland { it.copy(hidePopups = !it.hidePopups) } }
+        IslandRow(
+            "Only the island's status bar",
+            "Android's clock, battery and icons step aside while the island shows the time and battery",
+            prefs.hideStatusIcons,
+        ) { actions.updateIsland { it.copy(hideStatusIcons = !it.hideStatusIcons) } }
+        if (prefs.hidePopups && !prefs.notifications) {
+            Txt(
+                "Turn on Notifications above too, or nothing will show new messages.",
+                14.sp, p.sub, modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        if ((prefs.hidePopups || prefs.hideStatusIcons) && !state.privileges.popups) {
+            Column(Modifier.padding(top = 8.dp, bottom = 12.dp)) {
+                Txt(
+                    "Android needs one more permission before the island can step its own pieces aside. Grant it once:",
+                    14.sp, p.text,
+                )
+                Gap(10.dp)
+                val shizuku = when (state.privileges.shizuku) {
+                    ShizukuState.READY -> "Allow with Shizuku"
+                    ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
+                    ShizukuState.NOT_RUNNING -> "Use Shizuku"
+                }
+                PillButton(shizuku, actions::grantPopupsWithShizuku, primary = true, height = 44.dp)
+                Gap(10.dp)
+                Txt("Or from a computer:", 14.sp, p.sub)
+                Txt(Privileges.popupsAdbCommand(LocalContext.current.packageName), 13.sp, p.text, mono = true)
+            }
+        }
+
+        // The drops the island holds in the bar itself.
+        IslandRow("Time", "A drop at the left of the status bar; tap it for the date", prefs.alwaysTime) {
+            actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
+        }
+        IslandRow(
+            "Battery",
+            "A drop at the right, as full as the battery; ink runs into it while charging",
+            prefs.alwaysBattery,
+        ) { actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) } }
+        Txt(
+            "Hold any drop in the bar and slide it along to move it. Reset, under Placement, puts them all back.",
+            14.sp, p.sub, modifier = Modifier.padding(top = 6.dp),
+        )
+
+        Gap(8.dp)
         MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
             "The island is the status bar, and the top edge of the screen is where its ink comes from. The time, the camera and the " +
                 "battery hang from it as drops, and whatever starts (a song, a call, a timer) hangs as its own drop beside the camera. " +
@@ -238,12 +328,34 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
     }
 }
 
+/** An appearance row of the island's: its caption says what it does, the ink and the switch carry the state. */
+@Composable
+private fun IslandRow(label: String, caption: String, on: Boolean, resting: Boolean = false, onToggle: () -> Unit) {
+    BenchRow(label, caption, on = on, resting = resting, onToggle = onToggle, switchDescription = label)
+}
+
+/** A setup row's state: a drop of ink beside "On" when done, "Needs you" when it isn't. */
+@Composable
+internal fun SetupState(done: Boolean) {
+    val p = LocalPalette.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(7.dp)) {
+            if (done) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(p.text))
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Note(if (done) "On" else "Needs you", if (done) p.sub else p.danger)
+    }
+}
+
 /**
- * Where the island sits and how big it is. It starts fitted to the camera; move it, fit it to the
- * lens, or resize it, and it shows itself as you go so you can line it up.
+ * Where the island sits and how big it is: fields under the section's rule, each its own slider
+ * with the value in the note face at its end. It starts fitted to the camera; move it, fit it to
+ * the lens, or resize it, and it shows itself as you go so you can line it up.
  */
 @Composable
-private fun PlacementSection(prefs: IslandPrefs, actions: AppActions, index: Int) {
+private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
     val p = LocalPalette.current
     val context = LocalContext.current
     val detected = remember {
@@ -265,163 +377,63 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions, index: Int
     }
     fun frac(v: Float, lo: Float, hi: Float) = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
     fun dpText(v: Float) = if (v % 1f == 0f) "${v.toInt()} dp" else "$v dp"
-    var sizing by rememberSaveable { mutableStateOf(false) }
     fun pct(v: Float) = "${Math.round(v * 100)}%"
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        SectionLabel("Placement", modifier = Modifier.weight(1f), index = index)
-        if (prefs.placed) PillButton("Reset", { place { it.unplaced() } }, height = 36.dp)
-    }
+    BenchSection(2, "Placement")
     // Said only when it isn't simply fitted to the camera.
     if (!detected) {
         Txt("No camera cutout was found, so the island sits at the top centre. Move it over your camera here.", 14.sp, p.sub)
     }
-    Gap(4.dp)
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        val y = prefs.offsetY
-        SliderField(
-            "Up and down",
-            when {
-                y == 0f -> "On the camera"
-                y > 0f -> "${dpText(y)} lower"
-                else -> "${dpText(-y)} higher"
-            },
-            frac(y, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX),
-        ) { t -> place { it.copy(offsetY = value(t, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX, 0.5f, 0f)) } }
-        val x = prefs.offsetX
-        SliderField(
-            "Left and right",
-            when {
-                x == 0f -> "On the camera"
-                x > 0f -> "${dpText(x)} right"
-                else -> "${dpText(-x)} left"
-            },
-            frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX),
-        ) { t -> place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) } }
-        MoreSection(sizing, { sizing = !sizing }, label = "Size and shape") {
-        val c = prefs.cameraSize
-        SliderField(
-            "Camera size",
-            when {
-                c == 0f -> "As found"
-                c > 0f -> "+${dpText(c)}"
-                else -> "−${dpText(-c)}"
-            },
-            frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX),
-        ) { t -> place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) } }
-        Txt("Grow or shrink this until the camera's drop hugs your lens.", 13.sp, p.sub)
-        Gap(8.dp)
-        SliderField("Size", pct(prefs.scale), frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX)) { t ->
-            place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
-        }
-        Txt("Size scales every drop together.", 13.sp, p.sub)
-        }
-    }
-}
-
-/** Android's own pop-ups: off while the island shows notifications, so you only see one. */
-@Composable
-private fun PopupsSection(state: UiState, actions: AppActions, index: Int) {
-    val p = LocalPalette.current
-    val prefs = state.island
-    val priv = state.privileges
-    val context = LocalContext.current
-    SectionLabel("Android's own", index = index)
-    Gap(4.dp)
-    Column(Modifier.fillMaxWidth()) {
-        ToggleRow(
-            "Only the island's pop-ups",
-            "No banners while the island shows them; the shade keeps everything",
-            prefs.hidePopups,
-        ) { actions.updateIsland { it.copy(hidePopups = !it.hidePopups) } }
-        ToggleRow(
-            "Only the island's status bar",
-            "Android's clock, battery and icons step aside while the island shows the time and battery",
-            prefs.hideStatusIcons,
-        ) { actions.updateIsland { it.copy(hideStatusIcons = !it.hideStatusIcons) } }
-        if (prefs.hidePopups && !prefs.notifications) {
-            Txt(
-                "Turn on Notifications above too, or nothing will show new messages.",
-                14.sp, p.sub, modifier = Modifier.padding(bottom = 10.dp),
-            )
-        }
-        if ((prefs.hidePopups || prefs.hideStatusIcons) && !priv.popups) {
-            Column(Modifier.padding(top = 4.dp, bottom = 12.dp)) {
-                Txt(
-                    "Android needs one more permission before the island can step its own pieces aside. Grant it once:",
-                    14.sp, p.text,
-                )
-                Gap(10.dp)
-                val label = when (priv.shizuku) {
-                    ShizukuState.READY -> "Allow with Shizuku"
-                    ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
-                    ShizukuState.NOT_RUNNING -> "Use Shizuku"
-                }
-                PillButton(label, actions::grantPopupsWithShizuku, primary = true)
-                Gap(10.dp)
-                Txt("Or from a computer:", 14.sp, p.sub)
-                Txt(Privileges.popupsAdbCommand(context.packageName), 13.sp, p.text, mono = true)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun ToggleRow(title: String, body: String, on: Boolean, always: Boolean = false, onToggle: () -> Unit) {
-    val p = LocalPalette.current
-    val source = remember { MutableInteractionSource() }
-    val view = LocalView.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(interactionSource = source, indication = null, role = Role.Switch) {
-                InkFeel.toggle(view, !on)
-                onToggle()
-            }
-            .heightIn(min = if (on || always) 62.dp else 52.dp)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Off, it's just its name, quietly; on (or when it needs you), the line under it says
-        // what it's doing.
-        Column(Modifier.weight(1f).padding(end = 8.dp)) {
-            Txt(title, 17.sp, if (on) p.text else p.sub, maxLines = 1)
-            if (on || always) Txt(body, 14.sp, p.sub, maxLines = 2)
+        val y = prefs.offsetY
+        val yText = when {
+            y == 0f -> "On the camera"
+            y > 0f -> "${dpText(y)} lower"
+            else -> "${dpText(-y)} higher"
         }
-        InkSwitch(on, title, onToggle)
+        BenchField("Up and down", yText) {
+            InkSlider(value = frac(y, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX), label = yText, onChange = { t ->
+                place { it.copy(offsetY = value(t, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX, 0.5f, 0f)) }
+            })
+        }
+        val x = prefs.offsetX
+        val xText = when {
+            x == 0f -> "On the camera"
+            x > 0f -> "${dpText(x)} right"
+            else -> "${dpText(-x)} left"
+        }
+        BenchField("Left and right", xText) {
+            InkSlider(value = frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX), label = xText, onChange = { t ->
+                place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) }
+            })
+        }
+        val c = prefs.cameraSize
+        val cText = when {
+            c == 0f -> "As found"
+            c > 0f -> "+${dpText(c)}"
+            else -> "−${dpText(-c)}"
+        }
+        BenchField(
+            "Camera size", cText,
+            note = "Grow or shrink this until the camera's drop hugs your lens.",
+        ) {
+            InkSlider(value = frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX), label = cText, onChange = { t ->
+                place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) }
+            })
+        }
+        val sText = pct(prefs.scale)
+        BenchField("Size", sText, note = "Size scales every drop together.") {
+            InkSlider(value = frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX), label = sText, onChange = { t ->
+                place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
+            })
+        }
     }
-}
-
-/**
- * Setting the island up, on its page: Shizuku's one tap if it's there, then the two switches
- * Android needs, each ticked off as it's done. The dock's sheet keeps the way from a computer.
- */
-@Composable
-private fun IslandChecklist(state: UiState, actions: AppActions) {
-    val p = LocalPalette.current
-    val priv = state.privileges
-    Column(Modifier.fillMaxWidth()) {
-        Txt("Android needs two switches for the island. Shizuku can flip both at once.", 15.sp, p.sub)
-        Gap(6.dp)
-        val label = when (priv.shizuku) {
-            ShizukuState.READY -> "Switch on with Shizuku"
-            ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
-            ShizukuState.NOT_RUNNING -> "Use Shizuku"
-        }
-        PillButton(label, actions::grantIslandWithShizuku, primary = true)
-        SetupStep(1, priv.islandOverlay, "Draw the island", "An accessibility service draws it over apps and the lock screen. It reads nothing on screen.") {
-            Column {
-                PillButton("Open accessibility settings", actions::openAccessibilitySettings)
-                if (Build.VERSION.SDK_INT >= 33) {
-                    Txt("Greyed out? Open App info, tap the menu in the corner and choose Allow restricted settings.", 14.sp, p.sub)
-                    PillButton("App info", actions::openAppInfo)
-                }
-            }
-        }
-        SetupStep(2, priv.islandListener, "See what's live", "Notification access lets it show music, calls, timers and new notifications.") {
-            PillButton("Open notification access", actions::openListenerSettings)
-        }
-        PillButton("From a computer instead", { actions.setSetupOpen(true) }, height = 38.dp)
+    if (prefs.placed) {
+        Gap(4.dp)
+        PillButton("Reset", { place { it.unplaced() } }, height = 44.dp)
     }
 }
 
@@ -462,10 +474,10 @@ internal fun IslandSetupSheet(state: UiState, actions: AppActions) {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt("Set up the island", 24.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
+            Txt("Set up the island", 21.sp, p.onInk, modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_chevron_down, "Close setup", onClick = { actions.setSetupOpen(false) }, on = Surface.Ink)
         }
         Gap(4.dp)
@@ -480,7 +492,7 @@ internal fun IslandSetupSheet(state: UiState, actions: AppActions) {
                 ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
                 ShizukuState.NOT_RUNNING -> "Use Shizuku"
             }
-            PillButton(label, actions::grantIslandWithShizuku, primary = true, on = Surface.Ink)
+            PillButton(label, actions::grantIslandWithShizuku, icon = R.drawable.ic_bolt, primary = true, on = Surface.Ink)
         }
         Gap(6.dp)
 
@@ -489,13 +501,13 @@ internal fun IslandSetupSheet(state: UiState, actions: AppActions) {
             "An accessibility service draws the island over apps and the lock screen. It doesn't read anything on screen.",
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Open accessibility settings", actions::openAccessibilitySettings, on = Surface.Ink)
+                PillButton("Open accessibility settings", actions::openAccessibilitySettings, icon = R.drawable.ic_island, on = Surface.Ink)
                 if (Build.VERSION.SDK_INT >= 33) {
                     Txt(
                         "If the switch is greyed out, open App info, tap the menu in the corner and choose Allow restricted settings.",
                         14.sp, p.onInkSub,
                     )
-                    PillButton("App info", actions::openAppInfo, on = Surface.Ink)
+                    PillButton("App info", actions::openAppInfo, icon = R.drawable.ic_setup, on = Surface.Ink)
                 }
             }
         }
@@ -503,7 +515,7 @@ internal fun IslandSetupSheet(state: UiState, actions: AppActions) {
             2, priv.islandListener, "See what's live",
             "Notification access lets the island show music, calls, timers and new notifications.",
         ) {
-            PillButton("Open notification access", actions::openListenerSettings, on = Surface.Ink)
+            PillButton("Open notification access", actions::openListenerSettings, icon = R.drawable.ic_bell, on = Surface.Ink)
         }
 
         if (!priv.islandReady) {

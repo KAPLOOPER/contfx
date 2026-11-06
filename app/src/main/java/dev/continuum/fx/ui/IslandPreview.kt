@@ -2,14 +2,12 @@ package dev.continuum.fx.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -29,20 +27,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.continuum.fx.island.CameraSpot
 import dev.continuum.fx.island.ui.IslandSurface
-import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import kotlin.math.max
 
 /**
  * The island itself, drawn in the page: the real drops hanging from a strip of black along the top
- * of a small screen, the camera in the middle. It's the same island the overlay draws, with your
- * settings, so samples from Try it play into it before Android has given the overlay its
- * permissions, and opening something here opens it the same way. The screen grows to fit
- * whatever falls out of the bar, and a tap on it away from the ink folds it back up.
+ * of a small screen, the camera in the middle. It lies flat on the ground — no card, no radius,
+ * 64dp of rest height — the ink the only thing drawn there, as it is on the phone. It's the same
+ * island the overlay draws, with your settings, so samples from Try it play into it before Android
+ * has given the overlay its permissions, and opening something here opens it the same way. The
+ * screen grows to fit whatever falls out of the bar, and a tap on it away from the ink folds it
+ * back up.
  */
 @Composable
 internal fun IslandPreview(modifier: Modifier = Modifier) {
-    val p = LocalPalette.current
     val density = LocalDensity.current
     val taps = remember { mutableIntStateOf(0) }
     var lowest by remember { mutableFloatStateOf(0f) }
@@ -63,14 +61,12 @@ internal fun IslandPreview(modifier: Modifier = Modifier) {
             )
         }
         val spotState = rememberUpdatedState<CameraSpot?>(spot)
-        val target = with(density) { max(bar + 20.dp.toPx(), lowest + 18.dp.toPx()).toDp() }
+        val target = with(density) { max(64.dp.toPx(), lowest + 14.dp.toPx()).toDp() }
         val height by animateDpAsState(target, Motion.flow(), label = "previewHeight")
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(height)
-                .clip(RoundedCornerShape(22.dp))
-                .background(p.surface)
                 .pointerInput(Unit) { detectTapGestures { taps.intValue += 1 } }
                 .semantics { contentDescription = "A preview of the island" },
         ) {

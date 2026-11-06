@@ -140,13 +140,13 @@ internal fun Seeded(
             onDispose { seeds.cards -= card }
         }
     }
-    val settled = q >= 0.999f && !card.grow.isRunning
+    val settled = q >= 0.999f && !card.grow.isRunning || seeds == null || seeds.drop == null
     val shape = RoundedCornerShape(corner)
     Box(
         modifier
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
-                val h = if (settled || seeds == null) placeable.height else (placeable.height * opened(q)).roundToInt()
+                val h = if (settled) placeable.height else (placeable.height * opened(q)).roundToInt()
                 layout(placeable.width, h) { placeable.place(0, 0) }
             }
             .onGloballyPositioned {
@@ -154,9 +154,9 @@ internal fun Seeded(
                 card.size = Size(it.size.width.toFloat(), it.size.height.toFloat())
             }
             .clip(shape)
-            .then(if (settled || seeds == null) Modifier.background(ink) else Modifier),
+            .then(if (settled) Modifier.background(ink) else Modifier),
     ) {
-        Box(Modifier.graphicsLayer { alpha = if (settled || seeds == null) 1f else ((q - 0.78f) / 0.22f).coerceIn(0f, 1f) }) {
+        Box(Modifier.graphicsLayer { alpha = if (settled) 1f else ((q - 0.78f) / 0.22f).coerceIn(0f, 1f) }) {
             content()
         }
     }
@@ -244,7 +244,6 @@ internal fun DockMessage(message: String?, dock: State<Rect?>, onDismiss: () -> 
     val h = layout.size.height + padY * 2f
     val gapPx = with(density) { 12.dp.toPx() }
     val rest = Rect(k.center.x - w / 2f, k.top - gapPx - h, k.center.x + w / 2f, k.top - gapPx)
-    val latch = remember { NeckLatch() }
     val goo = remember(density) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 6.dp.toPx() }) else null }
 
     fun drop(): Rect {
@@ -259,12 +258,19 @@ internal fun DockMessage(message: String?, dock: State<Rect?>, onDismiss: () -> 
 
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
+            // The message itself; it hangs on a thread of ink down to where it budded off
+            // (the rail's line, say), the dock having gone.
             val m = drop()
-            // The top of the dock, for the neck to grow from; the dock itself covers the rest.
-            val strip = Rect(k.left, k.top, k.right, k.top + min(k.height, 60.dp.toPx()))
-            drawRoundRect(p.ink, strip.topLeft, strip.size, CornerRadius(min(38.dp.toPx(), strip.height / 2f)))
             drawRoundRect(p.ink, m.topLeft, m.size, CornerRadius(min(m.width, m.height) / 2f))
-            neckDown(m, strip, k.center.x, latch, 26.dp.toPx(), 2.dp.toPx(), 26.dp.toPx(), p.ink)
+            if (m.bottom < k.top) {
+                drawLine(
+                    p.ink,
+                    Offset(k.center.x, m.bottom),
+                    Offset(k.center.x, k.top),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
         }
         Box(
             Modifier

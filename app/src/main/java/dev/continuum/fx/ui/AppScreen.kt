@@ -99,6 +99,8 @@ import dev.continuum.fx.update.UpdateState
 import dev.continuum.fx.setup.PrivilegeState
 import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
+import dev.continuum.fx.ui.bench.BenchPage
+import dev.continuum.fx.ui.bench.BenchStatus
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSection
@@ -253,24 +255,10 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         seeds.pageAt = System.currentTimeMillis()
         0
     }
+    // The setup sheet is the only ink left floating: its rect is where messages bud off.
     val dockRect = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
-    // While you scroll down to read, the dock draws back into a drop in the corner; scrolling up,
-    // reaching the top, changing page or tapping the drop brings it back out.
-    var dockTucked by remember { mutableStateOf(false) }
-    LaunchedEffect(state.section) { dockTucked = false }
-    val tuckOnScroll = remember {
-        object : NestedScrollConnection {
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                if (consumed.y < -6f) dockTucked = true
-                else if (consumed.y > 6f) dockTucked = false
-                if (available.y > 0f) dockTucked = false
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-        }
-    }
-
-    // How far down a page is read before its title has shrunk all it will.
+    // How far down a page is read before its header has folded all it will.
     val collapsePx = with(androidx.compose.ui.platform.LocalDensity.current) { 120.dp.toPx() }
     val stepPad = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.roundToPx() }
 
@@ -284,29 +272,32 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
 
     CompositionLocalProvider(LocalSeeds provides seeds, LocalEffectSpots provides effectSpots) {
     Box(Modifier.fillMaxSize().background(p.ground)) {
-        Column(Modifier.fillMaxSize()) {
-            PivotHeader(
-                titles = sections.map { it.name.lowercase() },
-                pivot = pivot,
-                onSelect = { slot ->
-                    if (slot == pivot.contentSlot) {
-                        // The current title takes its page back to the top.
-                        scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
-                    } else {
-                        go(slot)
-                    }
-                },
-                modifier = Modifier.statusBarsPadding().padding(top = 22.dp),
-                collapseOf = { i -> scrolls.getValue(sections[i]).value / collapsePx },
-            )
+        BenchPage(
+            title = state.section.name.lowercase(),
+            note = null,
+            collapsed = scrolls.getValue(state.section).value / collapsePx > 0.5f,
+            pageIndex = state.section.ordinal + 1,
+            sections = sections.map { it.name.lowercase() },
+            railCurrent = pivot.indexOf(pivot.contentSlot),
+            railProgress = { pivot.slot.value },
+            onRailPick = { i ->
+                if (i == pivot.indexOf(pivot.contentSlot)) {
+                    // The current word takes its page back to the top.
+                    scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
+                } else {
+                    go(pivot.nearest(i, pivot.contentSlot))
+                }
+            },
+            status = { StatusStrip(state, actions, stepEffects) },
+            dimmed = state.setupOpen,
+        ) {
             Box(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .clipToBounds()
-                    .nestedScroll(tuckOnScroll)
                     .pointerInput(Unit) {
-                        // Swiping the page sideways turns the pivot, the titles following the finger.
+                        // Swiping the page sideways turns the pivot, the rail's ink following
+                        // the finger.
                         val tracker = VelocityTracker()
                         detectHorizontalDragGestures(
                             onDragStart = {
@@ -332,7 +323,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             val from = pivot.contentSlot.toFloat()
                             val before = pivot.slot.value
                             val next = (before - dx / width).coerceIn(from - 1f, from + 1f)
-                            // Halfway across, the drop hands over to the next title: felt as a detent.
+                            // Halfway across, the page changes: felt as a detent.
                             if (before.roundToInt() != next.roundToInt()) InkFeel.detent(view)
                             scope.launch { pivot.slot.snapTo(next) }
                         }
@@ -342,9 +333,9 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            // The page slides with the titles and gives way to the next one halfway.
-                            // Measured from this page's own slot, so in the frame between a swipe
-                            // and the page changing, the old page doesn't jump.
+                            // The page slides as the rail's ink travels; measured from this page's
+                            // own slot, so in the frame between a swipe and the page changing, the
+                            // old page doesn't jump.
                             val cs = pivot.contentSlot
                             val own = if (pivot.indexOf(cs) == state.section.ordinal) cs
                             else pivot.nearest(state.section.ordinal, pivot.slot.value.roundToInt())
@@ -355,17 +346,16 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         .onGloballyPositioned { if (state.section == Section.Effects) effectSpots.viewTop = it.positionInRoot().y }
                         .verticalScroll(scrolls.getValue(state.section))
                         // On a tablet or an open foldable, a comfortable reading width, kept to
-                        // the left edge the titles start from.
+                        // the left edge the header's title starts from.
                         .wrapContentWidth(Alignment.Start)
                         .widthIn(max = CONTENT_MAX + 48.dp)
-                        .navigationBarsPadding()
-                        .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 120.dp),
+                        .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp),
                 ) {
                     UpdateCard(
                         update = state.update,
                         title = { "Continuum Kit build ${it.build}" },
                         subtitle = "Settings and permissions stay.",
-                        actionLabel = "Update now",
+                        actionLabel = "Update",
                         installingNote = "Installing. Continuum Kit closes for a moment while it updates, then it's back as it was.",
                         onAction = actions::installUpdate,
                         onAllow = actions::allowInstalls,
@@ -378,14 +368,14 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             Seeded(visible = state.openedFrom != null, corner = 24.dp, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)) {
                                 if (from != null) OpenedFromRow(from, state.library, actions)
                             }
-                            // The page only speaks up when something needs you; the dock says the rest.
+                            // The page only speaks up when something needs you; the strip says the rest.
                             if (state.error != null) {
                                 StatusLine(state)
                                 Gap(18.dp)
                             }
                             SoundContent(state, store, actions)
                         }
-                        Section.Effects -> EffectsContent(state, actions)
+                        Section.Effects -> EffectsContent(state, actions, scrolls.getValue(Section.Effects))
                         Section.Island -> IslandContent(state, actions)
                         Section.Volume -> VolumeContent(state, actions)
                         Section.Keyboard -> KeyboardContent(state, actions)
@@ -393,19 +383,13 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                     Gap(30.dp)
                     UpdateFooter(state, actions)
                 }
-                // Pages dissolve into the ground under the titles rather than being cut off.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(14.dp)
-                        .background(Brush.verticalGradient(listOf(p.ground, p.ground.copy(alpha = 0f)))),
-                )
             }
         }
 
         SeedOverlay(seeds)
         DockMessage(state.message, dockRect, actions::dismissMessage)
-        Dock(state, actions, Modifier.align(Alignment.BottomEnd), tucked = dockTucked && !state.setupOpen, onUntuck = { dockTucked = false }, onStepEffects = stepEffects) { dockRect.value = it }
+        // The dock's ink lives on as the setup sheet, rising from above the rail; nothing floats.
+        Dock(state, actions, Modifier.align(Alignment.BottomEnd)) { dockRect.value = it }
     }
     }
 }
@@ -452,6 +436,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             // Edge to edge: the centre of the page.
             modifier = Modifier.bleed(24.dp),
             inset = 24.dp,
+            height = 172.dp,
             // Hold the graph anywhere away from a dot to hear the music without the EQ.
             onCompare = compare.takeIf { canCompare },
             onQ = { i, q ->
@@ -470,9 +455,13 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 }
             },
         )
+        if (eqOn && profile.bands.isEmpty()) {
+            // A flat graph says what it is, so the empty grid isn't a hole in the page.
+            Txt("Flat · no filters yet", 13.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 8.dp))
+        }
 
         if (eqOn) {
-            Gap(20.dp)
+            Gap(14.dp)
             PreampRow(
                 preampDb = profile.preampDb,
                 suggested = EqResponse.suggestedPreamp(profile),
@@ -483,21 +472,11 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
 
             // The filters, folded into one line: the graph is where you shape the sound; this is
             // for exact numbers and filter types.
-            val filtersSource = remember { MutableInteractionSource() }
-            InkSection(
-                open = filtersOpen,
-                header = {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 54.dp)
-                            .clickable(interactionSource = filtersSource, indication = null, role = Role.Button) { filtersOpen = !filtersOpen },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OpensName("Filters", filtersOpen, p.text, Modifier.weight(1f))
-                        ValueNote(if (profile.bands.isEmpty()) "none" else "${profile.bands.size}")
-                    }
-                },
+            dev.continuum.fx.ui.bench.BenchValueRow(
+                label = "Filters",
+                value = if (profile.bands.isEmpty()) "None" else "${profile.bands.size}",
+                expanded = filtersOpen,
+                onExpand = { filtersOpen = !filtersOpen },
             ) {
                 if (profile.bands.isEmpty()) {
                     Rest(
@@ -534,29 +513,19 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         val output by OutputWatcher.current.collectAsState()
         val linkedHere = output?.let { library.devices[it.key] == profile.id } == true
         val appCount = library.appsFor(profile.id).size
-        val linksSource = remember { MutableInteractionSource() }
-        InkSection(
-            open = linksOpen,
-            header = {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 54.dp)
-                        .clickable(interactionSource = linksSource, indication = null, role = Role.Button) { linksOpen = !linksOpen },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OpensName("Comes on by itself", linksOpen, p.text, Modifier.weight(1f))
-                    val parts = listOfNotNull(
-                        if (linkedHere) output?.name else null,
-                        when (appCount) {
-                            0 -> null
-                            1 -> "1 app"
-                            else -> "$appCount apps"
-                        },
-                    )
-                    ValueNote(if (parts.isEmpty()) "not yet" else parts.joinToString(" · "))
-                }
+        val parts = listOfNotNull(
+            if (linkedHere) output?.name else null,
+            when (appCount) {
+                0 -> null
+                1 -> "1 app"
+                else -> "$appCount apps"
             },
+        )
+        dev.continuum.fx.ui.bench.BenchValueRow(
+            label = "Comes on by itself",
+            value = if (parts.isEmpty()) "Not yet" else parts.joinToString(" · "),
+            expanded = linksOpen,
+            onExpand = { linksOpen = !linksOpen },
         ) {
             output?.let { device ->
                 OutputRow(device, library, onLink = { on -> store.link(device.key, if (on) profile.id else null) })
@@ -652,9 +621,9 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, f
                 },
                 label = "eqName",
             ) { name ->
-                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 34.sp)
+                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 24.sp)
             }
-            Box(Modifier.padding(start = 8.dp, top = 12.dp)) { Chevron(listOpen, p.quiet, 20.dp) }
+            Box(Modifier.padding(start = 8.dp, top = 1.dp)) { Chevron(listOpen, p.quiet, 17.dp) }
         }
     }) {
         Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
@@ -733,8 +702,8 @@ private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) ->
     val source = remember { MutableInteractionSource() }
     var held by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Txt("Preamp", 17.sp, p.text, maxLines = 1)
+        Row(Modifier.fillMaxWidth().padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Preamp", 16.5.sp, p.text, maxLines = 1)
             // Set by hand, the word offers to hand it back.
             dev.continuum.fx.ui.theme.Note(
                 if (auto) "auto" else "back to auto",
@@ -805,7 +774,7 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
 private fun ModeRow(actions: AppActions) {
     val p = LocalPalette.current
     val mode by EngineSettings.mode.collectAsState()
-    ChoiceRow(scroll = false, on = Surface.Ink) {
+    ChoiceRow(Modifier.padding(start = 26.dp), scroll = false, on = Surface.Ink) {
         Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) }, on = Surface.Ink)
         Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) }, on = Surface.Ink)
     }
@@ -995,87 +964,250 @@ internal fun SliderField(label: String, valueText: String, value: Float, hear: S
 }
 
 /**
- * The ink dock. It holds the power control, and grows straight up into the setup
- * sheet rather than opening a separate panel: the same ink, reshaped.
+ * The dock's ink, now as the setup sheet. Closed, it gathers to nothing just above the rail;
+ * [state.setupOpen] and it rises straight up into the sheet, whatever section it's for. Nothing
+ * floats over the page any more; the power action and the "Tap to set up" line live in the
+ * status strip, and the sheet is the dock's remaining half.
  */
 @Composable
 private fun Dock(
     state: UiState,
     actions: AppActions,
     modifier: Modifier = Modifier,
-    tucked: Boolean = false,
-    onUntuck: () -> Unit = {},
-    onStepEffects: () -> Unit = {},
     onPlaced: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     val p = LocalPalette.current
     val config = LocalConfiguration.current
     val openHeight = (config.screenHeightDp - 120).coerceIn(420, 660).dp
-    val height by animateDpAsState(
-        when {
-            state.setupOpen -> openHeight
-            tucked -> 60.dp
-            else -> 76.dp
-        },
-        Motion.flow(), label = "dockHeight",
-    )
-    val side by animateDpAsState(if (state.setupOpen) 8.dp else 12.dp, Motion.flow(), label = "dockSide")
-    // Tucked, it gathers towards the corner into a round drop; its full width is the screen's
-    // (to a comfortable reading width on large screens).
-    val full = minOf(config.screenWidthDp.dp, CONTENT_MAX + 24.dp) - side * 2
-    val width by animateDpAsState(if (tucked) 60.dp else full, Motion.flow(), label = "dockWidth")
-    val shape = RoundedCornerShape(38.dp)
+    val height by animateDpAsState(if (state.setupOpen) openHeight else 0.dp, Motion.flow(), label = "dockHeight")
+    // A bench, not a card: the sheet comes up square from the rail, the full width of the surface,
+    // and the page behind it stays where it is.
     Box(
         modifier
+            .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = side, end = side, bottom = 10.dp)
-            .width(width)
+            .padding(bottom = 56.dp)
             .height(height)
             .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
-            .then(if (p.dark) Modifier.border(1.dp, p.edge, shape) else Modifier)
-            .clip(shape)
             .background(p.ink),
     ) {
-        Crossfade(targetState = Triple(state.setupOpen, state.section, tucked), label = "dockContent") { (open, section, small) ->
+        Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
             when {
-                small -> TuckedDock(state, section, onUntuck)
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Volume -> VolumeSetupSheet(state, actions)
                 open && (section == Section.Sound || section == Section.Effects) -> SetupSheet(state, actions)
-                section == Section.Island -> IslandDockBar(state, actions)
-                section == Section.Volume -> VolumeDockBar(state, actions)
-                section == Section.Keyboard -> KeyboardDockBar(state, actions)
-                else -> DockBar(state, actions, onStepEffects.takeIf { section == Section.Effects })
+                // Closed, there is nothing here: the status strip says what's what.
             }
         }
     }
 }
 
-/** The dock, tucked into a drop: what it's for, and whether it's on. Tap to bring it back. */
+/**
+ * The status strip: what the dock bars became. The power action on the left (or the island's,
+ * the volume panel's, the keyboard's next step), the state word and the line in the middle
+ * (tapping it opens setup, or takes the keyboard's next step), and setup at the end. Every
+ * control the dock held is here; none floats over the page any more.
+ */
 @Composable
-private fun TuckedDock(state: UiState, section: Section, onUntuck: () -> Unit) {
-    val p = LocalPalette.current
-    val volume by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
-    val (icon, on) = when (section) {
-        Section.Sound, Section.Effects -> R.drawable.ic_power to state.running
-        Section.Island -> R.drawable.ic_island to islandOn(state)
-        Section.Volume -> R.drawable.ic_volume to volumeOn(state, volume)
-        Section.Keyboard -> R.drawable.ic_keyboard to state.keyboard.selected
+private fun StatusStrip(state: UiState, actions: AppActions, onStepEffects: () -> Unit) {
+    val mode by EngineSettings.mode.collectAsState()
+    when (state.section) {
+        Section.Sound, Section.Effects -> {
+            val fx by FxStore.state.collectAsState()
+            val effects = fx.onNames().size
+            val withFx = if (effects == 0) "" else " · $effects ${if (effects == 1) "effect" else "effects"}"
+            val priv = state.privileges
+            val ready = readyFor(mode, priv)
+            val subtitle = when {
+                !ready && !state.running ->
+                    if (mode == EngineMode.Direct) setupSteps(0, 1) else setupSteps(listOf(priv.recordAudio, priv.dump).count { it }, 2)
+                state.running && state.processing.isNotEmpty() -> state.processing.joinToString() + withFx
+                state.running -> "Waiting for something to play"
+                !state.library.eqEnabled -> "EQ off$withFx"
+                else -> state.library.active.name + withFx
+            }
+            if (state.section == Section.Effects && (ready || state.running)) {
+                BenchStatus(
+                    icon = R.drawable.ic_power,
+                    on = state.running,
+                    state = if (state.running) "On" else if (fx.onNames().isNotEmpty()) "Set" else "Off",
+                    line = subtitle,
+                    onToggle = actions::togglePower,
+                    toggleDescription = if (state.running) "Turn processing off" else "Turn processing on",
+                    action = { actions.setSetupOpen(true) },
+                    actionLabel = "Open setup",
+                    trailing = { StripCompare(state, onStepEffects) },
+                )
+            } else {
+                BenchStatus(
+                    icon = R.drawable.ic_power,
+                    on = state.running,
+                    state = if (state.running) "On" else "Off",
+                    line = subtitle,
+                    onToggle = actions::togglePower,
+                    toggleDescription = if (state.running) "Turn processing off" else "Turn processing on",
+                    action = { actions.setSetupOpen(true) },
+                    actionLabel = "Open setup",
+                    trailing = null,
+                )
+            }
+        }
+        Section.Island -> {
+            val on = islandOn(state)
+            val prefs = state.island
+            val sources = buildList {
+                if (prefs.media) add("music")
+                if (prefs.calls) add("calls")
+                if (prefs.timers) add("timers")
+                if (prefs.notifications) add("alerts")
+                if (prefs.battery) add("charging")
+            }
+            val subtitle = when {
+                !state.privileges.islandReady -> setupSteps(listOf(state.privileges.islandOverlay, state.privileges.islandListener).count { it }, 2)
+                !prefs.enabled -> "Switched off"
+                sources.isEmpty() -> "Nothing selected to show"
+                else -> sources.joinToString(", ").replaceFirstChar { it.uppercase() }
+            }
+            BenchStatus(
+                icon = R.drawable.ic_island,
+                on = on,
+                state = if (on) "On" else "Off",
+                line = subtitle,
+                onToggle = actions::toggleIsland,
+                toggleDescription = if (on) "Turn the island off" else "Turn the island on",
+                action = { actions.setSetupOpen(true) },
+                actionLabel = "Open island setup",
+            )
+        }
+        Section.Volume -> {
+            val prefs by dev.continuum.fx.volume.VolumeSettings.state.collectAsState()
+            val on = volumeOn(state, prefs)
+            val subtitle = when {
+                !state.privileges.volumeService -> setupSteps(0, 1)
+                !prefs.enabled -> "Android's own panel"
+                else -> "Volume keys open the ink panel"
+            }
+            BenchStatus(
+                icon = R.drawable.ic_volume,
+                on = on,
+                state = if (on) "On" else "Off",
+                line = subtitle,
+                onToggle = actions::toggleVolume,
+                toggleDescription = if (on) "Turn the volume panel off" else "Turn the volume panel on",
+                action = { actions.setSetupOpen(true) },
+                actionLabel = "Open volume setup",
+            )
+        }
+        Section.Keyboard -> {
+            val k = state.keyboard
+            val label = when {
+                !k.installed -> "Install"
+                !k.enabled -> "Open keyboard list"
+                !k.selected -> "Choose keyboard"
+                else -> "Keyboard settings"
+            }
+            BenchStatus(
+                icon = R.drawable.ic_keyboard,
+                on = k.selected,
+                state = if (k.selected) "In use" else "Off",
+                // The state is already said on the left; the line is the one fact it adds.
+                line = if (k.selected) "Build ${k.build} · your keyboard" else statusText(k),
+                onToggle = { nextKeyboardStep(k, actions) },
+                toggleDescription = label,
+                action = { nextKeyboardStep(k, actions) },
+                actionLabel = label,
+                trailing = if (k.installed) {
+                    { StripSetup("Settings", "Keyboard settings") { actions.openKeyboardSettings(null) } }
+                } else null,
+            )
+        }
     }
-    val source = remember { MutableInteractionSource() }
+}
+
+/** The strip's last control: setup, or the keyboard's own settings when it's in use. */
+@Composable
+private fun StripSetup(label: String, description: String, onClick: () -> Unit) {
+    val p = LocalPalette.current
     Box(
         Modifier
-            .fillMaxSize()
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onUntuck)
-            .semantics { contentDescription = "Show the dock" },
+            .height(48.dp)
+            .padding(horizontal = 6.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClickLabel = description,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.squash(source).size(44.dp).clip(CircleShape).background(if (on) p.onInk else p.ink),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp), colorFilter = ColorFilter.tint(if (on) p.ink else p.onInk))
-        }
+        Note(label, p.text)
+    }
+}
+
+/**
+ * The strip's move on the Effects page, said as a word you can read. The word is "Compare" in the
+ * note face, 48dp tall: held, the music plays without the EQ and effects (at the same loudness)
+ * for as long as you hold — it says what you're hearing while you do; tapped, the page goes to
+ * the next effect that's on. Quiet until there's something to compare with.
+ */
+@Composable
+private fun StripCompare(state: UiState, onStep: () -> Unit) {
+    val p = LocalPalette.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val fx by FxStore.state.collectAsState()
+    val spatialOn by dev.continuum.fx.audio.SpatialStore.state.collectAsState()
+    val active = activeEffects(fx, spatialOn.enabled).size
+    val can = state.running && active > 0
+    val step by rememberUpdatedState(onStep)
+    val canCompare by rememberUpdatedState(can)
+    var comparing by remember { mutableStateOf(false) }
+    // Nothing to compare any more (stopped, or the last effect off): let go.
+    LaunchedEffect(can) { if (!can && comparing) { comparing = false; EngineStatus.comparing.value = false } }
+    Box(
+        Modifier
+            .height(48.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = if (comparing) {
+                    "Without them · let go to hear them again"
+                } else {
+                    "Compare · hold to hear the music without them, tap to go to the next one that's on"
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        var held = false
+                        val hold = scope.launch {
+                            delay(260)
+                            if (canCompare) {
+                                held = true
+                                comparing = true
+                                InkFeel.detent(view)
+                                EngineStatus.comparing.value = true
+                            }
+                        }
+                        val released = tryAwaitRelease()
+                        hold.cancel()
+                        if (held) {
+                            comparing = false
+                            EngineStatus.comparing.value = false
+                        } else if (released && canCompare) {
+                            InkFeel.detent(view)
+                            step()
+                        }
+                    },
+                )
+            }
+            .padding(start = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Note(
+            if (comparing) "Without them" else "Compare",
+            if (can || comparing) p.text else p.quiet,
+        )
     }
 }
 
@@ -1263,10 +1395,10 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 20.dp),
+            .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(if (direct) "Set up the EQ" else "Set up capture", 24.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
+            Txt(if (direct) "Set up the EQ" else "Set up capture", 21.sp, p.onInk, modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_chevron_down, "Close setup", onClick = { actions.setSetupOpen(false) }, on = Surface.Ink)
         }
         Gap(4.dp)
@@ -1286,11 +1418,11 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             if (direct) "Lets the graph show the music moving. The EQ works without it." else "Lets the app capture the sound other apps play.",
             optional = direct,
         ) {
-            PillButton("Allow", actions::requestRecord, primary = !direct, on = Surface.Ink)
+            PillButton("Allow", actions::requestRecord, icon = R.drawable.ic_check, primary = !direct, on = Surface.Ink)
         }
         if (Build.VERSION.SDK_INT >= 33) {
             StepRow(++step, priv.notifications, "Notifications", "Shows when processing is on, with a stop button.", optional = true) {
-                PillButton("Allow", actions::requestNotifications, on = Surface.Ink)
+                PillButton("Allow", actions::requestNotifications, icon = R.drawable.ic_check, on = Surface.Ink)
             }
         }
         StepRow(
@@ -1305,7 +1437,7 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
                     ShizukuState.NEEDS_PERMISSION -> "Allow Shizuku"
                     ShizukuState.NOT_RUNNING -> "Use Shizuku"
                 }
-                PillButton(label, actions::grantWithShizuku, primary = true, on = Surface.Ink)
+                PillButton(label, actions::grantWithShizuku, icon = R.drawable.ic_bolt, primary = true, on = Surface.Ink)
                 Txt(
                     if (priv.shizuku == ShizukuState.NOT_RUNNING) "Shizuku isn't running. Start it, or run these from a computer with ADB:"
                     else "Or run these from a computer with ADB:",
@@ -1370,25 +1502,27 @@ internal fun StepRow(
     action: @Composable () -> Unit = {},
 ) {
     val p = LocalPalette.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-        Box(
-            // Done is "on", so white with a tick, as a switch is; green is kept for what's live.
-            Modifier.size(32.dp).clip(CircleShape).background(if (done) p.onInk else p.inkTonal),
-            contentAlignment = Alignment.Center,
-        ) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
+        // The same margin column as every page: the step's number, or a drop once it's done.
+        Box(Modifier.width(26.dp).padding(top = 3.dp)) {
             if (done) {
-                Image(painterResource(R.drawable.ic_check), contentDescription = "Done", modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(p.ink))
+                Box(
+                    Modifier
+                        .padding(top = 5.dp)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(p.onInk),
+                )
             } else {
-                Txt("$number", 15.sp, p.onInk, bold = true)
+                Note("%02d".format(number), p.onInkSub)
             }
         }
-        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Txt(if (optional) "$title · optional" else title, 18.sp, p.onInk, bold = true)
-            Gap(2.dp)
-            Txt(body, 15.sp, p.onInkSub)
+            Txt(if (optional) "$title · optional" else title, 16.5.sp, p.onInk)
+            Gap(3.dp)
+            Txt(body, 14.sp, p.onInkSub)
             if (!done) {
-                Gap(10.dp)
+                Gap(6.dp)
                 action()
             }
         }

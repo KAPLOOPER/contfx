@@ -92,6 +92,8 @@ fun EqGraph(
     editable: Boolean = true,
     /** Held on empty graph: true while you want to hear the music without the EQ. */
     onCompare: ((Boolean) -> Unit)? = null,
+    /** How tall the instrument stands: the whole page's graph, or one page's hero. */
+    height: Dp = 300.dp,
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -164,7 +166,7 @@ fun EqGraph(
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(300.dp),
+            .height(height),
     ) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()

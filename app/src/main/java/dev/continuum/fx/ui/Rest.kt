@@ -154,8 +154,9 @@ internal fun More(open: Boolean, onToggle: () -> Unit, label: String = "More", m
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onToggle),
+            .heightIn(min = 48.dp)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onToggle)
+            .padding(start = 26.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OpensName(label, open, p.sub, size = 15.sp)

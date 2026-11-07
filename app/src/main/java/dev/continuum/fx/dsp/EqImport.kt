@@ -31,6 +31,9 @@ object EqImport {
     private val qRegex = Regex("""(?:^|\s)Q\s+($NUM)""", RegexOption.IGNORE_CASE)
     private val bwRegex = Regex("""BW\s+Oct\s+($NUM)""", RegexOption.IGNORE_CASE)
 
+    // Equalizer APO's sections for one side: "Channel: L", "Channel: R", back to "Channel: all".
+    private val channelRegex = Regex("""^Channel\s*:\s*(.*)$""", RegexOption.IGNORE_CASE)
+
     // Equalizer APO turns a channel over with Copy, e.g. "Copy: L=-1*L R=-1*R" (or "L=-L").
     private val copyRegex = Regex("""^Copy\s*:""", RegexOption.IGNORE_CASE)
     private fun flipped(line: String, ch: Char) =
@@ -44,6 +47,11 @@ object EqImport {
         var sawGraphic = false
         var flipLeft = false
         var flipRight = false
+        // Which side the lines are for: "all", "L", "R", or another channel this EQ can't hold.
+        var section = "all"
+        val sideBands = mapOf("L" to mutableListOf<EqBand>(), "R" to mutableListOf<EqBand>())
+        val sideLevel = mutableMapOf("L" to 0.0, "R" to 0.0)
+        var skipped = false
 
         text.lineSequence().forEachIndexed { index, raw ->
             val line = raw.substringBefore('#').trim()
@@ -52,13 +60,28 @@ object EqImport {
                 sawGraphic = true
                 return@forEachIndexed
             }
+            channelRegex.find(line)?.let {
+                val names = it.groupValues[1].trim().uppercase().split(Regex("""[\s,]+""")).filter { n -> n.isNotEmpty() }.toSet()
+                section = when {
+                    names.isEmpty() || "ALL" in names || names.containsAll(listOf("L", "R")) -> "all"
+                    names == setOf("L") -> "L"
+                    names == setOf("R") -> "R"
+                    else -> "other"
+                }
+                return@forEachIndexed
+            }
+            if (section == "other") {
+                skipped = true
+                return@forEachIndexed
+            }
             if (copyRegex.containsMatchIn(line)) {
                 flipLeft = flipped(line, 'L')
                 flipRight = flipped(line, 'R')
                 return@forEachIndexed
             }
             preampRegex.find(line)?.let {
-                preamp += number(it.groupValues[1])
+                if (section == "all") preamp += number(it.groupValues[1])
+                else sideLevel[section] = (sideLevel[section] ?: 0.0) + number(it.groupValues[1])
                 sawPreamp = true
                 return@forEachIndexed
             }
@@ -82,16 +105,20 @@ object EqImport {
             val q = qRegex.find(rest)?.let { number(it.groupValues[1]) }
                 ?: bwRegex.find(rest)?.let { bandwidthToQ(number(it.groupValues[1])) }
                 ?: defaultQ(type, slopeDb)
-            bands += EqBand(
+            val band = EqBand(
                 type = type,
                 frequency = freq,
                 gainDb = if (type.usesGain) gain else 0.0,
                 q = q,
                 enabled = enabled,
             )
+            if (section == "all") bands += band else sideBands.getValue(section) += band
         }
+        if (skipped) warnings += "Filters for channels other than left and right were left out."
 
-        if (bands.isEmpty()) {
+        val left = SideTrim(sideLevel.getValue("L"), sideBands.getValue("L")).takeIf { !it.isEmpty }
+        val right = SideTrim(sideLevel.getValue("R"), sideBands.getValue("R")).takeIf { !it.isEmpty }
+        if (bands.isEmpty() && left == null && right == null) {
             val error = if (sawGraphic) {
                 "This is a graphic EQ file. In squig.link, export the parametric EQ instead."
             } else if (sawPreamp) {
@@ -107,7 +134,11 @@ object EqImport {
             flipRight -> Polarity.RightInverted
             else -> Polarity.Normal
         }
-        return Result(EqProfile(name = cleanName(name), preampDb = preamp, bands = bands, polarity = polarity), warnings, null)
+        return Result(
+            EqProfile(name = cleanName(name), preampDb = preamp, bands = bands, polarity = polarity, left = left, right = right),
+            warnings,
+            null,
+        )
     }
 
     /** Writes the profile in the same format, so it can go back into squig.link or Equalizer APO. */
@@ -118,12 +149,24 @@ object EqImport {
             val r = if (profile.polarity.right < 0) "-1*R" else "R"
             append("Copy: L=").append(l).append(" R=").append(r).append('\n')
         }
-        profile.bands.forEachIndexed { i, b ->
-            append("Filter ").append(i + 1).append(": ")
+        var n = 0
+        fun filter(b: EqBand) {
+            append("Filter ").append(++n).append(": ")
             append(if (b.enabled) "ON " else "OFF ")
             append(b.type.code).append(" Fc ").append(fmt(b.frequency, if (b.frequency < 100) 1 else 0)).append(" Hz")
             if (b.type.usesGain) append(" Gain ").append(fmt(b.gainDb, 1)).append(" dB")
             append(" Q ").append(fmt(b.q, 2)).append('\n')
+        }
+        profile.bands.forEach { filter(it) }
+        if (profile.sided) {
+            // Each side's own trim, as Equalizer APO sections after the shared filters.
+            for ((label, trim) in listOf("L" to profile.left, "R" to profile.right)) {
+                if (trim == null || trim.isEmpty) continue
+                append("Channel: ").append(label).append('\n')
+                if (abs(trim.levelDb) >= 0.05) append("Preamp: ").append(fmt(trim.levelDb, 1)).append(" dB\n")
+                trim.bands.forEach { filter(it) }
+            }
+            append("Channel: all\n")
         }
     }
 

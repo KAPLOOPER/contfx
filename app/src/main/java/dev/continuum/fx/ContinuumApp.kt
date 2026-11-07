@@ -37,7 +37,7 @@ class ContinuumApp : Application() {
         EngineSettings.init(this)
         FxStore.init(this)
         SpatialStore.init(this)
-        dev.continuum.fx.data.FitStore.init(this)
+        dev.continuum.fx.lab.LabStore.init(this)
         HeardApps.init(this)
         VolumeSettings.init(this)
         VolumeModel.start(this)

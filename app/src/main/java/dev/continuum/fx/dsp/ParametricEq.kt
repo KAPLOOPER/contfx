@@ -18,12 +18,18 @@ class ParametricEq(
     private val channels: Int = 2,
     private val sampleRate: Double = EqResponse.SAMPLE_RATE,
 ) {
-    /** [signs] turns each channel over (-1) or not (1), after the filters. */
-    private class Stage(val coeffs: Array<BiquadCoefficients>, val preamp: Double, val bypass: Boolean, val signs: DoubleArray)
+    /**
+     * Each channel's filters ([coeffs], all the same length, so the filters' memory lines up)
+     * and its gain before them; [signs] turns each channel over (-1) or not (1), after them.
+     * Left and right differ only when the EQ trims them apart.
+     */
+    private class Stage(val coeffs: Array<Array<BiquadCoefficients>>, val preamps: DoubleArray, val bypass: Boolean, val signs: DoubleArray) {
+        val size: Int get() = coeffs.firstOrNull()?.size ?: 0
+    }
 
     private val pending = AtomicReference<Stage?>(null)
     private val upright = DoubleArray(channels) { 1.0 }
-    private var stage = Stage(emptyArray(), 1.0, true, upright)
+    private var stage = Stage(Array(channels) { emptyArray() }, DoubleArray(channels) { 1.0 }, true, upright)
     private var z1 = DoubleArray(0)
     private var z2 = DoubleArray(0)
     private var scratch = FloatArray(0)
@@ -42,14 +48,20 @@ class ParametricEq(
             }
         }
         if (profile == null) {
-            pending.set(Stage(emptyArray(), 1.0, polarity == Polarity.Normal, signs))
+            pending.set(Stage(Array(channels) { emptyArray() }, DoubleArray(channels) { 1.0 }, polarity == Polarity.Normal, signs))
             return
         }
-        val coeffs = profile.bands
-            .filter { it.enabled }
-            .map { BiquadCoefficients.design(it, sampleRate) }
-            .toTypedArray()
-        pending.set(Stage(coeffs, 10.0.pow(profile.preampDb / 20.0), false, signs))
+        fun design(p: EqProfile) = p.bands.filter { it.enabled }.map { BiquadCoefficients.design(it, sampleRate) }
+        val sides = if (profile.sided && channels >= 2) listOf(profile.side(profile.left), profile.side(profile.right)) else listOf(profile.side(null))
+        val made = sides.map { design(it) }
+        val n = made.maxOf { it.size }
+        // A side with fewer filters is filled out with ones that pass the sound as it is.
+        val coeffs = Array(channels) { ch ->
+            val own = made[if (made.size > 1) ch % 2 else 0]
+            Array(n) { b -> own.getOrNull(b) ?: PASS }
+        }
+        val preamps = DoubleArray(channels) { ch -> 10.0.pow(sides[if (sides.size > 1) ch % 2 else 0].preampDb / 20.0) }
+        pending.set(Stage(coeffs, preamps, false, signs))
     }
 
     /**
@@ -71,9 +83,9 @@ class ParametricEq(
         System.arraycopy(buffer, 0, scratch, 0, faded)
 
         // The new filters start from where the old ones were, when they line up one to one.
-        val same = next.coeffs.size == old.coeffs.size
-        val n1 = if (same) z1.copyOf() else DoubleArray(next.coeffs.size * channels)
-        val n2 = if (same) z2.copyOf() else DoubleArray(next.coeffs.size * channels)
+        val same = next.size == old.size
+        val n1 = if (same) z1.copyOf() else DoubleArray(next.size * channels)
+        val n2 = if (same) z2.copyOf() else DoubleArray(next.size * channels)
         run(old, scratch, fade, z1, z2)
         run(next, buffer, frames, n1, n2)
         val inv = 1f / fade
@@ -92,15 +104,14 @@ class ParametricEq(
 
     private fun run(s: Stage, buffer: FloatArray, frames: Int, st1: DoubleArray, st2: DoubleArray) {
         if (s.bypass) return
-        val coeffs = s.coeffs
-        val n = coeffs.size
-        val pre = s.preamp
+        val n = s.size
         val signs = s.signs
         for (frame in 0 until frames) {
             val base = frame * channels
             for (ch in 0 until channels) {
                 val idx = base + ch
-                var x = buffer[idx] * pre
+                val coeffs = s.coeffs[ch]
+                var x = buffer[idx] * s.preamps[ch]
                 for (b in 0 until n) {
                     val c = coeffs[b]
                     val zi = b * channels + ch
@@ -122,6 +133,9 @@ class ParametricEq(
     private companion object {
         /** 10 ms at 48 kHz: long enough to hide a change, short enough to feel instant. */
         const val FADE_FRAMES = 480
+
+        /** A filter that passes the sound as it is. */
+        val PASS = BiquadCoefficients(1.0, 0.0, 0.0, 0.0, 0.0)
     }
 }
 

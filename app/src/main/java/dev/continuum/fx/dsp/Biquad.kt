@@ -131,6 +131,12 @@ object EqResponse {
      * log-spaced frequencies, across 50 Hz to 12 kHz where hearing judges loudness.
      */
     fun loudnessDb(profile: EqProfile): Double {
+        if (profile.sided) {
+            // Each side as it plays, power-averaged: how loud the pair sounds together.
+            val l = loudnessDb(profile.side(profile.left))
+            val r = loudnessDb(profile.side(profile.right))
+            return 10.0 * log10((10.0.pow(l / 10.0) + 10.0.pow(r / 10.0)) / 2.0)
+        }
         val points = 96
         val lo = log10(50.0)
         val hi = log10(12000.0)
@@ -145,9 +151,18 @@ object EqResponse {
         return 10.0 * log10(power / points)
     }
 
-    /** Preamp that keeps the loudest boost at or below 0 dB, rounded to 0.1 dB. */
+    /**
+     * Preamp that keeps the loudest boost at or below 0 dB, rounded to 0.1 dB. With left and
+     * right trimmed apart, it's the louder side's boost, each side's level included.
+     */
     fun suggestedPreamp(profile: EqProfile): Double {
-        val peak = max(0.0, peakDb(profile))
+        val peak = if (!profile.sided) max(0.0, peakDb(profile)) else max(
+            0.0,
+            max(
+                peakDb(profile.side(profile.left).copy(preampDb = 0.0)) + (profile.left?.levelDb ?: 0.0),
+                peakDb(profile.side(profile.right).copy(preampDb = 0.0)) + (profile.right?.levelDb ?: 0.0),
+            ),
+        )
         return -kotlin.math.ceil(peak * 10.0) / 10.0
     }
 }

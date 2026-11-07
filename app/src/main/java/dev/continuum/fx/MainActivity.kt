@@ -102,12 +102,16 @@ class MainActivity : ComponentActivity(), AppActions {
         if (uri != null) importUri(uri)
     }
 
-    private val openMeasurement = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) readCurve(uri, target = false)
+    private val openLabFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) readLabFiles(uris)
     }
 
-    private val openTarget = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) readCurve(uri, target = true)
+    /** What the Lab is saving, while the place to save it is chosen. */
+    private var labSaving: String? = null
+    private val saveLabFile = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val text = labSaving
+        labSaving = null
+        if (uri != null && text != null) writeLabFile(uri, text)
     }
 
     private val saveBackupFile = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -636,46 +640,75 @@ class MainActivity : ComponentActivity(), AppActions {
         openDocument.launch(arrayOf("text/plain", "text/*", "application/octet-stream"))
     }
 
-    override fun pickMeasurement() {
-        openMeasurement.launch(arrayOf("text/plain", "text/*", "text/csv", "application/octet-stream"))
+    override fun labImport() {
+        try {
+            openLabFiles.launch(arrayOf("text/plain", "text/*", "text/csv", "application/octet-stream"))
+        } catch (_: Exception) {
+            message.value = "Couldn't open the file picker."
+        }
     }
 
-    override fun pickTarget() {
-        openTarget.launch(arrayOf("text/plain", "text/*", "text/csv", "application/octet-stream"))
-    }
-
-    override fun makeFittedEq() {
-        val inputs = dev.continuum.fx.data.FitStore.state.value
-        val m = inputs.measurement
-        val t = inputs.target
-        if (m == null || t == null) {
-            message.value = if (m == null) "Choose your earphones' measurement first." else "Choose a target first."
+    override fun labPaste() {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+        if (text.isNullOrBlank()) {
+            message.value = "The clipboard is empty. Copy a curve's frequency and level text first."
             return
         }
+        lifecycleScope.launch(Dispatchers.Default) { dev.continuum.fx.lab.LabStore.stage(listOf("Pasted curve.txt" to text)) }
+    }
+
+    override fun labCopy(text: String, done: String) {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("Kira Lab", text))
+        message.value = done
+    }
+
+    override fun say(text: String) {
+        message.value = text
+    }
+
+    override fun labShare(title: String, text: String) {
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, title)
+            .putExtra(Intent.EXTRA_TITLE, "$title.txt")
+            .putExtra(Intent.EXTRA_TEXT, text)
+        startActivity(Intent.createChooser(send, "Share $title"))
+    }
+
+    override fun labSave(fileName: String, text: String) {
+        labSaving = text
+        try {
+            saveLabFile.launch(fileName.replace(Regex("[\\\\/:*?\"<>|]+"), " ").trim())
+        } catch (_: Exception) {
+            labSaving = null
+            message.value = "Couldn't open a place to save it."
+        }
+    }
+
+    /** Reads the chosen files and hands them to the Lab, to be named and added. */
+    private fun readLabFiles(uris: List<Uri>) {
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.Default) { runCatching { dev.continuum.fx.dsp.EqFit.fit(m, t, inputs.options) } }
-            result.onSuccess { r ->
-                store.add(r.profile)
-                message.value = "Made ${r.profile.name}: ${r.profile.bands.size} filters, off by %.1f dB, now %.1f dB.".format(r.errorBefore, r.errorAfter)
-            }.onFailure {
-                message.value = "Couldn't fit an EQ to that."
+            val files = withContext(Dispatchers.IO) {
+                uris.take(40).map { uri -> (displayName(uri) ?: "Curve.txt") to (readText(uri) ?: "") }
             }
+            // Big REW exports take a moment to read: off the main thread.
+            withContext(Dispatchers.Default) { dev.continuum.fx.lab.LabStore.stage(files) }
         }
     }
 
-    /** Reads a frequency response from [uri] as the measurement or the target. */
-    private fun readCurve(uri: Uri, target: Boolean) {
-        val text = readText(uri)
-        if (text == null) {
-            message.value = "Couldn't open that file."
-            return
-        }
-        dev.continuum.fx.dsp.Curve.parse(text, displayName(uri) ?: if (target) "Target" else "Measurement")
-            .onSuccess { c ->
-                dev.continuum.fx.data.FitStore.update { if (target) it.copy(target = c) else it.copy(measurement = c) }
-                message.value = "${if (target) "Target" else "Measurement"}: ${c.name}, ${c.size} points."
+    private fun writeLabFile(uri: Uri, text: String) {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+                } catch (_: Exception) {
+                    false
+                }
             }
-            .onFailure { e -> message.value = e.message ?: "That file doesn't look like a frequency response." }
+            message.value = if (ok) "Saved." else "Couldn't save it there."
+        }
     }
 
     /**
@@ -922,6 +955,6 @@ class MainActivity : ComponentActivity(), AppActions {
         const val ACTION_OPEN_VOLUME = "dev.continuum.fx.action.OPEN_VOLUME"
         private const val REQUEST_SHIZUKU = 42
         private const val MAX_IMPORT_BYTES = 256 * 1024
-        private const val MAX_BACKUP_BYTES = 4 * 1024 * 1024
+        private const val MAX_BACKUP_BYTES = 16 * 1024 * 1024
     }
 }

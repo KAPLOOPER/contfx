@@ -141,9 +141,17 @@ class DirectEq : SessionEffects {
         val fx = FxDirect.plan(i.fx, i.ctx)
         val bands = (profile?.bands ?: emptyList()) + fx.tone
         val gains = BandPlan.gains(bands)
+        // Left and right trimmed apart: each side's own filters and level on top of the shared ones.
+        fun side(trim: dev.continuum.fx.dsp.SideTrim?): FloatArray {
+            if (trim == null || trim.isEmpty) return gains
+            val own = BandPlan.gains(trim.bands)
+            return FloatArray(BandPlan.BANDS) { gains[it] + own[it] + trim.levelDb.toFloat() }
+        }
+        val l = if (profile?.sided == true) side(profile.left) else gains
+        val r = if (profile?.sided == true) side(profile.right) else gains
         val width = fx.widthDb
-        val left = if (width == null) gains else FloatArray(BandPlan.BANDS) { gains[it] + width[it] }
-        val right = if (width == null) gains else FloatArray(BandPlan.BANDS) { gains[it] - width[it] }
+        val left = if (width == null) l else FloatArray(BandPlan.BANDS) { l[it] + width[it] }
+        val right = if (width == null) r else FloatArray(BandPlan.BANDS) { r[it] - width[it] }
         val input = ((profile?.preampDb ?: 0.0) + i.boostDb).toFloat()
         val on = profile != null || i.fx.anyOn || i.boostDb > 0f
         return Plan(on, input, left, right, fx.mbc, fx.limiter)

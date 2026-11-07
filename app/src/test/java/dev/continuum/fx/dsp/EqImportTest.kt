@@ -75,4 +75,41 @@ class EqImportTest {
             assertEquals(a.enabled, b.enabled)
         }
     }
+
+    @Test
+    fun readsAndWritesLeftAndRightSections() {
+        val text = """
+            Preamp: -5.3 dB
+            Filter 1: ON PK Fc 106 Hz Gain -1.4 dB Q 2.29
+            Filter 2: ON PK Fc 3676 Hz Gain 3.6 dB Q 2.61
+            Channel: L
+            Preamp: 0.4 dB
+            Filter 3: ON PK Fc 3000 Hz Gain 1.2 dB Q 1.60
+            Channel: R
+            Preamp: -0.4 dB
+            Filter 4: ON PK Fc 3000 Hz Gain -1.3 dB Q 1.60
+            Filter 5: ON LSC Fc 180 Hz Gain 0.9 dB Q 0.70
+            Channel: all
+        """.trimIndent()
+        val p = EqImport.parse(text, "MEST.txt").profile!!
+        assertEquals(2, p.bands.size)
+        assertEquals(-5.3, p.preampDb, 1e-9)
+        assertTrue(p.sided)
+        assertEquals(0.4, p.left!!.levelDb, 1e-9)
+        assertEquals(1, p.left!!.bands.size)
+        assertEquals(-0.4, p.right!!.levelDb, 1e-9)
+        assertEquals(2, p.right!!.bands.size)
+        val again = EqImport.parse(EqImport.export(p)).profile!!
+        assertEquals(p.bands, again.bands)
+        assertEquals(p.left, again.left)
+        assertEquals(p.right, again.right)
+        // A side's whole EQ is the shared filters with its own after them.
+        assertEquals(3, p.side(p.left).bands.size)
+        assertEquals(-4.9, p.side(p.left).preampDb, 1e-9)
+        // Other channels' sections are left out, with a word about it.
+        val surround = EqImport.parse("Filter 1: ON PK Fc 100 Hz Gain 1 dB Q 1\nChannel: C\nFilter 2: ON PK Fc 200 Hz Gain 1 dB Q 1\nChannel: all")
+        assertEquals(1, surround.profile!!.bands.size)
+        assertEquals(1, surround.warnings.size)
+        assertFalse(surround.profile!!.sided)
+    }
 }

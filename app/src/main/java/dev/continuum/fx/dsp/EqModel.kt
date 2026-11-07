@@ -52,6 +52,18 @@ enum class Polarity(val label: String, val left: Double, val right: Double) {
     RightInverted("Right only", 1.0, -1.0),
 }
 
+/**
+ * One side's own correction, on top of the shared filters: a level and a few filters, so a pair
+ * of earpieces that measure differently meet in the middle. It's what Kira Lab's left and right
+ * matching makes, and Equalizer APO's "Channel: L" and "Channel: R" sections.
+ */
+data class SideTrim(
+    val levelDb: Double = 0.0,
+    val bands: List<EqBand> = emptyList(),
+) {
+    val isEmpty: Boolean get() = levelDb == 0.0 && bands.none { it.enabled }
+}
+
 data class EqProfile(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -59,7 +71,19 @@ data class EqProfile(
     val bands: List<EqBand> = emptyList(),
     /** Belongs to the earphones this EQ is for, so it goes with the EQ. */
     val polarity: Polarity = Polarity.Normal,
+    /** The left side's own trim, on top of [bands]. */
+    val left: SideTrim? = null,
+    /** The right side's own trim, on top of [bands]. */
+    val right: SideTrim? = null,
 ) {
+    /** Left and right are treated differently. */
+    val sided: Boolean get() = left?.isEmpty == false || right?.isEmpty == false
+
+    /** The whole EQ one side hears: the shared filters with its own after them. */
+    fun side(trim: SideTrim?): EqProfile =
+        if (trim == null || trim.isEmpty) copy(left = null, right = null)
+        else copy(preampDb = preampDb + trim.levelDb, bands = bands + trim.bands, left = null, right = null)
+
     companion object {
         fun flat(): EqProfile = EqProfile(name = "Flat")
     }

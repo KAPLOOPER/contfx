@@ -7,6 +7,7 @@ import dev.continuum.fx.dsp.EqBand
 import dev.continuum.fx.dsp.EqProfile
 import dev.continuum.fx.dsp.FilterType
 import dev.continuum.fx.dsp.Polarity
+import dev.continuum.fx.dsp.SideTrim
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,8 +153,13 @@ class ProfileStore(context: Context) {
         put("name", p.name)
         put("preamp", p.preampDb)
         if (p.polarity != Polarity.Normal) put("polarity", p.polarity.name)
-        val bands = JSONArray()
-        p.bands.forEach { b ->
+        put("bands", bandsToJson(p.bands))
+        p.left?.let { put("left", sideToJson(it)) }
+        p.right?.let { put("right", sideToJson(it)) }
+    }
+
+    private fun bandsToJson(list: List<EqBand>) = JSONArray().also { bands ->
+        list.forEach { b ->
             bands.put(JSONObject().apply {
                 put("type", b.type.name)
                 put("freq", b.frequency)
@@ -162,13 +168,14 @@ class ProfileStore(context: Context) {
                 put("on", b.enabled)
             })
         }
-        put("bands", bands)
     }
 
-    private fun profileFromJson(o: JSONObject): EqProfile {
-        val arr = o.optJSONArray("bands") ?: JSONArray()
-        val bands = (0 until arr.length()).mapNotNull { i ->
-            val b = arr.getJSONObject(i)
+    private fun sideToJson(t: SideTrim) = JSONObject().put("level", t.levelDb).put("bands", bandsToJson(t.bands))
+
+    private fun bandsFromJson(arr: JSONArray?): List<EqBand> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val b = arr.optJSONObject(i) ?: return@mapNotNull null
             val type = runCatching { FilterType.valueOf(b.getString("type")) }.getOrNull() ?: return@mapNotNull null
             EqBand(
                 type = type,
@@ -178,12 +185,20 @@ class ProfileStore(context: Context) {
                 enabled = b.optBoolean("on", true),
             )
         }
+    }
+
+    private fun sideFromJson(o: JSONObject?): SideTrim? =
+        o?.let { SideTrim(it.optDouble("level", 0.0), bandsFromJson(it.optJSONArray("bands"))) }
+
+    private fun profileFromJson(o: JSONObject): EqProfile {
         return EqProfile(
             id = o.getString("id"),
             name = o.optString("name", "EQ"),
             preampDb = o.optDouble("preamp", 0.0),
-            bands = bands,
+            bands = bandsFromJson(o.optJSONArray("bands")),
             polarity = Polarity.entries.firstOrNull { it.name == o.optString("polarity") } ?: Polarity.Normal,
+            left = sideFromJson(o.optJSONObject("left")),
+            right = sideFromJson(o.optJSONObject("right")),
         )
     }
 

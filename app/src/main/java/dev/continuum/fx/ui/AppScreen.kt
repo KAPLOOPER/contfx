@@ -162,11 +162,17 @@ interface AppActions {
     fun copyAdbCommands()
     fun importFile()
     fun pasteFromClipboard()
-    /** Choose your earphones' measured response, or the target, to fit an EQ between. */
-    fun pickMeasurement()
-    fun pickTarget()
-    /** Fits an EQ from the measurement to the target and adds it as a new EQ. */
-    fun makeFittedEq()
+    /** Kira Lab: choose measurement or target files to bring in (L and R files pair up). */
+    fun labImport()
+    /** Kira Lab: a curve copied as text, brought in like a file. */
+    fun labPaste()
+    /** Copies [text] and says [done]. */
+    fun labCopy(text: String, done: String)
+    fun labShare(title: String, text: String)
+    /** Saves [text] as a file, named [fileName] to start with. */
+    fun labSave(fileName: String, text: String)
+    /** Says [text] in the dock, as the app's other messages are. */
+    fun say(text: String)
     fun shareActive()
     fun setSetupOpen(open: Boolean)
     fun dismissMessage()
@@ -379,7 +385,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                                 StatusLine(state)
                                 Gap(18.dp)
                             }
-                            SoundContent(state, store, actions)
+                            SoundContent(state, store, actions, scrolls.getValue(Section.Sound))
                         }
                         Section.Effects -> EffectsContent(state, actions, scrolls.getValue(Section.Effects))
                         Section.Island -> IslandContent(state, actions)
@@ -420,17 +426,74 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     }
 }
 
+/** The way into Kira Lab: its name, what's in it, and a chevron pointing on to its page. */
+@Composable
+private fun LabRow(onOpen: () -> Unit) {
+    val p = LocalPalette.current
+    val lab by dev.continuum.fx.lab.LabStore.state.collectAsState()
+    val source = remember { MutableInteractionSource() }
+    val n = lab.measurements.size
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = "Open Kira Lab", onClick = onOpen),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(Modifier.width(26.dp))
+        Column(Modifier.weight(1f)) {
+            Txt("Kira Lab", 16.5.sp, p.text, maxLines = 1)
+            Txt("Fit an EQ from a measurement to a target, or make a target of your own.", 13.5.sp, p.sub, maxLines = 2)
+        }
+        ValueNote(if (n == 0) "new" else if (n == 1) "1 measurement" else "$n measurements")
+        Spacer(Modifier.width(8.dp))
+        Chevron(null, p.quiet, 15.dp)
+    }
+}
+
+/**
+ * Left and right matched in Kira Lab: each side's level and filters, on top of the ones above.
+ * The graph draws the shared filters; these play on one side each.
+ */
+@Composable
+private fun SidesNote(profile: dev.continuum.fx.dsp.EqProfile, onRemove: () -> Unit) {
+    val p = LocalPalette.current
+    fun side(name: String, t: dev.continuum.fx.dsp.SideTrim?): String {
+        if (t == null || t.isEmpty) return "$name: as the rest"
+        val n = t.bands.count { it.enabled }
+        return "$name: ${Fmt.db(t.levelDb)}" + if (n > 0) ", ${if (n == 1) "1 filter" else "$n filters"}" else ""
+    }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        dev.continuum.fx.ui.theme.Note("left and right matched", p.sub)
+        Gap(4.dp)
+        Txt("${side("Left", profile.left)}. ${side("Right", profile.right)}.", 15.sp, p.text)
+        Txt("On top of the filters above, so a pair that measures differently meets in the middle.", 13.sp, p.sub)
+        PillButton("Play both sides alike", onRemove, height = 38.dp)
+    }
+}
+
 /** The dock's height closed, and the ground left under it. */
 private val DOCK_H = 72.dp
 private val DOCK_GAP = 10.dp
 
 @Composable
-private fun SoundContent(state: UiState, store: ProfileStore, actions: AppActions) {
+private fun SoundContent(state: UiState, store: ProfileStore, actions: AppActions, scroll: ScrollState) {
     val p = LocalPalette.current
     val library = state.library
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
-    var fitting by rememberSaveable { mutableStateOf(false) }
+    // Kira Lab takes the page while it's open; back (or Done) returns to the EQ.
+    var lab by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun openLab(open: Boolean) {
+        lab = open
+        scope.launch { scroll.scrollTo(0) }
+    }
+    BackHandler(enabled = lab) { openLab(false) }
+    if (lab) {
+        dev.continuum.fx.ui.lab.LabContent(store, actions, onClose = { openLab(false) })
+        return
+    }
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var linksOpen by rememberSaveable { mutableStateOf(false) }
     var moreOpen by rememberSaveable { mutableStateOf(false) }
@@ -445,13 +508,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     }
     Column {
         // The EQ you're listening through, set large; tap its name for all of them.
-        EqHero(library, store, actions, fitting = fitting, onFit = { fitting = !fitting })
-        Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
-            if (fitting) {
-                Gap(12.dp)
-                FitCard(actions)
-            }
-        }
+        EqHero(library, store, actions, onLab = { openLab(true) })
         Gap(10.dp)
 
         val comparing by EngineStatus.comparing.collectAsState()
@@ -538,6 +595,10 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                     selected = newIndex
                 }, icon = R.drawable.ic_plus)
                 Gap(8.dp)
+                if (profile.sided) {
+                    SidesNote(profile) { store.updateActive { it.copy(left = null, right = null) } }
+                    Gap(8.dp)
+                }
             }
         }
 
@@ -564,6 +625,9 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             }
             AppsList(library, actions)
         }
+
+        // Kira Lab: a page of its own, for making EQs from measurements and targets of your own.
+        LabRow(onOpen = { openLab(true) })
 
         if (eqOn) {
             // What's about this EQ itself, and rarely needed.
@@ -597,7 +661,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
  */
 @OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
-private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, fitting: Boolean, onFit: () -> Unit) {
+private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, onLab: () -> Unit) {
     val p = LocalPalette.current
     val view = LocalView.current
     val profiles = library.profiles
@@ -675,7 +739,7 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, f
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 PillButton("Import", { listOpen = false; actions.importFile() }, icon = R.drawable.ic_import)
                 PillButton("Paste", { listOpen = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
-                PillButton(if (fitting) "Done fitting" else "Fit to a target", { listOpen = false; onFit() }, icon = R.drawable.ic_tune)
+                PillButton("Kira Lab", { listOpen = false; onLab() }, icon = R.drawable.ic_tune)
             }
         }
     }

@@ -689,6 +689,7 @@ private fun FitSection(
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         PillButton("Use as an EQ", {
             store.add(profileOf(name, m.filters, fit.preamp, fit.chans))
+            store.setEqEnabled(true)
             actions.say("$name is your EQ now." + if (fit.chans != null) " Left and right are matched too." else "")
         }, icon = R.drawable.ic_check, primary = true)
         PillButton("Copy", {
@@ -721,6 +722,7 @@ private fun FitSection(
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     PillButton("Use as an EQ", {
                         store.add(profileOf(e.name, e.filters, e.preamp, e.channels))
+                        store.setEqEnabled(true)
                         actions.say("${e.name} is your EQ now.")
                     }, icon = R.drawable.ic_check)
                     PillButton("Copy", { actions.labCopy(e.apoText(), "Copied for EqualizerAPO or Peace.") }, icon = R.drawable.ic_copy)

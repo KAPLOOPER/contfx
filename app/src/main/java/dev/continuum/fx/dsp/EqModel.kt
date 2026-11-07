@@ -54,7 +54,7 @@ enum class Polarity(val label: String, val left: Double, val right: Double) {
 
 /**
  * One side's own correction, on top of the shared filters: a level and a few filters, so a pair
- * of earpieces that measure differently meet in the middle. It's what Kira Lab's left and right
+ * of earpieces that measure differently meet in the middle. It's what the Lab's left and right
  * matching makes, and Equalizer APO's "Channel: L" and "Channel: R" sections.
  */
 data class SideTrim(

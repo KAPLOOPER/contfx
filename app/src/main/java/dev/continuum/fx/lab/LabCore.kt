@@ -19,8 +19,8 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /*
- * Kira Lab's engine, ported from the Lab's own page (kira-lab.template.html, makeCore) line for
- * line, so a fit here is the fit there: the AutoEq grid, fractional-octave smoothing, the Live
+ * The Lab's engine, ported line for line from the Lab's original web page, so a fit here is the
+ * fit there: the AutoEq grid, fractional-octave smoothing, the Live
  * model's hall, projection and loudness, RBJ biquads, the perceptual fitter with its free level,
  * left/right matching, and the files it reads and writes. Nothing here touches Android, so the
  * unit tests run it against what the Lab's own code computes. It holds no curves of its own:
@@ -30,7 +30,7 @@ import kotlin.math.sqrt
 /** A filter as the Lab fits and writes it: Equalizer APO's PK, LSC or HSC. */
 data class LabFilter(val type: String, val fc: Double, val gain: Double, val q: Double)
 
-/** The Live model's settings (Live v2's defaults). */
+/** The Live model's settings, at its defaults. */
 data class LiveParams(
     val V: Double = 15000.0,
     val Tmid: Double = 2.0,
@@ -829,9 +829,9 @@ object Lab {
         return KEY_POINTS.map { it to at(y, it) } to (pf to pk)
     }
 
-    // ---------- Live v2.1: the listener's own carve (Nov 2026) ----------
+    // ---------- the separation carve ----------
     // Gives every range its own space: lift where things define themselves, cut where they mask.
-    // Rig-independent, so it applies to every Live v2 version.
+    // Rig-independent, so it applies to any target.
     val CARVE = listOf(
         LabFilter("PK", 44.0, 1.1, 1.3),   // slam: kick and bass fundamentals
         LabFilter("PK", 111.0, -1.9, 1.95), // boom and overhang that mask the low mids

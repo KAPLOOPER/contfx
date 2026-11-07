@@ -9,7 +9,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 /**
- * The Lab's engine against Kira Lab itself, on made-up curves only: golden.json is what the
+ * The Lab's engine against the Lab's original web version, on made-up curves only: golden.json is what the
  * Lab's own JavaScript computes from them (its page's core, run in node), so the port is checked
  * without any real measurement or target in the repo. Plus the checks from the Lab's own tests.
  */
@@ -30,7 +30,7 @@ class LabCoreTest {
     }
 
     private val texts by lazy { obj(golden["texts"]) }
-    /** The made-up target, and it with the v2.1 carve. */
+    /** The made-up target, and it with the separation carve. */
     private val t0 by lazy { arr(golden["T0"]) }
     private val t1 by lazy { arr(golden["T1"]) }
     /** The made-up IEM, read back from its REW-style text as the Lab reads it. */
@@ -94,7 +94,7 @@ class LabCoreTest {
     fun theStudioReshapesYourTarget() {
         // At rest it's your target as it came in, re 500 Hz.
         assertTrue(maxDiff(Studio.target(t1, StudioModel(), StudioTaste()), Lab.norm(t1, 500.0)) < 1e-9)
-        // Separation 1 adds the v2.1 carve, and -1 takes it away again (to within the 24 Hz
+        // Separation 1 adds the carve, and -1 takes it away again (to within the 24 Hz
         // shelf, whose cut isn't quite its boost turned over).
         assertTrue(maxDiff(Studio.target(t0, StudioModel(), StudioTaste(sep = 1.0)), Lab.add(Lab.norm(t0, 500.0), Lab.carveDb(1.0))) < 1e-9)
         val back = Studio.target(t1, StudioModel(), StudioTaste(sep = -1.0))

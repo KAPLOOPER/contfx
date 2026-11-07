@@ -24,7 +24,7 @@ data class StudioModel(
 }
 
 /**
- * Target Studio's taste: shelves, bumps, a tilt, and the v2.1 separation carve, added ([sep] 1)
+ * Target Studio's taste: shelves, bumps, a tilt, and the separation carve, added ([sep] 1)
  * or taken away (-1) from the target it starts from.
  */
 data class StudioTaste(
@@ -79,7 +79,7 @@ class Device(val label: String, val rig: String, val chs: List<DoubleArray>, val
     }
 }
 
-/** How the Lab fits. The defaults are Kira Lab's. */
+/** How the Lab fits, and its defaults. */
 data class FitSettings(
     val fs: Double = 48000.0,
     val fmax: Double = 16000.0,

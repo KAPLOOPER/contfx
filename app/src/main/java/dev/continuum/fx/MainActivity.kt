@@ -660,7 +660,7 @@ class MainActivity : ComponentActivity(), AppActions {
 
     override fun labCopy(text: String, done: String) {
         val clipboard = getSystemService(ClipboardManager::class.java)
-        clipboard.setPrimaryClip(ClipData.newPlainText("Kira Lab", text))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Lab", text))
         message.value = done
     }
 

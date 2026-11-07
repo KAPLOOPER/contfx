@@ -162,9 +162,9 @@ interface AppActions {
     fun copyAdbCommands()
     fun importFile()
     fun pasteFromClipboard()
-    /** Kira Lab: choose measurement or target files to bring in (L and R files pair up). */
+    /** The Lab: choose measurement or target files to bring in (L and R files pair up). */
     fun labImport()
-    /** Kira Lab: a curve copied as text, brought in like a file. */
+    /** The Lab: a curve copied as text, brought in like a file. */
     fun labPaste()
     /** Copies [text] and says [done]. */
     fun labCopy(text: String, done: String)
@@ -426,7 +426,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     }
 }
 
-/** The way into Kira Lab: its name, what's in it, and a chevron pointing on to its page. */
+/** The way into the Lab: its name, what's in it, and a chevron pointing on to its page. */
 @Composable
 private fun LabRow(onOpen: () -> Unit) {
     val p = LocalPalette.current
@@ -437,12 +437,12 @@ private fun LabRow(onOpen: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = "Open Kira Lab", onClick = onOpen),
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = "Open the Lab", onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.width(26.dp))
         Column(Modifier.weight(1f)) {
-            Txt("Kira Lab", 16.5.sp, p.text, maxLines = 1)
+            Txt("Lab", 16.5.sp, p.text, maxLines = 1)
             Txt("Fit an EQ from a measurement to a target, or make a target of your own.", 13.5.sp, p.sub, maxLines = 2)
         }
         ValueNote(if (n == 0) "new" else if (n == 1) "1 measurement" else "$n measurements")
@@ -452,7 +452,7 @@ private fun LabRow(onOpen: () -> Unit) {
 }
 
 /**
- * Left and right matched in Kira Lab: each side's level and filters, on top of the ones above.
+ * Left and right matched in the Lab: each side's level and filters, on top of the ones above.
  * The graph draws the shared filters; these play on one side each.
  */
 @Composable
@@ -482,7 +482,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
     val library = state.library
     val profile = library.active
     var selected by remember(profile.id) { mutableIntStateOf(-1) }
-    // Kira Lab takes the page while it's open; back (or Done) returns to the EQ.
+    // The Lab takes the page while it's open; back (or Done) returns to the EQ.
     var lab by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     fun openLab(open: Boolean) {
@@ -626,7 +626,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             AppsList(library, actions)
         }
 
-        // Kira Lab: a page of its own, for making EQs from measurements and targets of your own.
+        // The Lab: a page of its own, for making EQs from measurements and targets of your own.
         LabRow(onOpen = { openLab(true) })
 
         if (eqOn) {
@@ -739,7 +739,7 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 PillButton("Import", { listOpen = false; actions.importFile() }, icon = R.drawable.ic_import)
                 PillButton("Paste", { listOpen = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
-                PillButton("Kira Lab", { listOpen = false; onLab() }, icon = R.drawable.ic_tune)
+                PillButton("Lab", { listOpen = false; onLab() }, icon = R.drawable.ic_tune)
             }
         }
     }

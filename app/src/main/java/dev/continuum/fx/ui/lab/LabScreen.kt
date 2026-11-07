@@ -95,7 +95,7 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /*
- * Kira Lab, in Continuum's ink: the graph across the page, then the ledger under it. Your library
+ * The Lab, in Continuum's ink: the graph across the page, then the ledger under it. Your library
  * (the measurements and targets you bring in: the app carries none of its own) is what's on the
  * graph; the fit makes an EQ from a measurement to a target, matching left and right first;
  * Target Studio reshapes one of your targets. A fit becomes an EQ like any other with one tap.
@@ -270,9 +270,9 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
-                Kicker("Sound · Kira Lab", "dB re ${if (v.normHz >= 1000) "1 kHz" else "500 Hz"}")
+                Kicker("Sound · Lab", "dB re ${if (v.normHz >= 1000) "1 kHz" else "500 Hz"}")
                 Gap(6.dp)
-                HeroLine(dev?.let { d -> tgt?.let { "${d.name} → ${it.name}" } } ?: "Kira Lab", p.text, size = 28.sp)
+                HeroLine(dev?.let { d -> tgt?.let { "${d.name} → ${it.name}" } } ?: "Lab", p.text, size = 28.sp)
             }
             Spacer(Modifier.width(8.dp))
             Box(Modifier.padding(top = 10.dp)) { PillButton("Done", onClose, icon = R.drawable.ic_check) }
@@ -724,7 +724,7 @@ private fun khz(hz: Double) = if (hz == 44100.0) "44.1 kHz" else "${(hz / 1000).
 
 private val HOW = listOf(
     "Both curves are smoothed to the ear's frequency resolution (equivalent rectangular bandwidth, about 1/6 octave in the mids), so the fit spends filters on what you can hear.",
-    "The level is solved as one free volume offset alongside the filters. It's only your volume, so it never goes in the EQ, and a target with a deliberate dip at 500 Hz (like Live v2.1) can't skew the alignment.",
+    "The level is solved as one free volume offset alongside the filters. It's only your volume, so it never goes in the EQ, and a target with a deliberate dip at 500 Hz can't skew the alignment.",
     "Errors are weighted: full weight from 30 Hz to 8 kHz, easing to 30% above 12 kHz where 711 couplers have no tolerance, and less where your left and right disagree.",
     "Errors over 3 dB count less and less, so a roll-off or a coupler notch no EQ can fix doesn't pull the other filters off course.",
     "Peaks above the target count 1.8 times as much as dips below it: narrow peaks are easier to hear than narrow dips, and it keeps the EQ from boosting into deep notches.",
@@ -806,7 +806,7 @@ private val TASTE_SPECS = listOf(
     Spec("airG", "Air shelf", -4.0, 6.0, 0.5) { Fmt.db(it) },
     Spec("airF", "Air shelf corner", 7000.0, 14000.0, 250.0) { LabIds.hz(it) },
     Spec("tilt", "Tilt around 1 kHz", -1.0, 1.0, 0.1) { "${dbShort(it)} dB/oct" },
-    Spec("sep", "Separation, your v2.1 carve", -1.0, 2.0, 0.25) { if (it == 0.0) "as it is" else "${if (it > 0) "+" else "−"}${Lab.fixed(abs(it), 2)}" },
+    Spec("sep", "Separation carve", -1.0, 2.0, 0.25) { if (it == 0.0) "as it is" else "${if (it > 0) "+" else "−"}${Lab.fixed(abs(it), 2)}" },
 )
 
 private fun StudioModel.get(k: String) = when (k) {
@@ -849,7 +849,7 @@ private fun StudioSection(
     }
     BenchRow(
         "Show it on the graph",
-        "Change the hall, your listening level or your taste, starting from one of your targets. Separation adds your v2.1 carve, or takes it away below 0.",
+        "Change the hall, your listening level or your taste, starting from one of your targets. Separation adds the separation carve, or takes it away below 0.",
         open,
         onToggle = { onOpen(!open) },
     )

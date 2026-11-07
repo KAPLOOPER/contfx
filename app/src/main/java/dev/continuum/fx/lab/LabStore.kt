@@ -100,7 +100,7 @@ data class LabState(
 )
 
 /**
- * Kira Lab's library on the phone: measurements, targets and saved fits, kept in the "lab"
+ * The Lab's library on the phone: measurements, targets and saved fits, kept in the "lab"
  * settings file (so a backup carries them). It starts empty, and holds only what you bring in:
  * the app carries no measurements or targets of its own.
  */
@@ -214,7 +214,7 @@ object LabStore {
             g.names += file
             g.span = "${LabIds.hz(c.f.first())}–${LabIds.hz(c.f.last())}"
         }
-        val looksTarget = Regex("target|harman|kira|diffuse|\\bdf\\b|tilt|preference|curve", RegexOption.IGNORE_CASE)
+        val looksTarget = Regex("target|harman|diffuse|\\bdf\\b|tilt|preference|curve", RegexOption.IGNORE_CASE)
         val pending = groups.values.map { g ->
             PendingImport(
                 key = "p" + java.lang.Long.toString((Math.random() * 1e12).toLong(), 36),
@@ -405,7 +405,7 @@ object LabStore {
         .put("visible", JSONArray(v.visible))
         .put("slots", JSONObject().also { o -> v.slots.forEach { (k, s) -> o.put(k, s) } })
         .put("normHz", v.normHz).put("smooth", v.smooth).put("view", v.view).put("yRange", v.yRange)
-        .put("studioBase", v.studioBase).put("model", json(v.model)).put("taste", json(v.taste)).put("studioName", v.studioName)
+        .put("studioBase", v.studioBase).put("model", json(v.model)).put("taste", json(v.taste)).put("studio_name", v.studioName)
         .put("fit", json(v.fit)).put("device", v.device).put("target", v.target)
 
     private fun view(o: JSONObject): LabView {
@@ -428,7 +428,8 @@ object LabStore {
             yRange = o.optString("yRange", d.yRange).takeIf { it in listOf("auto", "30", "50") } ?: d.yRange,
             studioBase = o.optString("studioBase").takeIf(::yours) ?: "",
             model = model(o.optJSONObject("model")), taste = taste(o.optJSONObject("taste")),
-            studioName = o.optString("studioName", d.studioName),
+            // Kept under a new key: a name an earlier build filled in by itself is let go.
+            studioName = o.optString("studio_name", d.studioName),
             fit = settings(o.optJSONObject("fit")), device = o.optString("device").takeIf(::yours) ?: "",
             target = o.optString("target").takeIf { yours(it) || it == "studio" } ?: "",
         )

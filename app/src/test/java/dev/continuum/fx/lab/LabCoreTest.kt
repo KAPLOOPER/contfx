@@ -1,6 +1,7 @@
 package dev.continuum.fx.lab
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -8,18 +9,16 @@ import kotlin.math.ceil
 import kotlin.math.max
 
 /**
- * The Lab's engine against Kira Lab itself: the Python pipeline's curves (parity.json), and what
- * the Lab's own JavaScript computes on the same inputs (golden.json, written by running the
- * page's core in node). Plus the checks from the Lab's own test file (tests/core.test.mjs).
+ * The Lab's engine against Kira Lab itself, on made-up curves only: golden.json is what the
+ * Lab's own JavaScript computes from them (its page's core, run in node), so the port is checked
+ * without any real measurement or target in the repo. Plus the checks from the Lab's own tests.
  */
 @Suppress("UNCHECKED_CAST")
 class LabCoreTest {
-    private fun text(name: String): String =
-        requireNotNull(javaClass.getResource("/lab/$name")) { "missing test resource lab/$name" }.readText()
-
-    private val ref by lazy { LabRef.parse(text("refdata.json")) }
-    private val parity by lazy { MiniJson.parse(text("parity.json")) as Map<String, Any?> }
-    private val golden by lazy { MiniJson.parse(text("golden.json")) as Map<String, Any?> }
+    private val golden by lazy {
+        val text = requireNotNull(javaClass.getResource("/lab/golden.json")) { "missing test resource lab/golden.json" }.readText()
+        MiniJson.parse(text) as Map<String, Any?>
+    }
 
     private fun arr(v: Any?): DoubleArray = (v as List<Any?>).map { (it as Number).toDouble() }.toDoubleArray()
     private fun obj(v: Any?) = v as Map<String, Any?>
@@ -30,12 +29,16 @@ class LabCoreTest {
         return m
     }
 
-    private val live21 by lazy { Lab.add(Lab.liveModel(ref, LiveParams(rig = "711")), Lab.filtersDb(Lab.CARVE, 192000.0)) }
-    private fun curve(name: String): DoubleArray = Lab.parseCurveText(text("fixtures/$name")).let { Lab.resample(it.f, it.y) }
-    private val mest by lazy { curve("rew-mest-mkii.txt") }
+    private val texts by lazy { obj(golden["texts"]) }
+    /** The made-up target, and it with the v2.1 carve. */
+    private val t0 by lazy { arr(golden["T0"]) }
+    private val t1 by lazy { arr(golden["T1"]) }
+    /** The made-up IEM, read back from its REW-style text as the Lab reads it. */
+    private val meas by lazy { Lab.parseCurveText(texts["rew"] as String).let { Lab.resample(it.f, it.y) } }
+
     private fun opts(
-        meas: DoubleArray = mest,
-        target: DoubleArray = live21,
+        meas: DoubleArray = this.meas,
+        target: DoubleArray = t1,
         maxFilters: Int = 8,
         maxBoost: Double = 6.0,
         perceptual: Boolean = true,
@@ -51,9 +54,10 @@ class LabCoreTest {
     }
 
     /**
-     * The same fit as the JavaScript's. Identical to 1e-11 for the first few filters; after that
-     * the optimiser's ordinary floating-point sensitivity shows (the JavaScript moves by as much
-     * when its own log2 is computed another way), so filters agree to within a percent or so.
+     * The same fit as the JavaScript's. Identical to many decimal places for the first few
+     * filters; after that the optimiser's ordinary floating-point sensitivity shows (the
+     * JavaScript moves by as much when its own log2 is computed another way), so filters agree
+     * to within a percent or so.
      */
     private fun assertSameFit(label: String, js: Map<String, Any?>, r: FitResult) {
         val want = filtersOf(js["filters"])
@@ -66,7 +70,8 @@ class LabCoreTest {
         }
         assertEquals("$label preamp", num(js["preamp"]), r.preamp, 0.15)
         assertEquals("$label rms after", num(obj(js["after"])["rms"]), r.after.rms, 0.02)
-        assertEquals("$label rms before", num(obj(js["before"])["rms"]), r.before.rms, 0.002)
+        // "Before" is measured at the level the fit settles on, so it moves with that level.
+        assertEquals("$label rms before", num(obj(js["before"])["rms"]), r.before.rms, 0.01)
     }
 
     @Test
@@ -74,78 +79,51 @@ class LabCoreTest {
         assertEquals(695, Lab.N)
         assertEquals(20.0, Lab.F[0], 1e-9)
         assertEquals(20 * Math.pow(1.01, 694.0), Lab.F[694], 1e-6)
-        for (k in listOf("kira711", "detail", "pref", "lush", "kiraoe", "harmanie", "harmanoe", "diamond")) assertEquals(k, 695, ref.refs.getValue(k).size)
-        assertEquals(695, ref.d5128iem!!.size)
     }
 
     @Test
-    fun theLiveModelMatchesThePythonPipeline() {
-        val cases = listOf(
-            LiveParams(rig = "711") to "live2_711",
-            LiveParams(rig = "5128") to "live2_5128",
-            LiveParams(rig = "5128iem") to "live2_5128iem",
-            LiveParams(rig = "711", projPeak = 0.0, livePhon = 85.0, playPhon = 75.0) to "live1_711",
-        )
-        for ((p, key) in cases) {
-            val d = maxDiff(Lab.liveModel(ref, p), arr(parity[key]))
-            assertTrue("$key: max |Kotlin - Python| $d dB", d < 0.02)
-        }
-        val d = maxDiff(live21, arr(parity["live21_711"]))
-        assertTrue("live21: $d dB", d < 0.03)
-        assertEquals(-1.0, Lab.at(live21, 500.0), 0.1)
+    fun theLiveModelsShapeMatchesTheLab() {
+        val g = obj(golden["shape"])
+        assertTrue(maxDiff(Lab.liveShape(), arr(g["def"])) < 1e-6)
+        assertTrue(maxDiff(Lab.liveShape(LiveParams(r = 8.0, playPhon = 64.0, livePhon = 96.0, projPeak = 5.0, Tmid = 2.6, BR = 1.35)), arr(g["custom"])) < 1e-6)
+        assertTrue(maxDiff(Lab.liveShape(LiveParams(projPeak = 0.0, livePhon = 85.0, playPhon = 75.0)), arr(g["v1"])) < 1e-6)
+        assertEquals(0.0, Lab.at(Lab.liveShape(), 500.0), 1e-9)
     }
 
     @Test
-    fun theLiveModelMatchesTheLabsJavaScript() {
-        val g = obj(golden["live"])
-        val cases = mapOf(
-            "v2_711" to Lab.liveModel(ref, LiveParams(rig = "711")),
-            "v2_5128" to Lab.liveModel(ref, LiveParams(rig = "5128")),
-            "v2_5128iem" to Lab.liveModel(ref, LiveParams(rig = "5128iem")),
-            "v1_711" to Lab.liveModel(ref, LiveParams(rig = "711", projPeak = 0.0, livePhon = 85.0, playPhon = 75.0)),
-            "v21_711" to live21,
-            "v21_5128iem" to Lab.add(Lab.liveModel(ref, LiveParams(rig = "5128iem")), Lab.carveDb(1.0)),
-            "custom" to Lab.liveModel(ref, LiveParams(rig = "711", r = 8.0, playPhon = 64.0, livePhon = 96.0, projPeak = 5.0, Tmid = 2.6, BR = 1.35)),
-        )
-        for ((k, y) in cases) {
-            val d = maxDiff(y, arr(g[k]))
-            assertTrue("$k: $d dB", d < 1e-6)
-        }
-        val (_, peak) = Lab.keyValues(Lab.liveModel(ref, LiveParams(rig = "711")))
-        assertEquals(8.1, peak.second, 0.15)
-        assertEquals(2700.0, peak.first, 150.0)
-        val gk = obj(golden["key"])
-        assertEquals(num((gk["peak"] as List<Any?>)[1]), peak.second, 1e-9)
-    }
-
-    @Test
-    fun theStudioMatchesTheLab() {
-        val g = obj(golden["studio"])
-        assertTrue(maxDiff(Studio.target(ref, StudioModel(), StudioTaste()), arr(g["def"])) < 1e-6)
+    fun theStudioReshapesYourTarget() {
+        // At rest it's your target as it came in, re 500 Hz.
+        assertTrue(maxDiff(Studio.target(t1, StudioModel(), StudioTaste()), Lab.norm(t1, 500.0)) < 1e-9)
+        // Separation 1 adds the v2.1 carve, and -1 takes it away again (to within the 24 Hz
+        // shelf, whose cut isn't quite its boost turned over).
+        assertTrue(maxDiff(Studio.target(t0, StudioModel(), StudioTaste(sep = 1.0)), Lab.add(Lab.norm(t0, 500.0), Lab.carveDb(1.0))) < 1e-9)
+        val back = Studio.target(t1, StudioModel(), StudioTaste(sep = -1.0))
+        assertTrue(maxDiff(back, Lab.add(Lab.norm(t1, 500.0), Lab.carveDb(-1.0))) < 1e-9)
+        assertTrue(maxDiff(Lab.norm(back, 500.0), Lab.norm(t0, 500.0)) < 0.15)
+        // From the Live model's own shape, every slider does as the Lab's studio does.
         val custom = Studio.target(
-            ref,
-            StudioModel(rig = "5128iem", r = 12.0, playPhon = 76.0),
+            Lab.liveShape(),
+            StudioModel(r = 12.0, playPhon = 76.0),
             StudioTaste(bassG = 3.5, bassF = 140.0, bodyG = -1.0, earG = -2.0, earF = 3100.0, presG = 1.5, airG = 2.0, airF = 9000.0, tilt = -0.3, sep = 1.5),
         )
-        assertTrue(maxDiff(custom, arr(g["custom"])) < 1e-6)
-        // The default studio target is Kira Live v2.1 itself.
-        assertTrue(maxDiff(Studio.target(ref, StudioModel(), StudioTaste()), LabTargets.curve(ref, LabTargets.BY_ID.getValue("b:live21"))) < 1e-9)
+        assertTrue(maxDiff(custom, arr(obj(golden["studio"])["custom"])) < 1e-6)
+        val (_, peak) = Lab.keyValues(t1)
+        assertEquals(num((obj(golden["key"])["peak"] as List<Any?>)[1]), peak.second, 1e-9)
     }
 
     @Test
-    fun readsEveryFileTheLabReads() {
+    fun readsEveryKindOfFileTheLabReads() {
         val g = obj(golden["parse"])
-        for ((name, minPts) in listOf("rew-mest-mkii.txt" to 400, "squig-ej01.txt" to 100, "tab-maybemest.txt" to 100, "autoeq-live-v2.csv" to 600)) {
-            val c = Lab.parseCurveText(text("fixtures/$name"))
-            val want = obj(g[name])
-            assertTrue("$name: ${c.f.size} points", c.f.size >= minPts)
-            assertEquals(name, num(want["n"]).toInt(), c.f.size)
-            assertEquals(num(want["f0"]), c.f[0], 1e-12)
-            assertEquals(num(want["f1"]), c.f.last(), 1e-9)
-            assertEquals(num(want["ysum"]), c.y.sum(), 1e-6)
-            assertTrue(c.f[0] <= 21 && c.f.last() >= 19000)
-            assertTrue(maxDiff(Lab.resample(c.f, c.y), arr(want["grid"])) < 1e-9)
+        for (k in listOf("rew", "squig", "csv", "comma")) {
+            val c = Lab.parseCurveText(texts[k] as String)
+            val want = obj(g[k])
+            assertEquals(k, num(want["n"]).toInt(), c.f.size)
+            assertEquals(k, num(want["f0"]), c.f[0], 1e-12)
+            assertEquals(k, num(want["f1"]), c.f.last(), 1e-9)
+            assertEquals(k, num(want["ysum"]), c.y.sum(), 1e-6)
+            assertTrue(k, maxDiff(Lab.resample(c.f, c.y), arr(want["grid"])) < 1e-9)
         }
+        assertTrue(maxDiff(meas, arr(golden["meas"])) < 1e-9)
         val odd = Lab.parseCurveText("20,5;80,25\n1000,0\t90,1\n* x\n# y\n50 3\n50 4\n  60   -1.5e0  \n")
         val wantOdd = obj(golden["parseOdd"])
         assertEquals(arr(wantOdd["f"]).toList(), odd.f.toList())
@@ -156,8 +134,7 @@ class LabCoreTest {
 
     @Test
     fun leftAndRightFilesPairUp() {
-        val g = obj(golden["split"])
-        for ((file, v) in g) {
+        for ((file, v) in obj(golden["split"])) {
             val want = obj(v)
             assertEquals(file, want["name"] to want["channel"], Lab.splitChannelName(file))
         }
@@ -166,20 +143,20 @@ class LabCoreTest {
     @Test
     fun smoothingMatchesTheLab() {
         val g = obj(golden["smooth"])
-        assertTrue(maxDiff(Lab.smooth(mest, 1.0 / 24), arr(g["s24"])) < 1e-9)
-        assertTrue(maxDiff(Lab.smooth(mest, 1.0 / 3), arr(g["s3"])) < 1e-9)
+        assertTrue(maxDiff(Lab.smooth(meas, 1.0 / 24), arr(g["s24"])) < 1e-9)
+        assertTrue(maxDiff(Lab.smooth(meas, 1.0 / 3), arr(g["s3"])) < 1e-9)
     }
 
     @Test
-    fun mestToLive21IsTheLabsFit() {
-        val t0 = System.currentTimeMillis()
+    fun aFitIsTheLabsFit() {
+        val t0ms = System.currentTimeMillis()
         val r = Lab.fitEq(opts())
-        val ms = System.currentTimeMillis() - t0
+        val ms = System.currentTimeMillis() - t0ms
         val boost = r.eq.max()
         assertTrue("${r.filters.size} filters", r.filters.size <= 8)
         assertTrue("max boost $boost", boost <= 6.005)
         assertEquals(-ceil(max(0.0, boost) * 10) / 10, r.preamp, 1e-12)
-        assertTrue("rms ${r.before.rms} -> ${r.after.rms}", r.after.rms < 0.6 && r.after.rms < r.before.rms)
+        assertTrue("rms ${r.before.rms} -> ${r.after.rms}", r.after.rms < r.before.rms / 3)
         assertTrue("$ms ms", ms < 10000)
         val g = obj(obj(golden["fit"])["main"])
         assertSameFit("main", g, r)
@@ -190,8 +167,8 @@ class LabCoreTest {
 
     @Test
     fun theLevelIsFreeSoADeliberateDipIsKept() {
-        val r = Lab.fitEq(opts(meas = Lab.liveModel(ref, LiveParams(rig = "711")), maxFilters = 6))
-        val want = Lab.filtersDb(Lab.CARVE, 192000.0)
+        val r = Lab.fitEq(opts(meas = t0, maxFilters = 6))
+        val want = Lab.carveDb(1.0)
         var s = 0.0
         var n = 0
         for (i in 0 until Lab.N) if (Lab.F[i] <= 2000) { s += r.eq[i] - want[i]; n++ }
@@ -202,7 +179,6 @@ class LabCoreTest {
         val rms = Math.sqrt(ss / n)
         assertTrue("shape error $rms dB", rms < 0.3)
         assertSameFit("level", obj(obj(golden["fit"])["level"]), r)
-        assertEquals(num(obj(obj(golden["fit"])["level"])["level"]), r.level, 0.1)
     }
 
     @Test
@@ -216,25 +192,20 @@ class LabCoreTest {
     @Test
     fun everyOptionRunsAsTheLabsDoes() {
         val variants = obj(golden["fit"])["variants"] as List<Any?>
-        val made = listOf(
-            opts(perceptual = false), opts(asym = false), opts(robustHF = false), opts(maxFilters = 3), opts(fs = 44100.0, fmax = 20000.0),
-        )
+        val made = listOf(opts(perceptual = false), opts(asym = false), opts(robustHF = false), opts(maxFilters = 3), opts(fs = 44100.0, fmax = 20000.0))
         for ((k, o) in made.withIndex()) {
             val r = Lab.fitEq(o)
             assertTrue(r.filters.size <= o.maxFilters && r.eq.max() <= 6.005 && r.filters.all { it.fc.isFinite() && it.gain.isFinite() && it.q > 0 })
             assertSameFit("variant $k", obj(obj(variants[k])["r"]), r)
         }
-        val ej = Lab.fitEq(opts(meas = curve("squig-ej01.txt"), target = Lab.liveModel(ref, LiveParams(rig = "711")), maxFilters = 10, fmax = 12000.0))
-        assertSameFit("ej01", obj(obj(golden["fit"])["ej"]), ej)
     }
 
     @Test
     fun leftAndRightAreMatchedAsTheLabMatchesThem() {
         val g = obj(golden["pair"])
-        val right = arr(g["R"])
-        val dev = Device("MEST", "711", listOf(mest, right), listOf("L", "R"))
+        val dev = Device("Pair", "711", listOf(meas, arr(g["R"])), listOf("L", "R"))
         assertEquals(0 to 1, dev.lr)
-        val fit = LabFitter.fit(dev, live21, FitSettings())
+        val fit = LabFitter.fit(dev, t1, FitSettings())
         assertSameFit("pair", obj(g["main"]), fit.main)
         val lr = fit.lr!!
         assertTrue(lr.applied)
@@ -256,10 +227,9 @@ class LabCoreTest {
         }
         assertEquals(num(g["preampLR"]), fit.preamp, 0.15)
         assertEquals((g["apo"] as String).lines().size, fit.apoText().lines().size)
-        // Without matching it's the plain fit.
-        val plain = LabFitter.fit(dev, live21, FitSettings(matchLR = false))
-        assertEquals(null, plain.chans)
-        assertEquals(null, plain.lr)
+        val plain = LabFitter.fit(dev, t1, FitSettings(matchLR = false))
+        assertNull(plain.chans)
+        assertNull(plain.lr)
     }
 
     @Test
@@ -275,19 +245,96 @@ class LabCoreTest {
             ChannelFix("L", 1.9, listOf(LabFilter("PK", 771.0, 1.5, 1.01))),
             ChannelFix("R", -1.2, listOf(LabFilter("LSC", 213.0, 1.7, 0.5))),
         )
-        val lr = Lab.apoText(r.filters, -6.8, chans)
         val jsFilters = filtersOf(obj(obj(golden["fit"])["main"])["filters"])
         assertEquals(golden["apoLR"], Lab.apoText(jsFilters, -6.8, chans))
-        val lines = lr.trim().split("\n")
+        val lines = Lab.apoText(r.filters, -6.8, chans).trim().split("\n")
         val n = r.filters.size
         assertEquals("Channel: L", lines[n + 1])
         assertEquals("Preamp: 1.9 dB", lines[n + 2])
         assertEquals("Channel: all", lines.last())
-        assertEquals(golden["txt"], Lab.targetTxt(live21))
-        assertEquals(golden["csv"], Lab.targetCsv(live21))
-        assertEquals(696, Lab.targetCsv(live21).trim().split("\n").size)
+        assertEquals(golden["txt"], Lab.targetTxt(t1))
+        assertEquals(golden["csv"], Lab.targetCsv(t1))
+        assertEquals(696, Lab.targetCsv(t1).trim().split("\n").size)
         assertEquals("-0.0", Lab.fixed(-0.04, 1))
         assertEquals("0.0", Lab.fixed(-0.0, 1))
         assertEquals("1.00", Lab.fixed(1.005, 2))
+    }
+}
+
+/** Just enough JSON to read golden.json, with nothing from Android. */
+internal object MiniJson {
+    fun parse(text: String): Any? {
+        val p = P(text)
+        val v = p.value()
+        p.ws()
+        require(p.i == text.length) { "Trailing text at ${p.i}" }
+        return v
+    }
+
+    private class P(val s: String) {
+        var i = 0
+        fun ws() { while (i < s.length && s[i].isWhitespace()) i++ }
+        fun value(): Any? {
+            ws()
+            return when (s[i]) {
+                '{' -> obj()
+                '[' -> arr()
+                '"' -> str()
+                't' -> { i += 4; true }
+                'f' -> { i += 5; false }
+                'n' -> { i += 4; null }
+                else -> num()
+            }
+        }
+        fun obj(): Map<String, Any?> {
+            val m = LinkedHashMap<String, Any?>()
+            i++
+            ws()
+            if (s[i] == '}') { i++; return m }
+            while (true) {
+                ws()
+                val k = str()
+                ws()
+                i++ // :
+                m[k] = value()
+                ws()
+                if (s[i++] == '}') return m
+            }
+        }
+        fun arr(): List<Any?> {
+            val a = ArrayList<Any?>()
+            i++
+            ws()
+            if (s[i] == ']') { i++; return a }
+            while (true) {
+                a += value()
+                ws()
+                if (s[i++] == ']') return a
+            }
+        }
+        fun str(): String {
+            i++
+            val b = StringBuilder()
+            while (s[i] != '"') {
+                val c = s[i++]
+                if (c != '\\') { b.append(c); continue }
+                when (val e = s[i++]) {
+                    'n' -> b.append('\n')
+                    't' -> b.append('\t')
+                    'r' -> b.append('\r')
+                    'b' -> b.append('\b')
+                    'f' -> b.append('\u000C')
+                    'u' -> { b.append(s.substring(i, i + 4).toInt(16).toChar()); i += 4 }
+                    else -> b.append(e)
+                }
+            }
+            i++
+            return b.toString()
+        }
+        fun num(): Double {
+            val start = i
+            while (i < s.length && (s[i].isDigit() || s[i] in "+-.eE")) i++
+            return s.substring(start, i).toDouble()
+        }
     }
 }

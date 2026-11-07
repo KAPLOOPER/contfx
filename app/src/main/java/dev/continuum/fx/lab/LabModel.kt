@@ -7,79 +7,26 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /*
- * What the Lab's page did around its engine, kept here beside it so it's tested with it: the
- * built-in targets, Target Studio's recipe, and a fit that matches left and right before it fits
- * the pair to the target.
+ * What the Lab's page did around its engine, kept here beside it so it's tested with it: Target
+ * Studio's recipe, and a fit that matches left and right before it fits the pair to the target.
  */
-
-/** A built-in target: made by the Live model, or one of the reference curves. */
-class Builtin(
-    val id: String,
-    val name: String,
-    val sub: String? = null,
-    val short: String? = null,
-    /** "kira" or "ref". */
-    val group: String,
-    val rig: String,
-    val model: LiveParams? = null,
-    val carve: Double = 0.0,
-    val ref: String? = null,
-    val arr: String? = null,
-) {
-    val label: String get() = name + (sub?.let { " ($it)" } ?: "")
-}
-
-object LabTargets {
-    val BUILTIN = listOf(
-        Builtin("b:live21", "Kira Live v2.1", "711 · GRAS", "v2.1 711", "kira", "711", model = LiveParams(rig = "711"), carve = 1.0),
-        Builtin("b:live21-5128iem", "Kira Live v2.1", "B&K 5128 · IEM", "v2.1 5128 IEM", "kira", "5128", model = LiveParams(rig = "5128iem"), carve = 1.0),
-        Builtin("b:live21-5128", "Kira Live v2.1", "B&K 5128 · over-ear", "v2.1 5128 OE", "kira", "5128", model = LiveParams(rig = "5128"), carve = 1.0),
-        Builtin("b:live2", "Kira Live v2", "711 · GRAS", "v2 711", "kira", "711", model = LiveParams(rig = "711")),
-        Builtin("b:live2-5128iem", "Kira Live v2", "B&K 5128 · IEM", "v2 5128 IEM", "kira", "5128", model = LiveParams(rig = "5128iem")),
-        Builtin("b:live2-5128", "Kira Live v2", "B&K 5128 · over-ear", "v2 5128 OE", "kira", "5128", model = LiveParams(rig = "5128")),
-        Builtin("b:live1", "Kira Live v1", "hall only", "v1 711", "kira", "711", model = LiveParams(rig = "711", projPeak = 0.0, livePhon = 85.0, playPhon = 75.0)),
-        Builtin("b:lush", "Kira 711 Lush", group = "kira", rig = "711", ref = "lush"),
-        Builtin("b:pref", "Kira 711 Preference", group = "kira", rig = "711", ref = "pref"),
-        Builtin("b:detail", "Kira 711 Detail-Stage", group = "kira", rig = "711", ref = "detail"),
-        Builtin("b:kira711", "Kira 711", group = "kira", rig = "711", ref = "kira711"),
-        Builtin("b:kiraoe", "Kira Over-Ear", group = "kira", rig = "GRAS", ref = "kiraoe"),
-        Builtin("b:harmanie", "Harman in-ear 2019", group = "ref", rig = "711", ref = "harmanie"),
-        Builtin("b:harmanoe", "Harman over-ear 2018", group = "ref", rig = "GRAS", ref = "harmanoe"),
-        Builtin("b:diamond", "PEQdB Diamond β", "third-party copy", group = "ref", rig = "711", ref = "diamond"),
-        Builtin("b:df711", "Diffuse field", "711 · GRAS", group = "ref", rig = "711", arr = "df711"),
-        Builtin("b:df5128", "Diffuse field", "B&K 5128", group = "ref", rig = "5128", arr = "df5128"),
-    )
-    val BY_ID = BUILTIN.associateBy { it.id }
-
-    fun curve(ref: LabRef, b: Builtin): DoubleArray {
-        var y = when {
-            b.model != null -> Lab.liveModel(ref, b.model)
-            b.ref != null -> ref.refs.getValue(b.ref).copyOf()
-            b.arr == "df5128" -> ref.df5128.copyOf()
-            else -> ref.df711.copyOf()
-        }
-        // Kept on Live v2's level: 500 Hz reads -1.0 dB by design.
-        if (b.carve != 0.0) y = Lab.add(y, Lab.carveDb(b.carve))
-        return y
-    }
-
-    /** Every built-in's curve, by id. */
-    fun all(ref: LabRef): Map<String, DoubleArray> = BUILTIN.associate { it.id to curve(ref, it) }
-}
 
 /** Target Studio's Live model: the hall, your seat and the levels. */
 data class StudioModel(
-    /** "711", "5128iem" or "5128". */
-    val rig: String = "711",
     val r: Double = 20.0,
     val playPhon: Double = 70.0,
     val livePhon: Double = 90.0,
     val projPeak: Double = 3.5,
     val Tmid: Double = 2.0,
     val BR: Double = 1.2,
-)
+) {
+    fun params() = LiveParams(r = r, playPhon = playPhon, livePhon = livePhon, projPeak = projPeak, Tmid = Tmid, BR = BR)
+}
 
-/** Target Studio's taste: shelves, bumps, a tilt, and how much of the v2.1 carve. */
+/**
+ * Target Studio's taste: shelves, bumps, a tilt, and the v2.1 separation carve, added ([sep] 1)
+ * or taken away (-1) from the target it starts from.
+ */
 data class StudioTaste(
     val bassG: Double = 0.0,
     val bassF: Double = 105.0,
@@ -90,13 +37,20 @@ data class StudioTaste(
     val airG: Double = 0.0,
     val airF: Double = 11000.0,
     val tilt: Double = 0.0,
-    val sep: Double = 1.0,
+    val sep: Double = 0.0,
 )
 
 object Studio {
-    fun target(ref: LabRef, m: StudioModel, t: StudioTaste): DoubleArray {
-        val y = Lab.liveModel(ref, LiveParams(rig = m.rig, r = m.r, playPhon = m.playPhon, livePhon = m.livePhon, projPeak = m.projPeak, Tmid = m.Tmid, BR = m.BR))
+    private val shape0 by lazy { Lab.liveShape() }
+
+    /**
+     * One of your targets, reshaped: the Live model's change from its defaults (a bigger hall, a
+     * nearer seat, a quieter evening), then your taste, then the carve. With every slider at
+     * rest it's the target as it came in, re 500 Hz.
+     */
+    fun target(base: DoubleArray, m: StudioModel, t: StudioTaste): DoubleArray {
         val fs = 192000.0
+        val model = if (m == StudioModel()) DoubleArray(Lab.N) else Lab.sub(Lab.liveShape(m.params()), shape0)
         val parts = arrayOf(
             Lab.filterDb("LSC", t.bassF, t.bassG, 0.7, fs),
             Lab.filterDb("PK", 320.0, t.bodyG, 0.9, fs),
@@ -105,19 +59,9 @@ object Studio {
             Lab.filterDb("HSC", t.airF, t.airG, 0.7, fs),
         )
         val tilt = DoubleArray(Lab.N) { t.tilt * Lab.log2(Lab.F[it] / 1000) }
-        // Normalised before the carve, so the target stays on Live v2's level like Kira Live v2.1.
-        return Lab.add(Lab.norm(Lab.add(y, *parts, tilt), 500.0), Lab.carveDb(t.sep))
+        // Levelled before the carve, so the carve's dip at 500 Hz shows as the carve does.
+        return Lab.add(Lab.norm(Lab.add(base, model, *parts, tilt), 500.0), Lab.carveDb(t.sep))
     }
-
-    /** The built-in Kira Live v2.1 this studio starts from, for its rig. */
-    fun baseId(rig: String) = when (rig) {
-        "5128" -> "b:live21-5128"
-        "5128iem" -> "b:live21-5128iem"
-        else -> "b:live21"
-    }
-
-    /** The rig a studio target is saved for. */
-    fun rigTag(rig: String) = if (rig == "711") "711" else "5128"
 }
 
 /** A measurement as the fitter sees it: its channels, their power average and their spread. */

@@ -21,37 +21,17 @@ import kotlin.math.sqrt
 /*
  * Kira Lab's engine, ported from the Lab's own page (kira-lab.template.html, makeCore) line for
  * line, so a fit here is the fit there: the AutoEq grid, fractional-octave smoothing, the Live
- * model (hall, projection and loudness on the diffuse field), RBJ biquads, the perceptual fitter
- * with its free level, left/right matching, and the files it reads and writes. Nothing here
- * touches Android, so the unit tests run it against the Lab's parity data and fixtures.
+ * model's hall, projection and loudness, RBJ biquads, the perceptual fitter with its free level,
+ * left/right matching, and the files it reads and writes. Nothing here touches Android, so the
+ * unit tests run it against what the Lab's own code computes. It holds no curves of its own:
+ * every measurement and target is one you bring in.
  */
 
 /** A filter as the Lab fits and writes it: Equalizer APO's PK, LSC or HSC. */
 data class LabFilter(val type: String, val fc: Double, val gain: Double, val q: Double)
 
-/** The reference curves the Live model and the built-in targets are made from. */
-class LabRef(
-    val df711: DoubleArray,
-    val df5128: DoubleArray,
-    val d5128iem: DoubleArray?,
-    val refs: Map<String, DoubleArray>,
-) {
-    companion object {
-        /** Reads refdata.json: df711, df5128, d5128iem and refs, each 695 values on the grid. */
-        @Suppress("UNCHECKED_CAST")
-        fun parse(json: String): LabRef {
-            val o = MiniJson.parse(json) as Map<String, Any?>
-            fun arr(v: Any?): DoubleArray = (v as List<Any?>).map { (it as Number).toDouble() }.toDoubleArray()
-            val refs = (o["refs"] as? Map<String, Any?>).orEmpty().mapValues { arr(it.value) }
-            return LabRef(arr(o["df711"]), arr(o["df5128"]), o["d5128iem"]?.let { arr(it) }, refs)
-        }
-    }
-}
-
 /** The Live model's settings (Live v2's defaults). */
 data class LiveParams(
-    /** "711" = 711 IEM or GRAS over-ear, "5128iem" = IEM on a B&K 5128, "5128" = over-ear on a 5128. */
-    val rig: String = "711",
     val V: Double = 15000.0,
     val Tmid: Double = 2.0,
     val BR: Double = 1.2,
@@ -292,12 +272,14 @@ object Lab {
         return norm(out, 500.0)
     }
 
-    fun liveModel(ref: LabRef, p: LiveParams = LiveParams()): DoubleArray {
-        val df = if (p.rig == "5128") ref.df5128 else ref.df711
-        val raw = norm(add(df, hallDb(p), loudnessComp(p.livePhon, p.playPhon)))
-        val out = norm(smooth(raw, 1.0 / 12))
-        val d = ref.d5128iem
-        return if (p.rig == "5128iem" && d != null) norm(sub(out, d)) else out
+    /**
+     * What the Live model adds to a target: the hall and the loudness difference between a live
+     * level and yours, smoothed to 1/12 octave, re 500 Hz. It's made from first principles, so it
+     * needs no reference curves: Target Studio adds the change it makes to one of your targets.
+     */
+    fun liveShape(p: LiveParams = LiveParams()): DoubleArray {
+        val raw = norm(add(hallDb(p), loudnessComp(p.livePhon, p.playPhon)))
+        return norm(smooth(raw, 1.0 / 12))
     }
 
     // ---------- RBJ biquads ----------
@@ -879,94 +861,5 @@ object Lab {
         }
         mid.sort()
         return Mismatch(abs(mx), mx, hz, if (mid.isEmpty()) 0.0 else mid[mid.size / 2])
-    }
-}
-
-/** The Lab's own JSON reader: just enough for refdata and the tests, no Android needed. */
-object MiniJson {
-    fun parse(text: String): Any? {
-        val p = P(text)
-        p.ws()
-        val v = p.value()
-        p.ws()
-        require(p.i == text.length) { "Trailing text at ${p.i}" }
-        return v
-    }
-
-    private class P(val s: String) {
-        var i = 0
-        fun ws() { while (i < s.length && s[i].isWhitespace()) i++ }
-        fun value(): Any? {
-            ws()
-            require(i < s.length) { "Unexpected end" }
-            return when (s[i]) {
-                '{' -> obj()
-                '[' -> arr()
-                '"' -> str()
-                't' -> { expect("true"); true }
-                'f' -> { expect("false"); false }
-                'n' -> { expect("null"); null }
-                else -> num()
-            }
-        }
-        fun expect(w: String) { require(s.startsWith(w, i)) { "Expected $w at $i" }; i += w.length }
-        fun obj(): Map<String, Any?> {
-            val m = LinkedHashMap<String, Any?>()
-            i++
-            ws()
-            if (s[i] == '}') { i++; return m }
-            while (true) {
-                ws()
-                val k = str()
-                ws()
-                require(s[i] == ':') { "Expected : at $i" }
-                i++
-                m[k] = value()
-                ws()
-                if (s[i] == ',') { i++; continue }
-                require(s[i] == '}') { "Expected } at $i" }
-                i++
-                return m
-            }
-        }
-        fun arr(): List<Any?> {
-            val a = ArrayList<Any?>()
-            i++
-            ws()
-            if (s[i] == ']') { i++; return a }
-            while (true) {
-                a += value()
-                ws()
-                if (s[i] == ',') { i++; continue }
-                require(s[i] == ']') { "Expected ] at $i" }
-                i++
-                return a
-            }
-        }
-        fun str(): String {
-            require(s[i] == '"') { "Expected string at $i" }
-            i++
-            val b = StringBuilder()
-            while (s[i] != '"') {
-                val c = s[i++]
-                if (c != '\\') { b.append(c); continue }
-                when (val e = s[i++]) {
-                    'n' -> b.append('\n')
-                    't' -> b.append('\t')
-                    'r' -> b.append('\r')
-                    'b' -> b.append('\b')
-                    'f' -> b.append('\u000C')
-                    'u' -> { b.append(s.substring(i, i + 4).toInt(16).toChar()); i += 4 }
-                    else -> b.append(e)
-                }
-            }
-            i++
-            return b.toString()
-        }
-        fun num(): Double {
-            val start = i
-            while (i < s.length && (s[i].isDigit() || s[i] in "+-.eE")) i++
-            return s.substring(start, i).toDouble()
-        }
     }
 }

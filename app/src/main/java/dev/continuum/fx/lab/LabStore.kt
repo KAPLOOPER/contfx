@@ -1,14 +1,10 @@
 package dev.continuum.fx.lab
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,8 +24,8 @@ class LabMeasurement(
     val device: Device by lazy { Device(name, rig, channels.map { it.v }, channels.map { it.label }) }
 }
 
-/** How a Target Studio target was made, so it can be opened again and changed. */
-data class LabRecipe(val model: StudioModel, val taste: StudioTaste)
+/** How a Target Studio target was made (from which of your targets), so it can be opened again. */
+data class LabRecipe(val base: String?, val model: StudioModel, val taste: StudioTaste)
 
 class LabTarget(
     val id: String,
@@ -74,8 +70,8 @@ data class PendingImport(
 
 /** How the Lab is set up: what's on the graph, the studio's sliders and the fit's settings. */
 data class LabView(
-    val visible: List<String> = listOf("b:live21"),
-    val slots: Map<String, Int> = mapOf("b:live21" to 0),
+    val visible: List<String> = emptyList(),
+    val slots: Map<String, Int> = emptyMap(),
     val normHz: Double = 500.0,
     /** "raw", or the smoothing's fraction of an octave: "24", "12", "6", "3". */
     val smooth: String = "24",
@@ -83,12 +79,14 @@ data class LabView(
     val view: String = "abs",
     /** "auto", "30" or "50" dB. */
     val yRange: String = "auto",
+    /** The target Target Studio starts from: one of yours. */
+    val studioBase: String = "",
     val model: StudioModel = StudioModel(),
     val taste: StudioTaste = StudioTaste(),
-    val studioName: String = "Kira Live v2.1 custom",
+    val studioName: String = "",
     val fit: FitSettings = FitSettings(),
     val device: String = "",
-    val target: String = "b:live21",
+    val target: String = "",
 )
 
 data class LabState(
@@ -96,20 +94,15 @@ data class LabState(
     val targets: List<LabTarget> = emptyList(),
     val eqs: List<LabSavedEq> = emptyList(),
     val view: LabView = LabView(),
-    /** The built-in targets' curves, by id, once they're made. */
-    val builtins: Map<String, DoubleArray> = emptyMap(),
-    val ref: LabRef? = null,
     val pending: List<PendingImport> = emptyList(),
     /** Files that couldn't be read, from the last import. */
     val problems: List<String> = emptyList(),
-) {
-    val ready: Boolean get() = ref != null
-}
+)
 
 /**
  * Kira Lab's library on the phone: measurements, targets and saved fits, kept in the "lab"
- * settings file (so a backup carries them). It starts empty; the built-in Kira targets come
- * with the app.
+ * settings file (so a backup carries them). It starts empty, and holds only what you bring in:
+ * the app carries no measurements or targets of its own.
  */
 object LabStore {
     const val FILE = "lab"
@@ -118,7 +111,6 @@ object LabStore {
     private val _state = MutableStateFlow(LabState())
     val state: StateFlow<LabState> = _state.asStateFlow()
     private var appContext: Context? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun init(context: Context) {
         if (appContext != null) return
@@ -132,15 +124,6 @@ object LabStore {
             eqs = readList(prefs.getString(K_EQS, null), ::savedEq),
             view = prefs.getString(K_VIEW, null)?.let { runCatching { view(JSONObject(it)) }.getOrNull() } ?: LabView(),
         )
-        // The reference curves and the built-in targets made from them, off the main thread.
-        val app = context.applicationContext
-        scope.launch {
-            runCatching {
-                val ref = LabRef.parse(app.assets.open("lab/refdata.json").bufferedReader().use { it.readText() })
-                val builtins = LabTargets.all(ref)
-                _state.update { it.copy(ref = ref, builtins = builtins) }
-            }
-        }
     }
 
     // ---------- what's on the graph ----------
@@ -189,6 +172,14 @@ object LabStore {
     /** Takes [key] ("m:…", "t:…" or "e:…") out of the library and off the graph. */
     fun delete(key: String) {
         show(key, false)
+        updateView { v ->
+            v.copy(
+                device = v.device.takeIf { it != key } ?: "",
+                target = v.target.takeIf { it != key } ?: "",
+                studioBase = v.studioBase.takeIf { it != key } ?: "",
+                view = v.view.takeIf { it != key } ?: "abs",
+            )
+        }
         val id = key.substringAfter(':')
         when {
             key.startsWith("m:") -> { _state.update { it.copy(measurements = it.measurements.filterNot { m -> m.id == id }) }; saveList(K_MEAS) }
@@ -264,9 +255,17 @@ object LabStore {
         }
         _state.update { it.copy(pending = emptyList(), problems = emptyList()) }
         for (id in added) show(id, true)
-        // A first measurement is the one to fit.
-        val first = added.firstOrNull { it.startsWith("m:") }
-        if (first != null && _state.value.measurements.none { it.key == _state.value.view.device }) updateView { it.copy(device = first) }
+        // A first measurement is the one to fit, and a first target the one to fit to.
+        val s = _state.value
+        val firstM = added.firstOrNull { it.startsWith("m:") }
+        val firstT = added.firstOrNull { it.startsWith("t:") }
+        updateView { v ->
+            v.copy(
+                device = if (firstM != null && s.measurements.none { it.key == v.device }) firstM else v.device,
+                target = if (firstT != null && s.targets.none { it.key == v.target }) firstT else v.target,
+                studioBase = if (firstT != null && s.targets.none { it.key == v.studioBase }) firstT else v.studioBase,
+            )
+        }
         return added.size
     }
 
@@ -318,13 +317,12 @@ object LabStore {
     }
 
     private fun json(m: StudioModel) = JSONObject()
-        .put("rig", m.rig).put("r", m.r).put("playPhon", m.playPhon).put("livePhon", m.livePhon).put("projPeak", m.projPeak).put("Tmid", m.Tmid).put("BR", m.BR)
+        .put("r", m.r).put("playPhon", m.playPhon).put("livePhon", m.livePhon).put("projPeak", m.projPeak).put("Tmid", m.Tmid).put("BR", m.BR)
 
     private fun model(o: JSONObject?): StudioModel {
         val d = StudioModel()
         if (o == null) return d
         return StudioModel(
-            rig = o.optString("rig", d.rig).takeIf { it in listOf("711", "5128iem", "5128") } ?: d.rig,
             r = o.optDouble("r", d.r), playPhon = o.optDouble("playPhon", d.playPhon), livePhon = o.optDouble("livePhon", d.livePhon),
             projPeak = o.optDouble("projPeak", d.projPeak), Tmid = o.optDouble("Tmid", d.Tmid), BR = o.optDouble("BR", d.BR),
         )
@@ -345,12 +343,17 @@ object LabStore {
 
     private fun json(t: LabTarget) = JSONObject()
         .put("id", t.id).put("name", t.name).put("rig", t.rig).put("note", t.note).put("createdAt", t.createdAt).put("v", arr(t.v))
-        .also { o -> t.recipe?.let { o.put("recipe", JSONObject().put("model", json(it.model)).put("taste", json(it.taste))) } }
+        .also { o ->
+            t.recipe?.let { r ->
+                o.put("recipe", JSONObject().put("model", json(r.model)).put("taste", json(r.taste)).also { j -> r.base?.let { j.put("base", it) } })
+            }
+        }
 
     private fun target(o: JSONObject): LabTarget? {
         val v = doubles(o.optJSONArray("v")) ?: return null
-        // A recipe made before the carve was a slider is plain Live v2: separation 0.
-        val recipe = o.optJSONObject("recipe")?.let { LabRecipe(model(it.optJSONObject("model")), taste(it.optJSONObject("taste"), StudioTaste(sep = 0.0))) }
+        val recipe = o.optJSONObject("recipe")?.let {
+            LabRecipe(it.optString("base").ifEmpty { null }, model(it.optJSONObject("model")), taste(it.optJSONObject("taste")))
+        }
         return LabTarget(o.getString("id"), o.optString("name", "Target"), o.optString("rig", "711"), o.optString("note"), o.optLong("createdAt"), v, recipe)
     }
 
@@ -402,13 +405,15 @@ object LabStore {
         .put("visible", JSONArray(v.visible))
         .put("slots", JSONObject().also { o -> v.slots.forEach { (k, s) -> o.put(k, s) } })
         .put("normHz", v.normHz).put("smooth", v.smooth).put("view", v.view).put("yRange", v.yRange)
-        .put("model", json(v.model)).put("taste", json(v.taste)).put("studioName", v.studioName)
+        .put("studioBase", v.studioBase).put("model", json(v.model)).put("taste", json(v.taste)).put("studioName", v.studioName)
         .put("fit", json(v.fit)).put("device", v.device).put("target", v.target)
 
     private fun view(o: JSONObject): LabView {
         val d = LabView()
+        // Only your own curves: anything else an older build showed is let go.
+        fun yours(id: String) = id.startsWith("m:") || id.startsWith("t:")
         val vis = (o.optJSONArray("visible")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } } ?: d.visible)
-            .distinct().take(SLOTS)
+            .filter(::yours).distinct().take(SLOTS)
         val slotsO = o.optJSONObject("slots")
         val slots = HashMap<String, Int>()
         for (id in vis) {
@@ -419,11 +424,13 @@ object LabStore {
             visible = vis, slots = slots,
             normHz = o.optDouble("normHz", d.normHz).takeIf { it == 500.0 || it == 1000.0 } ?: d.normHz,
             smooth = o.optString("smooth", d.smooth).takeIf { it in listOf("raw", "24", "12", "6", "3") } ?: d.smooth,
-            view = o.optString("view", d.view).ifEmpty { d.view },
+            view = o.optString("view", d.view).takeIf { it in listOf("abs", "lr", "bal") || yours(it) } ?: d.view,
             yRange = o.optString("yRange", d.yRange).takeIf { it in listOf("auto", "30", "50") } ?: d.yRange,
+            studioBase = o.optString("studioBase").takeIf(::yours) ?: "",
             model = model(o.optJSONObject("model")), taste = taste(o.optJSONObject("taste")),
             studioName = o.optString("studioName", d.studioName),
-            fit = settings(o.optJSONObject("fit")), device = o.optString("device", ""), target = o.optString("target", d.target).ifEmpty { d.target },
+            fit = settings(o.optJSONObject("fit")), device = o.optString("device").takeIf(::yours) ?: "",
+            target = o.optString("target").takeIf { yours(it) || it == "studio" } ?: "",
         )
     }
 }

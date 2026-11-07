@@ -60,7 +60,6 @@ import dev.continuum.fx.lab.LabSavedEq
 import dev.continuum.fx.lab.LabState
 import dev.continuum.fx.lab.LabStore
 import dev.continuum.fx.lab.LabTarget
-import dev.continuum.fx.lab.LabTargets
 import dev.continuum.fx.lab.LabView
 import dev.continuum.fx.lab.PendingImport
 import dev.continuum.fx.lab.Studio
@@ -97,12 +96,12 @@ import kotlin.math.roundToLong
 
 /*
  * Kira Lab, in Continuum's ink: the graph across the page, then the ledger under it. Your library
- * (measurements, targets, the Kira targets and references) is what's on the graph; the fit makes
- * an EQ from a measurement to a target, matching left and right first; Target Studio makes a
- * target of your own from Kira Live v2.1. A fit becomes an EQ like any other with one tap.
+ * (the measurements and targets you bring in: the app carries none of its own) is what's on the
+ * graph; the fit makes an EQ from a measurement to a target, matching left and right first;
+ * Target Studio reshapes one of your targets. A fit becomes an EQ like any other with one tap.
  */
 
-/** A curve the Lab knows: a built-in, one of yours, or the studio's. */
+/** A curve the Lab knows: one of yours, or the studio's. */
 internal class LabSeries(
     val id: String,
     val label: String,
@@ -110,17 +109,18 @@ internal class LabSeries(
     val kind: String,
     val rig: String,
     val y: DoubleArray,
-    /** Built-ins (and the studio) are already smooth, so the graph's smoothing leaves them be. */
-    val builtin: Boolean,
     val device: Device? = null,
     val recipe: LabRecipe? = null,
 )
 
+/** The target Target Studio starts from: the one chosen, or your first. */
+private fun studioBase(lab: LabState): LabTarget? =
+    lab.targets.firstOrNull { it.key == lab.view.studioBase } ?: lab.targets.firstOrNull()
+
 private fun seriesOf(lab: LabState, id: String, studio: DoubleArray?): LabSeries? = when {
-    id == "studio" -> studio?.let { LabSeries(id, "Studio target", "Studio target", "target", Studio.rigTag(lab.view.model.rig), it, true) }
-    id.startsWith("b:") -> LabTargets.BY_ID[id]?.let { b -> lab.builtins[id]?.let { LabSeries(id, b.label, b.name, "target", b.rig, it, true) } }
-    id.startsWith("m:") -> lab.measurements.firstOrNull { it.key == id }?.let { m -> LabSeries(id, m.name, m.name, "measurement", m.rig, m.device.y, false, m.device) }
-    id.startsWith("t:") -> lab.targets.firstOrNull { it.key == id }?.let { t -> LabSeries(id, t.name, t.name, "target", t.rig, t.v, false, recipe = t.recipe) }
+    id == "studio" -> studio?.let { y -> studioBase(lab)?.let { b -> LabSeries(id, "Studio target", "Studio target", "target", b.rig, y) } }
+    id.startsWith("m:") -> lab.measurements.firstOrNull { it.key == id }?.let { m -> LabSeries(id, m.name, m.name, "measurement", m.rig, m.device.y, m.device) }
+    id.startsWith("t:") -> lab.targets.firstOrNull { it.key == id }?.let { t -> LabSeries(id, t.name, t.name, "target", t.rig, t.v, recipe = t.recipe) }
     else -> null
 }
 
@@ -136,7 +136,6 @@ private class FitRun(
     val tgtId: String = "",
     val tgtName: String = "",
     val tgtRig: String = "",
-    val tgtOverEar5128: Boolean = false,
 )
 
 /** The fit as an EQ: the shared filters, and each side's own trim when left and right were matched. */
@@ -164,16 +163,17 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
     val lab by LabStore.state.collectAsState()
     val v = lab.view
 
-    // Target Studio's target, made afresh as its sliders move.
-    val studioY by produceState<DoubleArray?>(null, lab.ref, v.model, v.taste) {
-        val ref = lab.ref ?: return@produceState
-        value = withContext(Dispatchers.Default) { Studio.target(ref, v.model, v.taste) }
+    // Target Studio's target, made afresh from one of yours as its sliders move.
+    val base = studioBase(lab)
+    val studioY by produceState<DoubleArray?>(null, base, v.model, v.taste) {
+        val b = base
+        value = if (b == null) null else withContext(Dispatchers.Default) { Studio.target(b.v, v.model, v.taste) }
     }
     fun series(id: String) = seriesOf(lab, id, studioY)
 
-    // What's fitted: the chosen measurement (or the first), to the chosen target.
+    // What's fitted: the chosen measurement (or the first), to the chosen target (or the first).
     val dev = lab.measurements.firstOrNull { it.key == v.device } ?: lab.measurements.firstOrNull()
-    val tgt = series(v.target) ?: series("b:live21")
+    val tgt = series(v.target) ?: lab.targets.firstOrNull()?.let { series(it.key) }
     var last by remember { mutableStateOf<FitRun?>(null) }
     val run by produceState(FitRun(null, false), dev, tgt?.y, v.fit) {
         if (dev == null || tgt == null) {
@@ -190,11 +190,9 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
             val results = plan.map { o -> async { Lab.fitEq(o) } }.awaitAll()
             LabFitter.finish(dev.device, settings, results)
         }
-        val overEar = tgt.id == "b:live2-5128" || tgt.id == "b:live21-5128" || (tgt.id == "studio" && v.model.rig == "5128") ||
-            (tgt.recipe?.model?.rig == "5128")
         value = FitRun(
             fit, false, SystemClock.elapsedRealtime() - t0, dev.key, dev.name, dev.rig, dev.channels.size,
-            tgt.id, tgt.name, tgt.rig, overEar,
+            tgt.id, tgt.name, tgt.rig,
         )
     }
     LaunchedEffect(run) { if (run.fit != null && !run.working) last = run }
@@ -210,14 +208,15 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
         if (cache.size > 96) cache.clear()
         return cache.getOrPut(y to v.smooth) { Lab.smooth(y, 1.0 / v.smooth.toDouble()) }
     }
-    fun shown(s: LabSeries): DoubleArray = Lab.norm(if (s.builtin) s.y else smoothed(s.y), v.normHz)
+    // The studio's target changes as its sliders move, so it's smoothed each time, not kept.
+    fun shown(s: LabSeries): DoubleArray = Lab.norm(smoothed(s.y, keep = s.id != "studio"), v.normHz)
 
     var studioOpen by rememberSaveable { mutableStateOf(false) }
     val studioShown = studioOpen && studioY != null
     val relId = v.view.takeIf { it != "abs" && it != "lr" && it != "bal" }
     val relSeries = relId?.let { series(it) }
     val notes = ArrayList<String>()
-    val lines = remember(lab, studioY, fitShown, v, studioShown) {
+    val lines = remember(lab, studioY, fitShown, v, studioShown, base) {
         val out = ArrayList<LabLine>()
         fun inkOf(id: String) = Ink.SLOTS[(v.slots[id] ?: 0).coerceIn(0, Ink.SLOTS.size - 1)]
         if (v.view == "bal") {
@@ -246,8 +245,8 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
                 out += LabLine(id, s.label, shown(s), inkOf(id))
             }
             if (studioShown) {
-                val baseId = Studio.baseId(v.model.rig)
-                if (baseId !in v.visible) series(baseId)?.let { out += LabLine(baseId, "${it.label} (base)", shown(it), Ink.BASE) }
+                val baseId = base?.key
+                if (baseId != null && baseId !in v.visible) series(baseId)?.let { out += LabLine(baseId, "${it.label} (start)", shown(it), Ink.BASE) }
                 series("studio")?.let { out += LabLine("studio", "Studio target", shown(it), Ink(0, floatArrayOf(9f, 3f), 3f, halo = true)) }
             }
             val f = fitShown
@@ -279,10 +278,6 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
             Box(Modifier.padding(top = 10.dp)) { PillButton("Done", onClose, icon = R.drawable.ic_check) }
         }
         Gap(12.dp)
-        if (!lab.ready) {
-            Txt("Making the Kira targets…", 15.sp, p.sub)
-            return@Column
-        }
         LabGraph(
             lines = lines,
             yRange = v.yRange,
@@ -299,12 +294,17 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
         GraphSettings(lab, v, studioShown, ::series)
 
         LibrarySection(lab, actions, ::series, onOpenStudio = { t ->
-            val r = t.recipe ?: return@LibrarySection
-            LabStore.updateView { it.copy(model = r.model, taste = r.taste, studioName = t.name) }
+            val r = t.recipe
+            val from = r?.base?.takeIf { b -> lab.targets.any { it.key == b } }
+            // Its own start if that's still here; if not, it starts from itself, as it is.
+            LabStore.updateView {
+                if (r != null && from != null) it.copy(studioBase = from, model = r.model, taste = r.taste, studioName = t.name)
+                else it.copy(studioBase = t.key, model = StudioModel(), taste = StudioTaste(), studioName = t.name)
+            }
             studioOpen = true
         })
         FitSection(lab, v, run, fitShown, dev, tgt, store, actions, ::series)
-        StudioSection(lab, v, studioY, studioOpen, { studioOpen = it }, actions)
+        StudioSection(lab, v, base, studioY, studioOpen, { studioOpen = it }, actions)
     }
 }
 
@@ -382,7 +382,7 @@ private fun LibrarySection(lab: LabState, actions: AppActions, series: (String) 
     if (lab.pending.isNotEmpty() || lab.problems.isNotEmpty()) PendingBlock(lab.pending, lab.problems, actions)
     if (lab.measurements.isEmpty() && lab.targets.isEmpty() && lab.pending.isEmpty()) {
         Txt(
-            "Nothing of yours yet. Bring in REW exports, squig.link .txt or AutoEq .csv files: ones whose names end in L and R pair up into one measurement.",
+            "Nothing here yet. Bring in your measurements and targets: REW exports, squig.link .txt or AutoEq .csv files. Ones whose names end in L and R pair up into one measurement.",
             14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp, bottom = 8.dp),
         )
     }
@@ -422,21 +422,11 @@ private fun LibrarySection(lab: LabState, actions: AppActions, series: (String) 
             if (t.note.isNotEmpty()) Txt(t.note, 13.sp, p.sub)
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 PillButton("Fit to this", { LabStore.updateView { it.copy(target = t.key) } }, icon = R.drawable.ic_tune)
-                if (t.recipe != null) PillButton("Open in Studio", { onOpenStudio(t) })
+                PillButton(if (t.recipe != null) "Open in Studio" else "Shape in Studio", { onOpenStudio(t) })
                 PillButton("Share", { actions.labShare(t.name, Lab.targetTxt(t.v)) }, icon = R.drawable.ic_share)
                 ArmedButton("Delete") { LabStore.delete(t.key) }
             }
         }
-    }
-    var kiraOpen by rememberSaveable { mutableStateOf(false) }
-    var refsOpen by rememberSaveable { mutableStateOf(false) }
-    val kira = LabTargets.BUILTIN.filter { it.group == "kira" }
-    val refs = LabTargets.BUILTIN.filter { it.group == "ref" }
-    BenchValueRow("Kira targets", "${kira.count { it.id in v.visible }} of ${kira.size} shown", expanded = kiraOpen, onExpand = { kiraOpen = !kiraOpen }) {
-        for (b in kira) ToggleLine(b.name, listOfNotNull(b.sub, rigName(b.rig).takeIf { b.sub == null }).joinToString(" · "), b.id in v.visible) { toggle(b.id, b.id !in v.visible) }
-    }
-    BenchValueRow("References", "${refs.count { it.id in v.visible }} of ${refs.size} shown", expanded = refsOpen, onExpand = { refsOpen = !refsOpen }) {
-        for (b in refs) ToggleLine(b.name, listOfNotNull(b.sub, rigName(b.rig).takeIf { b.sub == null }).joinToString(" · "), b.id in v.visible) { toggle(b.id, b.id !in v.visible) }
     }
 }
 
@@ -504,26 +494,6 @@ private fun NameField(value: String, onDone: (String) -> Unit) {
                 drawLine(p.line, Offset(0f, size.height + 4.dp.toPx()), Offset(size.width, size.height + 4.dp.toPx()), strokeWidth = 1.dp.toPx())
             },
     )
-}
-
-/** A line with a switch: a built-in target to show or hide. */
-@Composable
-private fun ToggleLine(label: String, caption: String?, on: Boolean, onToggle: () -> Unit) {
-    val p = LocalPalette.current
-    val source = remember { MutableInteractionSource() }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 54.dp)
-            .clickable(interactionSource = source, indication = null, role = Role.Switch, onClick = onToggle),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Txt(label, 16.sp, if (on) p.text else p.sub, maxLines = 1)
-            if (!caption.isNullOrEmpty()) Txt(caption, 13.sp, p.sub, maxLines = 1)
-        }
-        InkSwitch(on, "Show $label", onClick = onToggle)
-    }
 }
 
 /** A line to choose: a drop beside the one chosen. */
@@ -605,9 +575,9 @@ private fun FitSection(
             LabStore.updateView { it.copy(target = id) }
             tgtOpen = false
         }
-        ChoiceLine("Studio target", "As Target Studio has it now", v.target == "studio") { chooseT("studio") }
-        for (t in lab.targets) ChoiceLine(t.name, rigName(t.rig), v.target == t.key) { chooseT(t.key) }
-        for (b in LabTargets.BUILTIN) ChoiceLine(b.name, listOfNotNull(b.sub, rigName(b.rig).takeIf { b.sub == null }).joinToString(" · "), v.target == b.id) { chooseT(b.id) }
+        if (lab.targets.isEmpty()) Txt("Bring in a target with Import files or Paste, and it's here to fit to.", 14.sp, p.sub)
+        for (t in lab.targets) ChoiceLine(t.name, rigName(t.rig), tgt?.id == t.key) { chooseT(t.key) }
+        if (lab.targets.isNotEmpty()) ChoiceLine("Studio target", "As Target Studio has it now", tgt?.id == "studio") { chooseT("studio") }
     }
     Gap(6.dp)
     Column(Modifier.padding(start = 26.dp)) {
@@ -642,7 +612,6 @@ private fun FitSection(
         val dr = LabFitter.rigFamily(shownRun.devRig)
         val tr = LabFitter.rigFamily(shownRun.tgtRig)
         if (dr != tr) warns += "This target is for a ${if (tr == "5128") "B&K 5128" else "711-type"} rig, but the measurement is from a ${if (dr == "5128") "B&K 5128" else if (dr == "other") "different" else "711-type"} rig. Pick the matching version of the target."
-        if (shownRun.tgtOverEar5128 && dr == "5128") warns += "This is the over-ear 5128 version. For IEMs, pick the B&K 5128 · IEM version: on IEMs the 5128 reads the bass about 4 dB lower against the upper mids than a 711 does."
         if (v.fit.useSpread && shownRun.nch < 2) warns += "This measurement has one channel, so trusting where L and R agree does nothing. Bring in L and R files to use it."
     }
     val lr = fit?.lr
@@ -661,7 +630,14 @@ private fun FitSection(
         }
     }
     if (fit == null) {
-        Txt(if (run.working) "Fitting…" else "Choose a target to fit to.", 14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 10.dp))
+        Txt(
+            when {
+                run.working -> "Fitting…"
+                lab.targets.isEmpty() -> "Bring in a target to fit to: your own, as a REW, squig.link or AutoEq file."
+                else -> "Choose a target to fit to."
+            },
+            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 10.dp),
+        )
         return
     }
 
@@ -830,7 +806,7 @@ private val TASTE_SPECS = listOf(
     Spec("airG", "Air shelf", -4.0, 6.0, 0.5) { Fmt.db(it) },
     Spec("airF", "Air shelf corner", 7000.0, 14000.0, 250.0) { LabIds.hz(it) },
     Spec("tilt", "Tilt around 1 kHz", -1.0, 1.0, 0.1) { "${dbShort(it)} dB/oct" },
-    Spec("sep", "Separation, your v2.1 carve", 0.0, 2.0, 0.25) { "×${Lab.fixed(it, 2)}" },
+    Spec("sep", "Separation, your v2.1 carve", -1.0, 2.0, 0.25) { if (it == 0.0) "as it is" else "${if (it > 0) "+" else "−"}${Lab.fixed(abs(it), 2)}" },
 )
 
 private fun StudioModel.get(k: String) = when (k) {
@@ -853,24 +829,40 @@ private fun StudioTaste.withValue(k: String, x: Double) = when (k) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StudioSection(lab: LabState, v: LabView, studioY: DoubleArray?, open: Boolean, onOpen: (Boolean) -> Unit, actions: AppActions) {
+private fun StudioSection(
+    lab: LabState,
+    v: LabView,
+    base: LabTarget?,
+    studioY: DoubleArray?,
+    open: Boolean,
+    onOpen: (Boolean) -> Unit,
+    actions: AppActions,
+) {
     val p = LocalPalette.current
-    BenchSection(3, "Target Studio", trail = if (open) "on the graph" else null)
+    BenchSection(3, "Target Studio", trail = if (open && base != null) "on the graph" else null)
+    if (base == null) {
+        Txt(
+            "Target Studio reshapes one of your targets: the hall, your listening level, your taste. Bring in a target first.",
+            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp),
+        )
+        return
+    }
     BenchRow(
         "Show it on the graph",
-        "Start from Kira Live v2.1 and change the hall, your listening level, or your taste. Separation scales your v2.1 carve (0 is plain Live v2).",
+        "Change the hall, your listening level or your taste, starting from one of your targets. Separation adds your v2.1 carve, or takes it away below 0.",
         open,
         onToggle = { onOpen(!open) },
     )
-    ChoiceRow(Modifier.padding(start = 26.dp)) {
-        for ((k, label) in listOf("711" to "711 · GRAS", "5128iem" to "5128 IEM", "5128" to "5128 over-ear")) {
-            Chip(label, v.model.rig == k, onClick = { LabStore.updateView { it.copy(model = it.model.copy(rig = k)) } })
+    var fromOpen by rememberSaveable { mutableStateOf(false) }
+    BenchValueRow("Starts from", base.name, expanded = fromOpen, onExpand = { fromOpen = !fromOpen }) {
+        for (t in lab.targets) ChoiceLine(t.name, rigName(t.rig), t.key == base.key) {
+            LabStore.updateView { it.copy(studioBase = t.key) }
+            fromOpen = false
         }
     }
-    val base = lab.builtins[Studio.baseId(v.model.rig)]
-    if (studioY != null && base != null) {
+    if (studioY != null) {
         val (kv, peak) = Lab.keyValues(studioY)
-        val (kb, peakB) = Lab.keyValues(base)
+        val (kb, peakB) = Lab.keyValues(Lab.norm(base.v, 500.0))
         fun diff(a: Double, b: Double) = (a - b).let { d -> if (abs(d) >= 0.05) " (${dbShort(d)})" else "" }
         FlowRow(Modifier.fillMaxWidth().padding(start = 26.dp, top = 8.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             kv.forEachIndexed { k, (hz, db) -> Note("${LabIds.hz(hz)} ${dbShort(db)}${diff(db, kb[k].second)}", p.sub) }
@@ -879,15 +871,17 @@ private fun StudioSection(lab: LabState, v: LabView, studioY: DoubleArray?, open
     }
     var modelOpen by rememberSaveable { mutableStateOf(false) }
     var tasteOpen by rememberSaveable { mutableStateOf(false) }
-    BenchValueRow("Live model", "${v.model.r.roundToInt()} m · ${v.model.playPhon.roundToInt()} phon", expanded = modelOpen, onExpand = { modelOpen = !modelOpen }) {
+    val modelMoved = v.model != StudioModel()
+    BenchValueRow("Live model", if (modelMoved) "${v.model.r.roundToInt()} m · ${v.model.playPhon.roundToInt()} phon" else "as it is", expanded = modelOpen, onExpand = { modelOpen = !modelOpen }) {
+        Txt("Changes from a 20 m seat in a 2 s hall, live at 90 phon and played at 70: the target's own hall stays in it.", 13.sp, p.sub)
         for (s in MODEL_SPECS) {
             val x = v.model.get(s.key)
             LabSlider(s.label, x, s.min, s.max, s.step, s.fmt(x)) { n -> LabStore.updateView { it.copy(model = it.model.withValue(s.key, n)) } }
         }
-        PillButton("Reset", { LabStore.updateView { it.copy(model = StudioModel(rig = it.model.rig)) } }, height = 38.dp)
+        PillButton("Reset", { LabStore.updateView { it.copy(model = StudioModel()) } }, height = 38.dp)
     }
     val tasteMoved = v.taste != StudioTaste()
-    BenchValueRow("Taste", if (tasteMoved) "changed · carve ×${Lab.fixed(v.taste.sep, 2)}" else "as Live v2.1", expanded = tasteOpen, onExpand = { tasteOpen = !tasteOpen }) {
+    BenchValueRow("Taste", if (tasteMoved) "changed" else "as it is", expanded = tasteOpen, onExpand = { tasteOpen = !tasteOpen }) {
         for (s in TASTE_SPECS) {
             val x = v.taste.get(s.key)
             LabSlider(s.label, x, s.min, s.max, s.step, s.fmt(x)) { n -> LabStore.updateView { it.copy(taste = it.taste.withValue(s.key, n)) } }
@@ -897,15 +891,15 @@ private fun StudioSection(lab: LabState, v: LabView, studioY: DoubleArray?, open
     Gap(8.dp)
     Column(Modifier.padding(start = 26.dp)) {
         Txt("Name", 15.sp, p.sub)
-        NameField(v.studioName, onDone = { n -> LabStore.updateView { it.copy(studioName = n) } })
+        NameField(v.studioName.ifEmpty { "${base.name} custom" }, onDone = { n -> LabStore.updateView { it.copy(studioName = n) } })
     }
     val y = studioY ?: return
-    val name = v.studioName.trim().ifEmpty { "Kira Live v2.1 custom" }
+    val name = v.studioName.trim().ifEmpty { "${base.name} custom" }
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
         PillButton("Keep", {
             val t = LabTarget(
-                LabIds.slug(name), name, Studio.rigTag(v.model.rig), "Made in Target Studio from Kira Live v2.1", System.currentTimeMillis(),
-                LabIds.r2(y), LabRecipe(v.model, v.taste),
+                LabIds.slug(name), name, base.rig, "Made in Target Studio from ${base.name}", System.currentTimeMillis(),
+                LabIds.r2(y), LabRecipe(base.key, v.model, v.taste),
             )
             LabStore.addTarget(t)
             LabStore.show(t.key, true)

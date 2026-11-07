@@ -552,6 +552,9 @@ fun IslandRoot(
     // The status bar: the ink keeps within it, unless you open something.
     val barH = max(max(spot.bar, cy + camR + px(4f)), px(24f))
     val beads = prefs.style == IslandPrefs.STYLE_BEADS
+    // Pip: the least ink there can be. One capsule round the camera holding the time and what's
+    // playing, the battery a fine ring round the lens; the rest of the status bar is left clear.
+    val pip = prefs.style == IslandPrefs.STYLE_PIP
     val barBottom = barH - px(1.5f)
     // A slim bar of ink along the top edge: everything hangs from it, so it all sits flush.
     val edge = px(4.5f)
@@ -659,20 +662,42 @@ fun IslandRoot(
     // Drops grow down out of the edge; beads slide in along the thread from the screen's sides.
     fun body(x: Float, y: Float, w: Float, h: Float, p: Float, narrow: Float) =
         if (beads) strung(x, y, w, h, p, sw) else grown(x, y, w, h, p, edge, narrow)
-    val timeBody = body(timeX, cy, timeW * swell("time"), bodyH * swell("time"), timeP, px(14f))
-    val battBody = body(battX, battY, battR * 2f * swell("battery"), battR * 2f * swell("battery"), battP, px(6f))
-    val leftBody = body(leftX, cy, leftW * swell("left"), (if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f)) * swell("left"), leftP, px(8f))
-    val rightBody = body(rightX, cy, rightW * swell("right"), (bodyH - px(2f)) * swell("right"), rightP, px(8f))
-    // The camera's drop hugs the lens; its bead is a full bead round it, as big as the others.
-    val camBodyR = if (beads) max(camR + px(3f), bodyH * 0.46f) else camR
+    // The pip's height: the lens with a little ink round it, enough for the time, within the bar.
+    val pipH = min(max(camR * 2f + px(8f), px(22f)), max(camR * 2f + px(2f), (barBottom - cy) * 2f))
+    // The camera's drop hugs the lens; its bead is a full bead round it, as big as the others; in
+    // the pip it's the pip's own middle.
+    val camBodyR = when {
+        pip -> pipH / 2f
+        beads -> max(camR + px(3f), bodyH * 0.46f)
+        else -> camR
+    }
     val camBody = Rect(cx - camBodyR, cy - camBodyR, cx + camBodyR, cy + camBodyR)
+    // In the pip everything sits shoulder to shoulder with the camera, growing out of it: the time
+    // on the side with room (left, unless the camera's at the left), what's playing on the other.
+    val timeRight = cameraLeft || cx - camBodyR - timeW < margin * 0.5f
+    val pipRightEdge = floatArrayOf(cx + camBodyR)
+    val pipLeftEdge = floatArrayOf(cx - camBodyR)
+    fun pipRect(w: Float, right: Boolean): Rect {
+        val c = if (right) pipRightEdge[0] + w / 2f else pipLeftEdge[0] - w / 2f
+        if (right) pipRightEdge[0] += w else pipLeftEdge[0] -= w
+        return Rect(c - w / 2f, cy - pipH / 2f, c + w / 2f, cy + pipH / 2f)
+    }
+    val timeBody = if (pip) pipRect((timeW - px(6f)) * timeP.coerceIn(0f, 1f), timeRight)
+        else body(timeX, cy, timeW * swell("time"), bodyH * swell("time"), timeP, px(14f))
+    val battBody = if (pip) camBody
+        else body(battX, battY, battR * 2f * swell("battery"), battR * 2f * swell("battery"), battP, px(6f))
+    val leftBody = if (pip) pipRect((if (lastLeft == Kind.Media) pipH + px(2f) else leftW - px(4f)) * leftP.coerceIn(0f, 1f), true)
+        else body(leftX, cy, leftW * swell("left"), (if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f)) * swell("left"), leftP, px(8f))
+    val rightBody = if (pip) pipRect((rightW - px(4f)) * rightP.coerceIn(0f, 1f), true)
+        else body(rightX, cy, rightW * swell("right"), (bodyH - px(2f)) * swell("right"), rightP, px(8f))
+    val pipBody = Rect(pipLeftEdge[0] - px(2f), cy - pipH / 2f, pipRightEdge[0] + px(2f), cy + pipH / 2f)
 
     // The line: the camera's drop spread along the edge (or its bead drawn out along the thread).
     val lineL = lerpF(cx - camBodyR, margin * 0.5f, lineP)
     val lineR = lerpF(cx + camBodyR, sw - margin * 0.5f, lineP)
     val lineBottom = lerpF(cy + camR, barBottom, lineP.coerceIn(0f, 1f))
-    val beadLineH = lerpF(camBodyR * 2f, max(camBodyR * 2f, min(bodyH + px(4f), (barBottom - cy) * 2f)), lineP.coerceIn(0f, 1f))
-    val lineRect = if (beads) Rect(lineL, cy - beadLineH / 2f, lineR, cy + beadLineH / 2f) else Rect(lineL, -px(24f), lineR, lineBottom)
+    val beadLineH = if (pip) pipH else lerpF(camBodyR * 2f, max(camBodyR * 2f, min(bodyH + px(4f), (barBottom - cy) * 2f)), lineP.coerceIn(0f, 1f))
+    val lineRect = if (beads || pip) Rect(lineL, cy - beadLineH / 2f, lineR, cy + beadLineH / 2f) else Rect(lineL, -px(24f), lineR, lineBottom)
 
     // ---- Falling and landing: only what you open ----
 
@@ -831,7 +856,7 @@ fun IslandRoot(
     val grabs: List<Grab> = if (line != null) emptyList() else buildList {
         add(Grab("camera", Rect(cx - camR - px(14f), 0f, cx + camR + px(14f), max(camBody.bottom + px(14f), barH))))
         if (showTime && timeP > 0.5f) add(Grab("time", grabOf(timeBody, px(4f))))
-        if (showBattery && battP > 0.5f) add(Grab("battery", grabOf(battBody, px(6f))))
+        if (showBattery && battP > 0.5f && !pip) add(Grab("battery", grabOf(battBody, px(6f))))
         if (leftKind != null && leftP > 0.5f) add(Grab("left", grabOf(leftBody, px(6f))))
         if (rightKind != null && rightP > 0.5f) add(Grab("right", grabOf(rightBody, px(6f))))
     }
@@ -858,6 +883,7 @@ fun IslandRoot(
                 "left" -> leftKind?.let { expanded = it }
                 "right" -> rightKind?.let { expanded = it }
                 else -> (leftKind ?: rightKind)?.let { expanded = it }
+                    ?: run { if (pip && showBattery) expanded = Kind.Battery }
             }
         }
         Unit
@@ -875,6 +901,8 @@ fun IslandRoot(
         else -> rightW / 2f
     }
     val startMove by rememberUpdatedState<(String) -> Unit>({ id ->
+        // The pip is one piece: nothing in it moves on its own.
+        if (pip) return@rememberUpdatedState
         frozen = grabs
         moving = id
         lastMoving[0] = id
@@ -883,6 +911,7 @@ fun IslandRoot(
         InkFeel.split(view)
     })
     val moveBy by rememberUpdatedState<(String, Float) -> Unit>({ id, dx ->
+        if (moving != id) return@rememberUpdatedState
         val h = halfOf(id)
         moveX[0] = (moveX[0] + dx).coerceIn(lo + h, hi - h)
         lean = lean * 0.6f + dx * 0.4f
@@ -938,7 +967,10 @@ fun IslandRoot(
 
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
-            if (beads) {
+            if (pip) {
+                // One capsule: the camera in the middle, the time and what's playing grown out of it.
+                drawRoundRect(InkColors.ink, pipBody.topLeft, pipBody.size, CornerRadius(pipH / 2f))
+            } else if (beads) {
                 // The thread along the edge, through the camera. A bead that falls off it pulls it
                 // down a little after it, and it springs back; so does pulling the camera's bead.
                 val falling = if (dripFromPull || pullPx >= 0f) 0f else sin(PI.toFloat() * dripP.value.coerceIn(0f, 1f)) * (1f - landSpread.value)
@@ -1035,6 +1067,23 @@ fun IslandRoot(
         val waitingHalo = animateFloatAsState(if (listening) 0f else 1f, Motion.flow(), label = "halo")
         Canvas(Modifier.fillMaxSize()) {
             halo(Offset(spot.cx, spot.cy - spot.radius * 1.05f), spot.radius * 1.15f, spot.radius * 0.36f, waitingHalo.value, InkColors.on, px(1.4f))
+            // The pip's battery: a fine ring round the lens, as far round as the battery is full.
+            val b = lastBattery
+            if (pip && b != null && battP > 0.01f) {
+                val r = (camR + camBodyR) / 2f
+                val w = px(1.7f)
+                val ring = when {
+                    b.charging || b.full -> InkColors.live
+                    b.low -> InkColors.end
+                    else -> InkColors.on
+                }
+                val a = battP.coerceIn(0f, 1f) * (1f - lineP).coerceIn(0f, 1f)
+                drawCircle(InkColors.on.copy(alpha = 0.2f * a), r, Offset(cx, cy), style = Stroke(w))
+                drawArc(
+                    ring.copy(alpha = a), -90f, 360f * (b.level / 100f).coerceIn(0.02f, 1f), false,
+                    Offset(cx - r, cy - r), Size(r * 2f, r * 2f), style = Stroke(w, cap = StrokeCap.Round),
+                )
+            }
         }
 
         // ---- What's on the drops ----
@@ -1049,7 +1098,7 @@ fun IslandRoot(
                 contentAlignment = Alignment.Center,
             ) { Txt(timeLabel, 15.sp, InkColors.on, bold = true, maxLines = 1) }
         }
-        if (battP > 0.6f) {
+        if (battP > 0.6f && !pip) {
             val b = lastBattery
             if (b != null) {
                 Box(
@@ -1177,7 +1226,7 @@ fun IslandRoot(
                 cx = cx,
                 camR = camR,
                 // The words sit in the middle of the band they're given: for beads, centred on the thread.
-                height = if (beads) 2f * cy else lineBottom,
+                height = if (beads || pip) 2f * cy else lineBottom,
                 alpha = words,
                 toDp = ::toDp,
                 onTap = {

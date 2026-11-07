@@ -568,7 +568,10 @@ data class IslandPrefs(
     val codes: Boolean = true,
     /** Android's own clock, battery and icons step aside while the island shows the time and battery. */
     val hideStatusIcons: Boolean = true,
-    /** How the island looks: [STYLE_DROPS], hanging from a bar of ink, or [STYLE_BEADS], strung on a thread. */
+    /**
+     * How the island looks: [STYLE_DROPS], hanging from a bar of ink; [STYLE_BEADS], strung on a
+     * thread; or [STYLE_PIP], one small pip of ink round the camera.
+     */
     val style: String = STYLE_DROPS,
 
     // ---- Placement: fitting the island to the camera, or moving it ----
@@ -624,6 +627,8 @@ data class IslandPrefs(
         const val STYLE_DROPS = "drops"
         /** No bar: a thread of ink along the edge, everything strung on it as beads. */
         const val STYLE_BEADS = "beads"
+        /** As little as possible: one pip of ink round the camera, the time beside it, the battery a ring. */
+        const val STYLE_PIP = "pip"
     }
 }
 
@@ -662,7 +667,7 @@ object IslandSettings {
             batteryRing = p.getBoolean("batteryRing", true),
             codes = p.getBoolean("codes", true),
             hideStatusIcons = p.getBoolean("hideStatusIcons", true),
-            style = p.getString("style", null)?.takeIf { it == IslandPrefs.STYLE_BEADS } ?: IslandPrefs.STYLE_DROPS,
+            style = p.getString("style", null)?.takeIf { it == IslandPrefs.STYLE_BEADS || it == IslandPrefs.STYLE_PIP } ?: IslandPrefs.STYLE_DROPS,
             offsetX = p.getFloat("offsetX", 0f).coerceIn(PLACE_X_MIN, PLACE_X_MAX),
             offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
             cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),

@@ -121,14 +121,18 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         // Its style: the preview above changes as you choose.
         Gap(16.dp)
         Note("Style", p.sub, Modifier.padding(start = 26.dp))
-        val beads = prefs.style == IslandPrefs.STYLE_BEADS
+        val style = prefs.style
         ChoiceRow(Modifier.padding(start = 26.dp, top = 6.dp), scroll = false) {
-            Chip("Drops", !beads, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_DROPS) } })
-            Chip("Beads", beads, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_BEADS) } })
+            Chip("Drops", style == IslandPrefs.STYLE_DROPS, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_DROPS) } })
+            Chip("Beads", style == IslandPrefs.STYLE_BEADS, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_BEADS) } })
+            Chip("Pip", style == IslandPrefs.STYLE_PIP, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_PIP) } })
         }
         Txt(
-            if (beads) "No bar: a thread along the top, everything strung on it as beads. Android's notification icons can show beside the thread."
-            else "A bar of ink along the top, everything hanging from it as drops.",
+            when (style) {
+                IslandPrefs.STYLE_BEADS -> "No bar: a thread along the top, everything strung on it as beads. Android's notification icons can show beside the thread."
+                IslandPrefs.STYLE_PIP -> "As little as possible: one small pip round the camera with the time beside it, the battery a ring round the lens and what's playing on the other side. News opens it into a thin line for a moment. Android's notification icons can show beside it."
+                else -> "A bar of ink along the top, everything hanging from it as drops."
+            },
             13.5.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp),
         )
         Gap(18.dp)

@@ -118,6 +118,19 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     .background(p.surface),
             ) { IslandPreview() }
         }
+        // Its style: the preview above changes as you choose.
+        Gap(16.dp)
+        Note("Style", p.sub, Modifier.padding(start = 26.dp))
+        val beads = prefs.style == IslandPrefs.STYLE_BEADS
+        ChoiceRow(Modifier.padding(start = 26.dp, top = 6.dp), scroll = false) {
+            Chip("Drops", !beads, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_DROPS) } })
+            Chip("Beads", beads, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_BEADS) } })
+        }
+        Txt(
+            if (beads) "No bar: a thread along the top, everything strung on it as beads. Android's notification icons can show beside the thread."
+            else "A bar of ink along the top, everything hanging from it as drops.",
+            13.5.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp),
+        )
         Gap(18.dp)
         var moreDemos by rememberSaveable { mutableStateOf(false) }
         Row(

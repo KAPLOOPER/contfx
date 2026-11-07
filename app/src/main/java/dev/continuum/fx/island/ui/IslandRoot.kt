@@ -58,6 +58,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import kotlin.math.exp
+import dev.continuum.fx.island.IslandPrefs
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
@@ -211,6 +216,17 @@ private fun DrawScope.hangDrop(body: Rect, x: Float, attach: Float, latch: NeckL
     drawRoundRect(InkColors.ink, body.topLeft, body.size, CornerRadius(min(body.width, body.height) / 2f))
 }
 
+/**
+ * A bead of [w] by [h] strung on the thread at ([x], [y]). As [p] goes to 0 it slides back along the
+ * thread to the nearer edge of the screen, where the ink comes from; it comes in the same way.
+ */
+private fun strung(x: Float, y: Float, w: Float, h: Float, p: Float, sw: Float): Rect {
+    val q = p.coerceIn(0f, 1f)
+    val from = if (x < sw / 2f) -w else sw + w
+    val bx = lerpF(from, x, q)
+    return Rect(bx - w / 2f, y - h / 2f, bx + w / 2f, y + h / 2f)
+}
+
 /** A body of [w] by [h] centred on ([x], [y]), drawn up into the edge as [p] goes to 0. */
 private fun grown(x: Float, y: Float, w: Float, h: Float, p: Float, edge: Float, narrow: Float): Rect {
     val q = p.coerceIn(0f, 1.2f)
@@ -236,6 +252,7 @@ fun IslandRoot(
 ) {
     val spot = spotState.value ?: return
     val density = LocalDensity.current
+    // Beads: no bar, a thread along the edge with everything strung on it.
     val dp = density.density
     fun px(v: Float) = v * dp
     fun toDp(v: Float): Dp = (v / dp).dp
@@ -534,6 +551,7 @@ fun IslandRoot(
     val camR = spot.radius + px(1f)
     // The status bar: the ink keeps within it, unless you open something.
     val barH = max(max(spot.bar, cy + camR + px(4f)), px(24f))
+    val beads = prefs.style == IslandPrefs.STYLE_BEADS
     val barBottom = barH - px(1.5f)
     // A slim bar of ink along the top edge: everything hangs from it, so it all sits flush.
     val edge = px(4.5f)
@@ -566,7 +584,7 @@ fun IslandRoot(
     val battR by animateFloatAsState(battRTarget, Motion.flow(), label = "battR")
     val battHalf = px(13.5f)
     val battHome = sw - margin - battHalf
-    val battY = min(cy + battR * 0.12f, barBottom - battR - px(1f))
+    val battY = if (beads) cy else min(cy + battR * 0.12f, barBottom - battR - px(1f))
     val cameraLeft = cx < sw * 0.3f
     val timeHome = if (cameraLeft) battHome - battHalf - px(12f) - timeW / 2f else margin + timeW / 2f
 
@@ -638,17 +656,23 @@ fun IslandRoot(
     val leftX = leftA.value
     val rightX = rightA.value
 
-    val timeBody = grown(timeX, cy, timeW * swell("time"), bodyH * swell("time"), timeP, edge, px(14f))
-    val battBody = grown(battX, battY, battR * 2f * swell("battery"), battR * 2f * swell("battery"), battP, edge, px(6f))
-    val leftBody = grown(leftX, cy, leftW * swell("left"), (if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f)) * swell("left"), leftP, edge, px(8f))
-    val rightBody = grown(rightX, cy, rightW * swell("right"), (bodyH - px(2f)) * swell("right"), rightP, edge, px(8f))
-    val camBody = Rect(cx - camR, cy - camR, cx + camR, cy + camR)
+    // Drops grow down out of the edge; beads slide in along the thread from the screen's sides.
+    fun body(x: Float, y: Float, w: Float, h: Float, p: Float, narrow: Float) =
+        if (beads) strung(x, y, w, h, p, sw) else grown(x, y, w, h, p, edge, narrow)
+    val timeBody = body(timeX, cy, timeW * swell("time"), bodyH * swell("time"), timeP, px(14f))
+    val battBody = body(battX, battY, battR * 2f * swell("battery"), battR * 2f * swell("battery"), battP, px(6f))
+    val leftBody = body(leftX, cy, leftW * swell("left"), (if (lastLeft == Kind.Media) actR * 2f else bodyH - px(2f)) * swell("left"), leftP, px(8f))
+    val rightBody = body(rightX, cy, rightW * swell("right"), (bodyH - px(2f)) * swell("right"), rightP, px(8f))
+    // The camera's drop hugs the lens; its bead is a full bead round it, as big as the others.
+    val camBodyR = if (beads) max(camR + px(3f), bodyH * 0.46f) else camR
+    val camBody = Rect(cx - camBodyR, cy - camBodyR, cx + camBodyR, cy + camBodyR)
 
-    // The line: the camera's drop spread along the edge.
-    val lineL = lerpF(cx - camR, margin * 0.5f, lineP)
-    val lineR = lerpF(cx + camR, sw - margin * 0.5f, lineP)
+    // The line: the camera's drop spread along the edge (or its bead drawn out along the thread).
+    val lineL = lerpF(cx - camBodyR, margin * 0.5f, lineP)
+    val lineR = lerpF(cx + camBodyR, sw - margin * 0.5f, lineP)
     val lineBottom = lerpF(cy + camR, barBottom, lineP.coerceIn(0f, 1f))
-    val lineRect = Rect(lineL, -px(24f), lineR, lineBottom)
+    val beadLineH = lerpF(camBodyR * 2f, max(camBodyR * 2f, min(bodyH + px(4f), (barBottom - cy) * 2f)), lineP.coerceIn(0f, 1f))
+    val lineRect = if (beads) Rect(lineL, cy - beadLineH / 2f, lineR, cy + beadLineH / 2f) else Rect(lineL, -px(24f), lineR, lineBottom)
 
     // ---- Falling and landing: only what you open ----
 
@@ -907,25 +931,63 @@ fun IslandRoot(
 
     // ---- The ink ----
 
-    val goo = remember(dp) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(px(3.6f), Shader.TileMode.CLAMP) else null }
+    // Beads keep a finer goo, so the thread between them stays a thread.
+    val goo = remember(dp, beads) {
+        if (Build.VERSION.SDK_INT >= 31) Goo.effect(if (beads) px(2.2f) else px(3.6f), Shader.TileMode.CLAMP) else null
+    }
 
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().graphicsLayer { renderEffect = goo }) {
-            // The bar along the edge, then the camera and everything else hanging from it.
-            drawRect(InkColors.ink, Offset(-px(10f), -px(24f)), Size(sw + px(20f), px(24f) + edge))
-            hangDrop(camBody, cx, px(8f), latches[0], edge)
-            if (timeP > 0.01f) hangDrop(timeBody, timeX - leanOf("time"), px(8.5f) * timeP.coerceAtMost(1f), latches[1], edge)
-            if (battP > 0.01f) {
-                hangDrop(battBody, battX - leanOf("battery"), px(6.5f) * battP.coerceAtMost(1f), latches[2], edge)
-                val u = chargeDrip.value
-                if (u > 0f) {
-                    // A bead of ink running down the neck into the drop.
-                    val y = lerpF(-px(4f), battBody.center.y - battBody.height * 0.2f, u)
-                    drawCircle(InkColors.ink, px(3.4f) * (1f - 0.3f * u), Offset(battX, y))
+            if (beads) {
+                // The thread along the edge, through the camera. A bead that falls off it pulls it
+                // down a little after it, and it springs back; so does pulling the camera's bead.
+                val falling = if (dripFromPull || pullPx >= 0f) 0f else sin(PI.toFloat() * dripP.value.coerceIn(0f, 1f)) * (1f - landSpread.value)
+                val pulled = if (pullPx >= 0f) min(px(12f), pullPx * 0.3f) else 0f
+                val sag = max(px(10f) * falling, pulled)
+                val sagX = if (pulled > 0f) cx else sourceOf(lastDrip).center.x
+                val thread = Path()
+                var x = -px(8f)
+                while (x <= sw + px(8f)) {
+                    val d = (x - sagX) / px(60f)
+                    val y = cy + sag * exp(-d * d)
+                    if (x <= -px(8f)) thread.moveTo(x, y) else thread.lineTo(x, y)
+                    x += px(6f)
                 }
+                drawPath(thread, InkColors.ink, style = Stroke(width = px(3f), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                fun bead(r: Rect) {
+                    if (r.width < 0.5f || r.height < 0.5f) return
+                    drawRoundRect(InkColors.ink, r.topLeft, r.size, CornerRadius(min(r.width, r.height) / 2f))
+                }
+                bead(camBody)
+                if (timeP > 0.01f) bead(timeBody)
+                if (battP > 0.01f) {
+                    bead(battBody)
+                    val u = chargeDrip.value
+                    if (u > 0f) {
+                        // A bead of ink running in along the thread from the edge into the battery.
+                        val bx = lerpF(sw + px(6f), battBody.center.x + battBody.width * 0.2f, u)
+                        drawCircle(InkColors.ink, px(3.4f) * (1f - 0.3f * u), Offset(bx, cy))
+                    }
+                }
+                if (leftP > 0.01f) bead(leftBody)
+                if (rightP > 0.01f) bead(rightBody)
+            } else {
+                // The bar along the edge, then the camera and everything else hanging from it.
+                drawRect(InkColors.ink, Offset(-px(10f), -px(24f)), Size(sw + px(20f), px(24f) + edge))
+                hangDrop(camBody, cx, px(8f), latches[0], edge)
+                if (timeP > 0.01f) hangDrop(timeBody, timeX - leanOf("time"), px(8.5f) * timeP.coerceAtMost(1f), latches[1], edge)
+                if (battP > 0.01f) {
+                    hangDrop(battBody, battX - leanOf("battery"), px(6.5f) * battP.coerceAtMost(1f), latches[2], edge)
+                    val u = chargeDrip.value
+                    if (u > 0f) {
+                        // A bead of ink running down the neck into the drop.
+                        val y = lerpF(-px(4f), battBody.center.y - battBody.height * 0.2f, u)
+                        drawCircle(InkColors.ink, px(3.4f) * (1f - 0.3f * u), Offset(battX, y))
+                    }
+                }
+                if (leftP > 0.01f) hangDrop(leftBody, leftX - leanOf("left"), px(6f) * leftP.coerceAtMost(1f), latches[3], edge)
+                if (rightP > 0.01f) hangDrop(rightBody, rightX - leanOf("right"), px(6f) * rightP.coerceAtMost(1f), latches[4], edge)
             }
-            if (leftP > 0.01f) hangDrop(leftBody, leftX - leanOf("left"), px(6f) * leftP.coerceAtMost(1f), latches[3], edge)
-            if (rightP > 0.01f) hangDrop(rightBody, rightX - leanOf("right"), px(6f) * rightP.coerceAtMost(1f), latches[4], edge)
             // News: the camera's drop spread along the edge.
             if (lineP > 0.01f) {
                 drawRoundRect(InkColors.ink, lineRect.topLeft, lineRect.size, CornerRadius(min(px(16f), lineRect.height / 2f)))
@@ -1114,7 +1176,8 @@ fun IslandRoot(
                 right = lineRect.right,
                 cx = cx,
                 camR = camR,
-                height = lineBottom,
+                // The words sit in the middle of the band they're given: for beads, centred on the thread.
+                height = if (beads) 2f * cy else lineBottom,
                 alpha = words,
                 toDp = ::toDp,
                 onTap = {

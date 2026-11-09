@@ -144,10 +144,12 @@ internal class Ramp(timeMs: Double, sr: Double) {
 }
 
 /**
- * Pure harmonics of whatever's fed in, by Chebyshev polynomials of the signal over its own
- * envelope: for a tone, T2 gives exactly its second harmonic, T3 its third, T4 its fourth. Fed a
- * band-limited signal, nothing lands past the top of the audio band, so nothing aliases and no
- * oversampling is needed. The harmonics follow the music's level, a constant colour at any volume.
+ * Harmonics of whatever's fed in, by Chebyshev polynomials of the signal over its own envelope:
+ * for a steady tone, T2 gives its second harmonic, T3 its third, T4 its fourth. Music is many
+ * tones at once, so it also gives their sums and differences. There's no oversampling, so the
+ * callers filter what goes in to keep most of what comes out below the top of the band (the
+ * spectral tests hold the exciter to that). The harmonics follow the music's level, a constant
+ * colour at any volume.
  */
 internal class Harmonics(attackMs: Double, releaseMs: Double, sr: Double) {
     private val env = Follower(attackMs, releaseMs, sr)

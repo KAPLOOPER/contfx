@@ -263,7 +263,7 @@ class FxChain(private val sr: Double = EqResponse.SAMPLE_RATE) {
 
     /**
      * Tube warmth: low-order harmonics, second above third as valves give, on everything up to the
-     * upper mids (so nothing lands past the top of the band), and a slow glue that rounds off the
+     * upper mids (filtered first, so little lands past the top of the band), and a slow glue that rounds off the
      * dynamics. The glue's level is made up over a few seconds, so it's never quieter overall.
      */
     private inner class Tube : Effect(40.0) {
@@ -336,14 +336,17 @@ class FxChain(private val sr: Double = EqResponse.SAMPLE_RATE) {
     }
 
     /**
-     * Exciter, after the BBE and Aphex boxes: the upper mids (2.2 to 7 kHz, where presence lives)
+     * Exciter, after the BBE and Aphex boxes: the upper mids (2.2 to 5.5 kHz, where presence lives)
      * get harmonics of themselves, filtered so only the new, higher detail is added back. Voices
      * and guitars gain clarity and sparkle without a treble boost's hiss.
      */
     private inner class Exciter : Effect() {
         private val amount = Glide(60.0, sr)
         private val hp = arrayOf(Bq(Design.highPass(2200.0, sr)), Bq(Design.highPass(2200.0, sr)))
-        private val lp = arrayOf(Bq(Design.lowPass(7000.0, sr)), Bq(Design.lowPass(7000.0, sr)))
+        // A steep roll-off above 5.5 kHz, so the third harmonics it makes stay below the top of
+        // the band instead of folding back down into it.
+        private val sourceCutoff = minOf(5500.0, sr / 8.0)
+        private val lp = arrayOf(Lr4(sourceCutoff, sr, high = false), Lr4(sourceCutoff, sr, high = false))
         private val gen = arrayOf(Harmonics(0.5, 30.0, sr), Harmonics(0.5, 30.0, sr))
         private val post1 = arrayOf(Bq(Design.highPass(3200.0, sr)), Bq(Design.highPass(3200.0, sr)))
         private val post2 = arrayOf(Bq(Design.highPass(3200.0, sr)), Bq(Design.highPass(3200.0, sr)))
@@ -374,9 +377,9 @@ class FxChain(private val sr: Double = EqResponse.SAMPLE_RATE) {
 
     /**
      * Hi-res detail. The air above 5 kHz is lifted while there's music in it, and left alone when
-     * all that's there is hiss, so it brings back detail without the noise floor. And where a lossy
-     * file has cut its top octave away (most stop at 16 kHz), that octave is rebuilt from the one
-     * below it, faintly, as its harmonics.
+     * all that's there is hiss. And where there's little left in the top octave (most lossy files
+     * stop at 16 kHz), a faint one is made from the octave below as its harmonics: new detail
+     * where it was cut, not the original back.
      */
     private inner class Air : Effect() {
         private var liftDb = 0.0

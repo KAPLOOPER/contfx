@@ -32,15 +32,22 @@ class CaptureService : Service() {
     private var projection: MediaProjection? = null
     private var engine: AudioEngine? = null
     private var watcher: SessionWatcher? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var stopping = false
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val main = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            stopCapture()
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (stopping) {
+            // Started again while the last session was still going away: start afresh.
+            stopping = false
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
 
         val app = application as ContinuumApp
@@ -65,15 +72,19 @@ class CaptureService : Service() {
                 ?: throw IllegalStateException("Audio capture wasn't allowed.")
             mp.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
-                    main.post { stopSelf() }
+                    main.post {
+                        stopCapture()
+                        stopSelf()
+                    }
                 }
             }, main)
             projection = mp
 
             val eng = AudioEngine(this, mp) { message -> main.post { fail(message) } }
+            // Own it before any setup can throw, so even partial startup is torn down.
+            engine = eng
             eng.setSound(app.store.library, FxStore.state.value, FxEnvironment.context.value, false, emptyList(), SpatialStore.state.value)
             eng.start()
-            engine = eng
 
             watcher = SessionWatcher(this).also { it.start() }
 
@@ -101,24 +112,33 @@ class CaptureService : Service() {
     }
 
     private fun fail(message: String) {
+        if (stopping) return
         EngineStatus.error.value = message
+        stopCapture()
         stopSelf()
     }
 
-    override fun onDestroy() {
+    /** Restore originals immediately, not at some later onDestroy dispatch. Main thread only. */
+    private fun stopCapture() {
+        if (stopping) return
+        stopping = true
         scope.cancel()
         EngineStatus.comparing.value = false
-        EngineStatus.spatialSetup.value = null
         watcher?.stop()
         watcher = null
         engine?.stop()
         engine = null
+        EngineStatus.spatialSetup.value = null
         try {
             projection?.stop()
         } catch (_: Exception) {
         }
         projection = null
         EngineStatus.running.value = false
+    }
+
+    override fun onDestroy() {
+        stopCapture()
         super.onDestroy()
     }
 

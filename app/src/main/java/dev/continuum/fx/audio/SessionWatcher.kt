@@ -30,13 +30,21 @@ interface SessionEffects {
 object MuteEffects : SessionEffects {
     override val respectsCaptureBlock = true
 
-    override fun attach(sid: Int, pkg: String): AudioEffect? = try {
-        DynamicsProcessing(Int.MAX_VALUE, sid, null).apply {
-            setInputGainAllChannelsTo(-200f)
-            setEnabled(true)
+    override fun attach(sid: Int, pkg: String): AudioEffect? {
+        val effect = try {
+            DynamicsProcessing(Int.MAX_VALUE, sid, null)
+        } catch (_: Exception) {
+            return null
         }
-    } catch (_: Throwable) {
-        null
+        // Only counted once it's really on; otherwise let go of it, to be tried again.
+        return try {
+            effect.setInputGainAllChannelsTo(-200f)
+            check(effect.setEnabled(true) == AudioEffect.SUCCESS)
+            effect
+        } catch (_: Exception) {
+            runCatching { effect.release() }
+            null
+        }
     }
 }
 
@@ -57,7 +65,7 @@ class SessionWatcher(private val context: Context, private val effects: SessionE
     private val myUid = Process.myUid()
     private val pm = context.packageManager
     private val lock = Any()
-    private val muted = HashMap<Int, AudioEffect>()
+    private val sessions = SessionRegistry<AudioEffect> { it.release() }
     private val announced = ConcurrentHashMap<Int, String>()
     private val labels = ConcurrentHashMap<String, String>()
 
@@ -142,8 +150,7 @@ class SessionWatcher(private val context: Context, private val effects: SessionE
         } catch (_: Exception) {
         }
         synchronized(lock) {
-            muted.values.forEach { runCatching { it.release() } }
-            muted.clear()
+            sessions.clear()
         }
         EngineStatus.processing.value = emptyList()
         EngineStatus.processingPackages.value = emptyList()
@@ -170,31 +177,24 @@ class SessionWatcher(private val context: Context, private val effects: SessionE
         }
         announced.forEach { (sid, pkg) -> candidates.putIfAbsent(sid, pkg) }
 
-        val processing = LinkedHashSet<String>()
-        val packages = LinkedHashSet<String>()
+        val wanted = HashMap<Int, String>()
         val blocked = LinkedHashSet<String>()
+        for ((sid, pkg) in candidates) {
+            if (effects.respectsCaptureBlock && !canBeCaptured(pkg, allowLog)) blocked += labelOf(pkg)
+            else wanted[sid] = pkg
+        }
+        val packages: List<String>
         synchronized(lock) {
             if (!running) return
-            val gone = muted.keys - candidates.keys
-            gone.forEach { sid -> muted.remove(sid)?.let { runCatching { it.release() } } }
-            for ((sid, pkg) in candidates) {
-                val label = labelOf(pkg)
-                if (effects.respectsCaptureBlock && !canBeCaptured(pkg, allowLog)) {
-                    blocked += label
-                    muted.remove(sid)?.let { runCatching { it.release() } }
-                    continue
-                }
-                if (!muted.containsKey(sid)) effects.attach(sid, pkg)?.let { muted[sid] = it }
-                processing += label
-                packages += pkg
-            }
+            // Only apps whose effect is really in place count as processed.
+            packages = sessions.sync(wanted, effects::attach).values.distinct()
             try {
-                effects.synced(muted.values.toList())
+                effects.synced(sessions.effects())
             } catch (_: Throwable) {
             }
         }
-        EngineStatus.processing.value = processing.toList()
-        if (packages.toList() != EngineStatus.processingPackages.value) EngineStatus.processingPackages.value = packages.toList()
+        EngineStatus.processing.value = packages.map(::labelOf)
+        if (packages != EngineStatus.processingPackages.value) EngineStatus.processingPackages.value = packages
         HeardApps.add(packages)
         EngineStatus.blocked.value = blocked.toList()
     }
@@ -218,7 +218,7 @@ class SessionWatcher(private val context: Context, private val effects: SessionE
     }
 
     /** Every effect in place now, for [SessionEffects] to bring up to date between checks. */
-    fun attached(): List<AudioEffect> = synchronized(lock) { muted.values.toList() }
+    fun attached(): List<AudioEffect> = synchronized(lock) { sessions.effects() }
 
     private fun isCapturedUsage(usage: String): Boolean {
         val u = usage.uppercase()

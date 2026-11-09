@@ -1,7 +1,9 @@
 package dev.continuum.fx.audio
 
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import dev.continuum.fx.dsp.StageMode
 import dev.continuum.fx.dsp.SpatialSetup
 import dev.continuum.fx.dsp.SpatialLibrary
@@ -59,8 +61,10 @@ class AudioEngine(
     private var spatialWanted = false
     private var spatialEngaged = false
 
-    @Volatile
-    private var running = false
+    private val stopped = AtomicBoolean(false)
+    private val cleanup = AudioCleanup()
+    private var started = false
+    private var pump: AudioPump? = null
     private var thread: Thread? = null
     private var record: AudioRecord? = null
     private var track: AudioTrack? = null
@@ -100,8 +104,9 @@ class AudioEngine(
         }
     }
 
+    @Synchronized
     private fun setSpatial(setup: SpatialSetup?) {
-        if (setup == spatialSetup) return
+        if (stopped.get() || setup == spatialSetup) return
         spatialSetup = setup
         EngineStatus.spatialSetup.value = setup?.name
         val generation = spatialGeneration.incrementAndGet()
@@ -110,23 +115,39 @@ class AudioEngine(
             return
         }
         spatialWanted = true
-        planner.execute {
-            // Dragging a speaker asks for a new plan many times a second: build only the latest.
-            if (spatialGeneration.get() != generation) return@execute
-            val head = Heads.get(context, setup.head) ?: return@execute
-            val plan = try {
-                Spatial.plan(head, setup)
-            } catch (_: Exception) {
-                return@execute
+        try {
+            planner.execute {
+                // Dragging a speaker asks for a new plan many times a second: build only the latest.
+                if (stopped.get() || spatialGeneration.get() != generation) return@execute
+                val head = Heads.get(context, setup.head) ?: return@execute
+                val plan = try {
+                    Spatial.plan(head, setup)
+                } catch (_: Exception) {
+                    return@execute
+                }
+                if (!stopped.get() && spatialGeneration.get() == generation) spatial.set(plan)
             }
-            // A newer setup came along while this one was building.
-            if (spatialGeneration.get() == generation) spatial.set(plan)
+        } catch (e: RejectedExecutionException) {
+            // A settings emission can race the service cancelling its collector during stop.
+            if (!stopped.get()) throw e
         }
     }
 
     // RECORD_AUDIO is checked before the service is started.
     @SuppressLint("MissingPermission")
     fun start() {
+        check(!started && !stopped.get()) { "An audio engine can only be started once" }
+        started = true
+        try {
+            open()
+        } catch (t: Throwable) {
+            stop()
+            throw t
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun open() {
         val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
             .addMatchingUsage(AudioAttributes.USAGE_GAME)
@@ -144,10 +165,9 @@ class AudioEngine(
             .setBufferSizeInBytes(max(minIn, framesPerChunk * 2 * 4 * 4))
             .setAudioPlaybackCaptureConfig(captureConfig)
             .build()
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            rec.release()
-            throw IllegalStateException("Couldn't open audio capture")
-        }
+        record = rec
+        cleanup.add { rec.release() }
+        check(rec.state == AudioRecord.STATE_INITIALIZED) { "Couldn't open audio capture" }
 
         val outFormat = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
@@ -169,42 +189,50 @@ class AudioEngine(
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .build()
 
-        record = rec
         track = out
+        cleanup.add { out.release() }
+        check(out.state == AudioTrack.STATE_INITIALIZED) { "Couldn't open audio playback" }
         // Exactly where processed sound goes, so the right EQ can follow the headphones.
         out.addOnRoutingChangedListener(
-            AudioRouting.OnRoutingChangedListener { router -> OutputWatcher.routedTo(router.routedDevice) },
+            AudioRouting.OnRoutingChangedListener { router ->
+                if (!stopped.get()) OutputWatcher.routedTo(router.routedDevice)
+            },
             Handler(Looper.getMainLooper()),
         )
         rec.startRecording()
         out.play()
         OutputWatcher.routedTo(out.routedDevice)
-        running = true
-        thread = Thread({ loop(rec, out) }, "ContinuumAudio").apply {
+        val io = AudioPump(
+            framesPerChunk = framesPerChunk,
+            read = { buffer -> rec.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) },
+            process = ::process,
+            write = { buffer, offset, count -> out.write(buffer, offset, count, AudioTrack.WRITE_BLOCKING) },
+            onFailure = onFailure,
+        )
+        pump = io
+        thread = Thread({
+            try {
+                // Failure to acquire urgent priority shouldn't leave originals muted.
+                runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO) }
+                io.run()
+            } finally {
+                // The worker owns native resources once started. If stop's bounded join expires,
+                // it must not release an AudioRecord/AudioTrack still in use by this thread.
+                cleanup.close()
+            }
+        }, "ContinuumAudio").apply {
             priority = Thread.MAX_PRIORITY
             start()
         }
     }
 
-    private fun loop(rec: AudioRecord, out: AudioTrack) {
-        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val buffer = FloatArray(framesPerChunk * 2)
-        while (running) {
-            val read = rec.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
-            if (read < 0) {
-                if (running) onFailure("Audio capture stopped unexpectedly (error $read)")
-                break
-            }
-            if (read == 0) continue
-            val frames = read / 2
-            eq.process(buffer, frames)
-            chain.process(buffer, frames)
-            spatialStage(buffer, frames)
-            boost(buffer, frames)
-            limiter.process(buffer, frames)
-            if (LiveAudio.listening.value) LiveAudio.tap.push(buffer, frames, 2)
-            out.write(buffer, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
-        }
+    private fun process(buffer: FloatArray, frames: Int) {
+        eq.process(buffer, frames)
+        chain.process(buffer, frames)
+        spatialStage(buffer, frames)
+        boost(buffer, frames)
+        limiter.process(buffer, frames)
+        if (LiveAudio.listening.value) LiveAudio.tap.push(buffer, frames, 2)
     }
 
     /**
@@ -253,22 +281,27 @@ class AudioEngine(
         boostGain = end
     }
 
+    @Synchronized
     fun stop() {
-        running = false
+        if (!stopped.compareAndSet(false, true)) return
+        spatialGeneration.incrementAndGet()
         planner.shutdownNow()
-        try {
-            record?.stop()
-        } catch (_: Exception) {
+        pump?.stop()
+        // Unblock both sides BEFORE joining: pausing a streaming track unblocks a blocking write.
+        runCatching { record?.stop() }
+        runCatching { track?.pause() }
+        runCatching { track?.flush() }
+        val worker = thread
+        if (worker != null && worker != Thread.currentThread()) {
+            try {
+                worker.join(500)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
-        thread?.join(500)
+        // Before the worker was launched, startup may have failed halfway through opening I/O.
+        if (worker == null) cleanup.close()
         thread = null
-        try {
-            track?.pause()
-            track?.flush()
-        } catch (_: Exception) {
-        }
-        record?.release()
-        track?.release()
         record = null
         track = null
         OutputWatcher.routedTo(null)

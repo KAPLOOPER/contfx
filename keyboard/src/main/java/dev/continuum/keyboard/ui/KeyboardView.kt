@@ -22,6 +22,7 @@ import androidx.core.content.res.ResourcesCompat
 import dev.continuum.keyboard.R
 import dev.continuum.keyboard.layout.Key
 import dev.continuum.keyboard.layout.KeyType
+import dev.continuum.keyboard.layout.KeyboardGeometry
 import dev.continuum.keyboard.layout.Layout
 import dev.continuum.keyboard.layout.Layouts
 import dev.continuum.keyboard.layout.PlacedKey
@@ -351,7 +352,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun computeGeometry(w: Int) {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         u = w / Key.WIDTH
-        v = min(u, 1.12f * density) * (if (landscape) 0.78f else 1f)
+        v = KeyboardGeometry.verticalUnit(w, density, landscape)
         massTop = 16f * v
         stripTop = massTop + 8f * v
         stripH = 44f * v

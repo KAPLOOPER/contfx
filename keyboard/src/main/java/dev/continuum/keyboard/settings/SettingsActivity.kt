@@ -130,8 +130,10 @@ class SettingsActivity : ComponentActivity() {
     /** Android's own place for choosing the password manager, wherever this version keeps it. */
     private fun openAutofillSettings() {
         val tries = buildList {
-            // Android 14 and later: Passwords, passkeys and accounts.
-            if (Build.VERSION.SDK_INT >= 34) add(Intent("android.settings.CREDENTIAL_PROVIDER"))
+            // These chips use classic Autofill. Credential Manager/passkey settings alone may
+            // not select an Autofill service. The package identifies the caller, not a vault to
+            // read; Android presents the service picker and keeps control of the user's choice.
+            add(Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, android.net.Uri.parse("package:$packageName")))
             add(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
             add(Intent(Settings.ACTION_SETTINGS))
         }
@@ -153,7 +155,7 @@ class SettingsActivity : ComponentActivity() {
         val prefs = remember { Prefs(this) }
         val engine = remember { EngineHost.get(this) }
         val list = rememberLazyListState()
-        val sections = listOf("setup", "look", "typing", "swipe", "clipboard", "words", "about")
+        val sections = listOf("setup", "look", "typing", "swipe", "clipboard", "passwords", "words", "about")
         LaunchedEffect(section) {
             val i = sections.indexOf(section)
             if (i > 0) list.scrollToItem(i + 1)
@@ -260,7 +262,7 @@ class SettingsActivity : ComponentActivity() {
                     if (Build.VERSION.SDK_INT >= 30) {
                         Toggle(
                             g, "Logins in the strip",
-                            "When you tap a login field, your password manager's logins appear as chips above the keys. Off, it shows its own pop-up instead.",
+                            "When you tap a login field, your password manager's logins appear as chips above the keys. Off, they're left to the password manager, which may show its own pop-up.",
                             prefs.passwordChips,
                         ) { prefs.passwordChips = it }
                     }
@@ -280,7 +282,7 @@ class SettingsActivity : ComponentActivity() {
                         if (Build.VERSION.SDK_INT >= 30) {
                             Spacer(Modifier.height(6.dp))
                             Txt(
-                                "For chips in the strip, the password manager's inline suggestions need to be on. In Keyguard: Settings, Autofill, Inline suggestions (on unless you've turned it off).",
+                                "For chips in the strip, choose your password manager as Android's autofill service (choosing it for passkeys alone isn't enough) and keep its inline suggestions on. In Keyguard: Settings, Autofill, Inline suggestions. After changing either, leave the login field and come back to it.",
                                 13.sp, g.sub,
                             )
                         }

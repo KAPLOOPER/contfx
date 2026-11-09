@@ -4,6 +4,7 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.InputMethodService.Insets
@@ -21,6 +22,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InlineSuggestion
 import android.view.inputmethod.InlineSuggestionsRequest
 import android.view.inputmethod.InlineSuggestionsResponse
 import android.view.inputmethod.InputConnection
@@ -49,6 +51,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import dev.continuum.keyboard.autofill.InlineSuggestionsController
 import dev.continuum.keyboard.clipboard.Clip
 import dev.continuum.keyboard.clipboard.ClipboardHistory
 import dev.continuum.keyboard.emoji.EmojiData
@@ -62,6 +65,7 @@ import dev.continuum.keyboard.engine.Typed
 import dev.continuum.keyboard.layout.FieldMode
 import dev.continuum.keyboard.layout.Key
 import dev.continuum.keyboard.layout.KeyType
+import dev.continuum.keyboard.layout.KeyboardGeometry
 import dev.continuum.keyboard.layout.Layout
 import dev.continuum.keyboard.layout.Layouts
 import dev.continuum.keyboard.layout.Sheet
@@ -108,7 +112,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     private var root: FrameLayout? = null
     private var keyboard: KeyboardView? = null
     private var panelView: ComposeView? = null
-    private var autofillBar: HorizontalScrollView? = null
+    private var autofillBar: FrameLayout? = null
     private var autofillRow: LinearLayout? = null
     private val panelState = PanelState()
 
@@ -153,8 +157,19 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     private var stripChoice = StripChoice.Auto
     private var panel: Tool? = null
     private var autofillShowing = false
-    /** Logins that arrived before the keyboard's views did, shown once they exist. */
-    private var pendingInline: Any? = null
+    private val inlineSuggestions = InlineSuggestionsController<InlineSuggestion, View>(
+        inflate = { suggestion, callback ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                suggestion.inflate(
+                    this,
+                    Size(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+                    mainExecutor,
+                ) { view -> callback(view) }
+            } else callback(null)
+        },
+        render = ::renderInline,
+        report = ::autofillLog,
+    )
     private var chipUntil = 0L
     private var recomposeAfterDelete = false
     private var deleteAnchor = -1
@@ -194,6 +209,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     }
 
     override fun onDestroy() {
+        inlineSuggestions.finishInput()
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.removePrimaryClipChangedListener(clipListener)
         stopClipListening?.invoke()
         stopCodeWatch?.invoke()
@@ -225,13 +241,25 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         }
         frame.addView(panels, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
 
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val bar = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(row)
-            visibility = View.GONE
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
         }
-        frame.addView(bar, FrameLayout.LayoutParams(0, 0))
+        // API 30+ needs the clipping host because inline suggestions are remote surfaces. API 29
+        // never receives inline responses, but keeps a harmless empty overlay for shared layout code.
+        val actualBar = if (Build.VERSION.SDK_INT >= 30) {
+            Autofill.createHost(this).also { host -> Autofill.attachScroll(host, row) }
+        } else {
+            FrameLayout(this).apply {
+                addView(HorizontalScrollView(this@ContinuumIME).apply { addView(row) }, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ))
+            }
+        }
+        actualBar.visibility = View.GONE
+        frame.addView(actualBar, FrameLayout.LayoutParams(0, 0))
 
         ViewCompat.setOnApplyWindowInsetsListener(frame) { _, insets ->
             kv.bottomInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
@@ -241,7 +269,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         root = frame
         keyboard = kv
         panelView = panels
-        autofillBar = bar
+        autofillBar = actualBar
         autofillRow = row
         applyLook()
         return frame
@@ -276,12 +304,16 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
-        // A new field: whatever the password manager offered for the last one goes. (Not when the
-        // keyboard merely shows: its offer for this field may already have arrived.)
-        if (!restarting) {
-            pendingInline = null
-            clearAutofill()
-        }
+        // Apply password/no-learning flags before clearing UI can request fresh word predictions.
+        attribute?.let(::readField)
+        resetComposing()
+        // A restart may replace editor metadata too. Wait for startInputView before rendering.
+        inlineSuggestions.startInput()
+    }
+
+    override fun onFinishInput() {
+        inlineSuggestions.finishInput()
+        super.onFinishInput()
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -310,11 +342,9 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         refreshStrip()
         if (!restarting) keyboard?.popIn()
         readCode(refresh = true)
-        // An offer that arrived before the keyboard was on screen.
-        if (Build.VERSION.SDK_INT >= 30) pendingInline?.let { r ->
-            pendingInline = null
-            showInline(r as InlineSuggestionsResponse)
-        }
+        // Views may already exist while hidden. Render only now, including offers queued while
+        // returning from a password-manager unlock activity.
+        if (prefs.passwordChips) inlineSuggestions.startView() else inlineSuggestions.clear()
 
         // Text from Scan text goes in once the field you came from is back.
         ScanResult.take()?.let { text ->
@@ -323,10 +353,10 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        inlineSuggestions.finishView()
         currentInputConnection?.finishComposingText()
         resetComposing()
         closePanel(animate = false)
-        clearAutofill()
         engine.save()
         super.onFinishInputView(finishingInput)
     }
@@ -428,6 +458,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             lp.width = a.width().toInt()
             lp.height = a.height().toInt()
             bar.layoutParams = lp
+            bar.clipBounds = android.graphics.Rect(0, 0, lp.width, lp.height)
         }
     }
 
@@ -930,8 +961,9 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     private fun afterEdit() {
         updateShift()
         updateEnter()
+        // Android filters inline logins as the app's field changes. A composing username isn't
+        // a reason to discard a provider chip locally: some browsers don't request another one.
         refreshStrip()
-        if (autofillShowing && composing.isNotEmpty()) clearAutofill()
     }
 
     private fun updateShift() {
@@ -978,6 +1010,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         val kv = keyboard ?: return
         if (composing.isNotEmpty()) stripChoice = StripChoice.Auto
         if (autofillShowing) {
+            engine.cancel(EngineHost.SUGGEST)
             kv.setStrip(Strip.Blank)
             return
         }
@@ -1007,7 +1040,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             val caps = Suggester.capsOf(text)
             val correct = autocorrectOn && !noCorrect
             engine.ask(EngineHost.SUGGEST, { s -> s.suggest(typed, context, caps, correct) }) { r ->
-                if (r.typed != composing.toString()) return@ask
+                if (!suggestionsOn || autofillShowing || panel != null || r.typed != composing.toString()) return@ask
                 current = r
                 stripWords = r.words
                 keyboard?.setStrip(Strip.Words(r.words, r.commitIndex, r.typedIndex))
@@ -1029,7 +1062,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             return
         }
         engine.ask(EngineHost.SUGGEST, { s -> s.predict(context, start) }) { words ->
-            if (composing.isNotEmpty()) return@ask
+            if (!suggestionsOn || autofillShowing || panel != null || composing.isNotEmpty()) return@ask
             stripWords = words
             keyboard?.setStrip(if (words.isEmpty()) Strip.Tools else Strip.Words(words, -1, -1))
             // Asked for words and there are none to give: the tools stay, and say so.
@@ -1083,7 +1116,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         val ic = currentInputConnection
         if (ic != null && composing.isNotEmpty()) commitComposing(ic, correct = false, separator = "")
         panel = tool
-        clearAutofill()
+        inlineSuggestions.setPanelOpen(true)
         if (tool == Tool.Emoji) {
             panelState.frequent = emojiUsage.frequent()
             if (panelState.emoji == null) background.execute {
@@ -1114,6 +1147,7 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         panelState.panel = null
         panelView?.visibility = View.GONE
         keyboard?.setPanel(null)
+        inlineSuggestions.setPanelOpen(false)
         if (!animate) keyboard?.popIn(quick = true)
         stripChoice = StripChoice.Auto
         refreshStrip()
@@ -1290,68 +1324,80 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
     /** How tall the strip is, which is how tall a password manager's chips are asked to be. */
     private fun stripHeightPx(): Int {
         val measured = keyboard?.stripArea?.height()?.toInt() ?: 0
-        return if (measured > 0) measured else (44 * resources.displayMetrics.density * prefs.heightScale).toInt()
+        if (measured > 0) return measured
+        val metrics = resources.displayMetrics
+        val width = keyboard?.width?.takeIf { it > 0 } ?: metrics.widthPixels
+        // Key height preference affects keys, not the strip. Use the same width/orientation
+        // geometry as KeyboardView so a cold-start request doesn't ask for an oversized chip.
+        return KeyboardGeometry.stripHeightPx(
+            width, metrics.density,
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        )
     }
 
     @RequiresApi(30)
     override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? {
-        // Off, the password manager shows its own pop-up instead.
-        if (!prefs.passwordChips) return null
-        return Autofill.request(this, panelState.palette, stripHeightPx())
+        // Decline inline hosting; Android/provider decide whether ordinary Autofill UI is available.
+        if (!prefs.passwordChips) {
+            autofillLog("request declined: inline chips disabled")
+            return null
+        }
+        val height = stripHeightPx()
+        autofillLog("request created: height=$height")
+        return Autofill.request(this, KeyPalette.from(this, prefs), height)
     }
 
     @RequiresApi(30)
     override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
-        if (autofillRow == null) {
-            // The keyboard isn't on screen yet: keep it for when it is.
-            pendingInline = response
-            return true
+        autofillLog("response received: count=${response.inlineSuggestions.size}")
+        if (!prefs.passwordChips) {
+            inlineSuggestions.clear()
+            return false
         }
-        showInline(response)
-        return true
+        // Empty responses may be framework lifecycle/filtering clears, not a failed vault lookup.
+        // The Boolean reports acceptance only; it doesn't request a fallback pop-up from Android.
+        return inlineSuggestions.offer(response.inlineSuggestions)
     }
 
-    @RequiresApi(30)
-    private fun showInline(response: InlineSuggestionsResponse) {
-        val row = autofillRow ?: return
-        val list = response.inlineSuggestions
-        row.removeAllViews()
-        if (list.isEmpty()) {
-            clearAutofill()
-            return
-        }
-        val want = stripHeightPx()
-        list.forEach { s ->
-            // Each chip has to be inflated within the size its password manager agreed to, or
-            // Android refuses it outright: that refusal is why no logins ever showed before.
-            val spec = s.info.inlinePresentationSpec
-            val height = want.coerceIn(spec.minSize.height, spec.maxSize.height)
-            try {
-                s.inflate(this, Size(ViewGroup.LayoutParams.WRAP_CONTENT, height), mainExecutor) { view ->
-                    if (view != null) {
-                        view.setZOrderedOnTop(true)
-                        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, height)
-                        lp.marginEnd = (6 * resources.displayMetrics.density).toInt()
-                        lp.gravity = android.view.Gravity.CENTER_VERTICAL
-                        row.addView(view, lp)
+    private fun renderInline(views: List<View>) {
+        val row = autofillRow
+        if (row != null) {
+            // Insert in provider order without detaching already mounted surfaces whenever a
+            // slower chip arrives. Android handles each remote view's actual layout dimensions.
+            for (i in row.childCount - 1 downTo 0) {
+                if (views.none { it === row.getChildAt(i) }) row.removeViewAt(i)
+            }
+            views.forEachIndexed { index, view ->
+                if (row.indexOfChild(view) != index) {
+                    if (view.parent === row) row.removeView(view)
+                    val current = view.layoutParams
+                    val lp = LinearLayout.LayoutParams(
+                        current?.width ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+                        current?.height ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ).apply {
+                        marginEnd = (6 * resources.displayMetrics.density).toInt()
+                        gravity = android.view.Gravity.CENTER_VERTICAL
                     }
+                    row.addView(view, index, lp)
                 }
-            } catch (e: Exception) {
-                android.util.Log.w("ContinuumIME", "Couldn't show an autofill suggestion", e)
             }
         }
-        autofillShowing = true
-        positionOverlays()
-        autofillBar?.visibility = View.VISIBLE
+        autofillShowing = row != null && views.isNotEmpty() && panel == null
+        autofillBar?.visibility = if (autofillShowing) View.VISIBLE else View.GONE
+        if (autofillShowing) positionOverlays()
         refreshStrip()
     }
 
-    private fun clearAutofill() {
-        if (!autofillShowing && autofillBar?.visibility != View.VISIBLE) return
-        autofillShowing = false
-        autofillRow?.removeAllViews()
-        autofillBar?.visibility = View.GONE
-        refreshStrip()
+    /**
+     * What happened with a password manager's offer, counts only (never what's in it). Silent
+     * unless asked for: `adb shell setprop log.tag.ContinuumAutofill DEBUG`.
+     */
+    private fun autofillLog(message: String) {
+        if (android.util.Log.isLoggable(AUTOFILL_TAG, android.util.Log.DEBUG)) android.util.Log.d(AUTOFILL_TAG, message)
+    }
+
+    private companion object {
+        const val AUTOFILL_TAG = "ContinuumAutofill"
     }
 
     // ================================================================ Sound

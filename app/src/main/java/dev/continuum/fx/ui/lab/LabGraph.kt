@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.lab.Lab
 import dev.continuum.fx.ui.Fmt
+import dev.continuum.fx.ui.labelAt
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Palette
@@ -129,6 +131,8 @@ internal fun LabGraph(
     modifier: Modifier = Modifier,
     inset: Dp = 24.dp,
     height: Dp = 300.dp,
+    /** Where the curves are levelled ("0 dB at 500 Hz"), said at the scale's top once there are curves. */
+    reference: String? = null,
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -212,15 +216,24 @@ internal fun LabGraph(
         }
         // The scale's ends and the decades, in the margin's small capitals.
         val plotTopPx = padTop
-        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (plotTopPx - with(density) { 14.dp.toPx() }).roundToInt()) }) {
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (plotTopPx - with(density) { 14.dp.toPx() }).roundToInt()) }.clearAndSetSemantics {}) {
             Note(signed(top), p.sub)
         }
-        Box(Modifier.align(Alignment.BottomStart).padding(start = inset, bottom = 22.dp)) { Note(signed(bottom), p.sub) }
+        if (reference != null) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = inset)
+                    .offset { IntOffset(0, (plotTopPx - with(density) { 14.dp.toPx() }).roundToInt()) }
+                    .clearAndSetSemantics {},
+            ) { Note(reference, p.sub) }
+        }
+        Box(Modifier.align(Alignment.BottomStart).padding(start = inset, bottom = 22.dp).clearAndSetSemantics {}) { Note(signed(bottom), p.sub) }
         // The decades, just right of their lines, as on the Sound page's graph.
         val labelY = (height.value * density.density - with(density) { 16.dp.toPx() }).roundToInt()
         for ((f, label) in listOf(20.0 to "20", 100.0 to "100", 1000.0 to "1k", 10000.0 to "10k")) {
             val gx = insetPx + ((log10(f) - lx0) / (lx1 - lx0) * (widthPx - 2 * insetPx)).toFloat()
-            Box(Modifier.offset { IntOffset((gx + 4f * density.density).roundToInt(), labelY) }) { Note(label, p.sub) }
+            Box(Modifier.labelAt(gx + 4f * density.density, labelY, widthPx - insetPx).clearAndSetSemantics {}) { Note(label, p.sub) }
         }
     }
 }

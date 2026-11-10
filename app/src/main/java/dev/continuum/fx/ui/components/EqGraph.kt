@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import dev.continuum.fx.ui.labelAt
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -404,11 +406,12 @@ fun EqGraph(
 
         val labelY = (top + plotH + with(density) { 6.dp.toPx() }).roundToInt()
         listOf(100.0 to "100", 1000.0 to "1k", 10000.0 to "10k").forEach { (f, label) ->
-            Box(Modifier.offset { IntOffset((xOf(f) + 5f).roundToInt(), labelY) }) {
+            // The scale is for the eye: TalkBack would only hear "100", "1k", "10k" out of context.
+            Box(Modifier.labelAt(xOf(f) + 5f, labelY, w - insetPx).clearAndSetSemantics {}) {
                 Note(label, p.sub)
             }
         }
-        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top - 2f).roundToInt()) }) {
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top - 2f).roundToInt()) }.clearAndSetSemantics {}) {
             Note("+${range.roundToInt()}", p.sub)
         }
         if (shape < 0.98f && editable) {
@@ -419,7 +422,7 @@ fun EqGraph(
                     .graphicsLayer { alpha = (1f - shape).coerceIn(0f, 1f) },
             ) { Note("Original · matched loudness", p.text) }
         }
-        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top + plotH - with(density) { 13.dp.toPx() }).roundToInt()) }) {
+        Box(Modifier.offset { IntOffset(insetPx.roundToInt(), (top + plotH - with(density) { 13.dp.toPx() }).roundToInt()) }.clearAndSetSemantics {}) {
             Note("−${range.roundToInt()}", p.sub)
         }
 

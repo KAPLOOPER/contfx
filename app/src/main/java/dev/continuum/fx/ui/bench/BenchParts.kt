@@ -12,14 +12,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.continuum.fx.ui.INK_RAIL
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
@@ -46,6 +48,8 @@ fun BenchField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    /** The stream or app mark in the label's rail, leaving the slider ends free for steppers. */
+    mark: (@Composable () -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     note: String? = null,
@@ -54,19 +58,24 @@ fun BenchField(
     content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
-    Column(modifier.fillMaxWidth()) {
+    // One control to TalkBack: the slider, named by its label and value (the steppers either
+    // side stay buttons of their own).
+    Column(modifier.fillMaxWidth().semantics(mergeDescendants = true) {}) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 26.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Txt(label, 16.5.sp, if (muted) p.sub else p.text, maxLines = 1, modifier = Modifier.weight(1f))
-            Note(value, if (live) p.live else p.sub, Modifier.padding(start = 12.dp))
+            Box(Modifier.width(INK_RAIL), contentAlignment = Alignment.Center) { mark?.invoke() }
+            // Three lines: an app's own name (Volume's Apps) can be long, and is what tells it apart
+            // (two cut a long one off mid-word at 1.3).
+            Txt(label, 17.sp, if (muted) p.sub else p.text, maxLines = 3, modifier = Modifier.weight(1f))
+            Note(value, if (live) p.liveText else p.sub, Modifier.padding(start = 12.dp))
         }
         Row(
             Modifier
                 .fillMaxWidth()
                 .padding(top = 2.dp)
-                .heightIn(min = 44.dp),
+                .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leading?.invoke()
@@ -74,51 +83,41 @@ fun BenchField(
             trailing?.invoke()
         }
         if (note != null) {
-            Txt(note, 13.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 2.dp))
+            Txt(note, 14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 2.dp, bottom = 6.dp))
         }
     }
 }
 
 /**
- * The chips wrapped, never run off the page's edge: rows of whatever [content] lays out, [gap]
- * between the chips in a row and between the rows, measured as they are and broken where they
- * would pass the width. No scroll, no fade, nothing ever clipped — the manual, predictable wrap.
+ * A set of equal cells in [columns] columns, filled row by row: for a group of actions that should
+ * read as one table, each word starting at the same x in every row, rather than as chips that
+ * wrap wherever they happen to fit. Cells are as wide as the grid is, divided; each is as tall as
+ * its row's tallest. When a cell's words can't fit its column whole (large type), the table
+ * becomes one column, so nothing is ever cut to "Notific…".
  */
 @Composable
-fun BenchWrap(
+fun BenchGrid(
+    columns: Int,
     modifier: Modifier = Modifier,
-    gap: Dp = 8.dp,
     content: @Composable () -> Unit,
 ) {
     Layout(
         content = content,
         modifier = modifier,
         measurePolicy = { measurables, constraints ->
-            val gapPx = gap.roundToPx()
-            val cells = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
-            if (cells.isEmpty()) {
-                return@Layout layout(constraints.maxWidth.takeIf { it != Constraints.Infinity } ?: 0, 0) {}
-            }
-            val xs = IntArray(cells.size)
-            val ys = IntArray(cells.size)
-            var x = 0
-            var y = 0
-            var rowHeight = 0
-            cells.forEachIndexed { i, c ->
-                val roomy = constraints.hasBoundedWidth
-                if (roomy && x > 0 && x + c.width > constraints.maxWidth) {
-                    y += rowHeight + gapPx
-                    x = 0
-                    rowHeight = 0
+            val width = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+            val fits = measurables.all { it.maxIntrinsicWidth(Constraints.Infinity) <= width / columns }
+            val cols = if (fits) columns else 1
+            val cellW = width / cols
+            val cells = measurables.map { it.measure(Constraints(minWidth = cellW, maxWidth = cellW)) }
+            val rows = cells.chunked(cols)
+            val rowH = rows.map { r -> r.maxOf { it.height } }
+            layout(cellW * cols, rowH.sum()) {
+                var y = 0
+                rows.forEachIndexed { ri, r ->
+                    r.forEachIndexed { ci, c -> c.place(ci * cellW, y) }
+                    y += rowH[ri]
                 }
-                xs[i] = x
-                ys[i] = y
-                x += c.width + gapPx
-                rowHeight = maxOf(rowHeight, c.height)
-            }
-            val width = if (constraints.hasBoundedWidth) constraints.maxWidth else x - gapPx
-            layout(width, y + rowHeight) {
-                cells.forEachIndexed { i, c -> c.place(xs[i], ys[i]) }
             }
         },
     )

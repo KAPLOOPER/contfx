@@ -1,16 +1,19 @@
 package dev.continuum.fx.ui.components
 
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -21,7 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -232,15 +235,18 @@ private val SWELL_PILL = spring<Float>(dampingRatio = 0.55f, stiffness = 420f)
 /**
  * A row of choices sharing one pill of ink. The chosen word is knocked out of the ink, so where
  * the ink covers a word it takes the page's own colour, exactly as far as the ink reaches.
- * [scroll] lets a long row scroll sideways. A choice on its own ([Chip] outside a row) is a row
- * of one: its pill swells in and out.
+ * A set too long for its line (many choices, a long name of yours, or large type) runs on to the
+ * next line rather than off the page's edge, so every choice is always in sight, in even lines
+ * ([EvenLines]); the ink runs between lines as it does along one. [fill] takes the page's width
+ * (off, the row is as wide as its words). A choice on its own ([Chip] outside a row) is a row of
+ * one: its pill swells in and out.
  */
 @Composable
 fun ChoiceRow(
     modifier: Modifier = Modifier,
-    scroll: Boolean = true,
+    fill: Boolean = true,
     on: Surface = Surface.Ground,
-    content: @Composable RowScope.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
     val ink = if (on == Surface.Ink) p.onInk else p.primary
@@ -248,9 +254,11 @@ fun ChoiceRow(
     val left = remember { Animatable(0f) }
     val right = remember { Animatable(0f) }
     val shown = remember { Animatable(0f) }
+    // The pill's middle, down the row: it only moves when the choice is on another line.
+    val mid = remember { Animatable(0f) }
     val tail = remember { Animatable(0f) }
     // Read while drawing; the animations above are what redraw it.
-    val tailAt = remember { FloatArray(3) }
+    val tailAt = remember { FloatArray(2) }
     val last = remember { arrayOfNulls<ChoiceEntry>(1) }
     val born = remember { SystemClock.uptimeMillis() }
     val target = group.target
@@ -259,19 +267,20 @@ fun ChoiceRow(
             shown.animateTo(0f, Motion.snap())
             return@LaunchedEffect
         }
-        tailAt[2] = r.center.y
         val fresh = SystemClock.uptimeMillis() - born < 500
         when {
             // As the page opens, the ink is simply where it should be.
             shown.value < 0.02f && fresh -> {
                 left.snapTo(r.left)
                 right.snapTo(r.right)
+                mid.snapTo(r.center.y)
                 shown.snapTo(1f)
             }
             // Chosen from nothing: it swells out from under the word.
             shown.value < 0.02f -> {
                 left.snapTo(r.center.x)
                 right.snapTo(r.center.x)
+                mid.snapTo(r.center.y)
                 shown.snapTo(1f)
                 launch { left.animateTo(r.left, SWELL_PILL) }
                 launch { right.animateTo(r.right, SWELL_PILL) }
@@ -280,6 +289,7 @@ fun ChoiceRow(
             entry === last[0] -> {
                 launch { left.animateTo(r.left, Motion.snap()) }
                 launch { right.animateTo(r.right, Motion.snap()) }
+                launch { mid.animateTo(r.center.y, Motion.snap()) }
                 if (shown.value < 1f) launch { shown.animateTo(1f, Motion.snap()) }
             }
             // Another word: the ink runs to it, and a drop of it stays behind a moment.
@@ -287,22 +297,24 @@ fun ChoiceRow(
                 val toRight = r.center.x > (left.value + right.value) / 2f
                 val h = r.height
                 tailAt[0] = if (toRight) left.value + h * 0.45f else right.value - h * 0.45f
-                tailAt[1] = r.center.y
+                // The drop is left where the ink was, on that word's line.
+                tailAt[1] = mid.value
                 launch {
                     tail.snapTo(1f)
                     tail.animateTo(0f, TAIL)
                 }
                 launch { left.animateTo(r.left, if (toRight) TRAIL else LEAD) }
                 launch { right.animateTo(r.right, if (toRight) LEAD else TRAIL) }
+                launch { mid.animateTo(r.center.y, LEAD) }
                 if (shown.value < 1f) launch { shown.animateTo(1f, Motion.snap()) }
             }
         }
         last[0] = entry
     }
     CompositionLocalProvider(LocalChoiceGroup provides group) {
-        Row(
+        EvenLines(
             modifier
-                .then(if (scroll) Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()) else Modifier)
+                .then(if (fill) Modifier.fillMaxWidth() else Modifier)
                 .onPlaced {
                     group.coords = it
                     group.refresh()
@@ -313,8 +325,21 @@ fun ChoiceRow(
                     drawContent()
                     val s = shown.value
                     val tv = tail.value
-                    if (s <= 0.01f && tv <= 0.01f) return@drawWithContent
-                    val cy = tailAt[2].takeIf { it > 0f } ?: (size.height / 2f)
+                    if (s <= 0.01f && tv <= 0.01f) {
+                        // As the page opens, the ink is where it should be from the first frame
+                        // the row is drawn. The effect above only catches up a frame or two
+                        // later (placed, then recomposed, then snapped), and until then the
+                        // chosen word stood bare and the pill popped in under it.
+                        val t = group.target
+                        if (t != null && last[0] == null && SystemClock.uptimeMillis() - born < 500) {
+                            val box = t.second
+                            val h = PILL.toPx()
+                            val w = maxOf(box.width, h)
+                            drawRoundRect(ink, Offset(box.center.x - w / 2f, box.center.y - h / 2f), Size(w, h), CornerRadius(h / 2f), blendMode = BlendMode.Xor)
+                        }
+                        return@drawWithContent
+                    }
+                    val cy = mid.value
                     val h = PILL.toPx()
                     var l = left.value
                     var r = right.value
@@ -338,10 +363,49 @@ fun ChoiceRow(
                     inkNeck(tc, tr, cap, hh / 2f, reach = 1.5f)?.let { shape = union(shape, it) }
                     drawPath(shape, ink, blendMode = BlendMode.Xor)
                 },
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            perLine = Int.MAX_VALUE,
+            spacing = 2.dp,
             content = content,
         )
+    }
+}
+
+/**
+ * A set of choices in even lines: as many to a line as fit (at most [perLine]), then shared out so
+ * the lines are as even as they can be ("20 Hz  30 Hz / 60 Hz  100 Hz", never three and one), each
+ * line's words sharing their middle. On one line whenever the whole set fits.
+ */
+@Composable
+private fun EvenLines(modifier: Modifier, perLine: Int, spacing: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, modifier) { measurables, c ->
+        val gap = spacing.roundToPx()
+        val words = measurables.map { it.measure(androidx.compose.ui.unit.Constraints(maxWidth = c.maxWidth)) }
+        if (words.isEmpty()) return@Layout layout(c.minWidth, c.minHeight) {}
+        val n = words.size
+        fun fits(per: Int) = words.chunked(per).all { line -> line.sumOf { it.width } + gap * (line.size - 1) <= c.maxWidth }
+        var per = 1
+        for (k in minOf(perLine, n) downTo 1) {
+            val lines = (n + k - 1) / k
+            val even = (n + lines - 1) / lines
+            if (fits(even)) {
+                per = even
+                break
+            }
+        }
+        val lines = words.chunked(per)
+        val widest = lines.maxOf { line -> line.sumOf { it.width } + gap * (line.size - 1) }
+        val heights = lines.map { line -> line.maxOf { it.height } }
+        layout(maxOf(c.minWidth, minOf(widest, c.maxWidth)), maxOf(c.minHeight, heights.sum())) {
+            var y = 0
+            lines.forEachIndexed { i, line ->
+                var x = 0
+                line.forEach { w ->
+                    w.place(x, y + (heights[i] - w.height) / 2)
+                    x += w.width + gap
+                }
+                y += heights[i]
+            }
+        }
     }
 }
 
@@ -349,7 +413,7 @@ fun ChoiceRow(
 private fun union(a: Path, b: Path): Path = runCatching { Path.combine(PathOperation.Union, a, b) }.getOrDefault(a)
 
 /** How tall the ink is behind a chosen word. */
-private val PILL = 36.dp
+private val PILL = 40.dp
 
 // --- Opening --------------------------------------------------------------------------------
 
@@ -527,5 +591,98 @@ internal fun InkSection(
                 y += it.height
             }
         }
+    }
+}
+
+// --- Following ------------------------------------------------------------------------------
+
+/** How far a [Reveal]'s layer reaches past its sides: far enough for a slider's branch to the thread. */
+private val REVEAL_BLEED = 48.dp
+
+/** The soft edge a [Reveal] uncovers through: the drip's own fade. */
+private val REVEAL_FADE = 24.dp
+
+/**
+ * What only means something while another setting says so (a choice under a switch that's on,
+ * a slider for a room you've chosen, a note about the two together) follows that setting in and
+ * out instead of popping. The page makes room for it at Flow's pace without the give
+ * ([Motion.settle]: the rows below glide and never bounce), and it's uncovered from the top as the
+ * room opens, through the same soft edge an opening section's drip uncovers its controls with, so
+ * no line is ever cut by a hard edge. It goes the same way back, and once gone it's gone (not
+ * composed, so not read out). Shown with its page, it's simply there.
+ *
+ * Unlike [InkSection] nothing is drawn in the rail: nothing opened, a setting changed, and that
+ * setting's own row already shows it.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+internal fun Reveal(visible: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shown = remember { Animatable(if (visible) 1f else 0f) }
+    var composed by remember { mutableStateOf(visible) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            composed = true
+            shown.animateTo(1f, Motion.settle())
+        } else {
+            shown.animateTo(0f, Motion.settle())
+            composed = false
+        }
+    }
+    if (!composed) return
+    // A fade is only drawing, not a hit-test or focus boundary. Keep the moving group out of
+    // accessibility and keyboard traversal, and consume touches before its controls see them.
+    // Once fully uncovered it has its normal semantics and actions again.
+    val ready = visible && !shown.isRunning && shown.value >= 0.999f
+    val focus = LocalFocusManager.current
+    var hasFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(ready) { if (!ready && hasFocus) focus.clearFocus(force = true) }
+    // The whole height of what's in it, for the edge the drawing uncovers to.
+    val full = remember { FloatArray(1) }
+    Layout(
+        content = {
+            Column(
+                Modifier
+                    .then(if (ready) Modifier else Modifier.clearAndSetSemantics {})
+                    .onFocusChanged { hasFocus = it.hasFocus }
+                    .focusProperties { enter = { if (ready) FocusRequester.Default else FocusRequester.Cancel } }
+                    .focusGroup()
+                    .pointerInput(ready) {
+                        if (!ready) awaitPointerEventScope {
+                            while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                        }
+                    }
+                    // Its own layer only while it moves, wider than the column, so what reaches
+                    // into the margin (a slider's branch to its section's thread) isn't cut off.
+                    .graphicsLayer {
+                        compositingStrategy = if (shown.value < 0.999f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        val q = shown.value.coerceIn(0f, 1f)
+                        if (q < 0.999f) {
+                            // The edge runs a fade's length past the end, so nothing is still
+                            // faded when it stops.
+                            val f = REVEAL_FADE.toPx()
+                            val edge = (full[0] + f) * q
+                            drawRect(
+                                Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = edge - f, endY = edge),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                    }
+                    .padding(horizontal = REVEAL_BLEED),
+            ) { content() }
+        },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val bleed = REVEAL_BLEED.roundToPx()
+        val inner = measurables.first().measure(
+            if (constraints.hasBoundedWidth) Constraints.fixedWidth(constraints.maxWidth + 2 * bleed) else Constraints(),
+        )
+        val w = inner.width - 2 * bleed
+        full[0] = inner.height.toFloat()
+        val q = shown.value.coerceIn(0f, 1f)
+        val h = min(inner.height.toFloat(), (inner.height + REVEAL_FADE.toPx()) * q).roundToInt()
+        layout(w, h) { inner.place(-bleed, 0) }
     }
 }

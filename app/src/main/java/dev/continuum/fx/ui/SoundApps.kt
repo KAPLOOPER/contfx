@@ -102,7 +102,7 @@ internal fun OpenedFromRow(pkg: String, library: Library, actions: AppActions) {
             Txt("From $name", 16.sp, p.onInk, bold = true, maxLines = 1)
             Txt(
                 if (current?.id == profile.id) "$name uses ${profile.name}" else "Give $name ${profile.name}, just for it?",
-                13.sp, p.onInkSub, maxLines = 2,
+                13.sp, p.onInkSub, maxLines = 2, modifier = Modifier.padding(top = 3.dp),
             )
         }
         if (current?.id != profile.id) {
@@ -134,7 +134,7 @@ internal fun AppsList(library: Library, actions: AppActions) {
             14.sp, p.sub, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
         )
         if (list.isEmpty()) {
-            Rest("Apps show up here once they've played something through the EQ.")
+            Rest("Apps show up here once they've played something through the EQ.", inRail = false)
         }
         list.forEach { pkg ->
             key(pkg) {

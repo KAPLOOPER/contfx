@@ -3,23 +3,19 @@ package dev.continuum.fx.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,21 +28,18 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
 import dev.continuum.fx.ui.bench.BenchRow
+import dev.continuum.fx.ui.bench.BenchLinkRow
 import dev.continuum.fx.ui.bench.BenchSection
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
-import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Palette
-import dev.continuum.fx.ui.theme.Txt
 import dev.continuum.fx.update.UpdateState
 
 /** Where Continuum Keyboard stands on this phone. */
@@ -83,7 +76,10 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
     val k = state.keyboard
     Column {
-        Kicker("Keyboard", if (k.installed) "Build ${k.build}" else null)
+        // The kicker is the one exact fact that qualifies everything the line can say: whatever
+        // its standing, the keyboard has no internet access. (The pivot already names the page;
+        // the dock names the app and its build.)
+        Kicker("Offline · no internet access")
         Gap(6.dp)
         HeroLine(
             when {
@@ -92,7 +88,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                 !k.selected -> "On, but not in use."
                 else -> "In use."
             },
-            if (k.selected) p.text else p.sub,
+            p.text,
         )
         Gap(10.dp)
 
@@ -102,8 +98,8 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
         KeyboardGlyph(k)
         Gap(12.dp)
 
-        // News of a newer build, inline like everything else: one 48dp row — a drop, the
-        // fact, the move — never a card.
+        // News of a newer build: the same ink card as the Kit's own, dripping from the title's
+        // drop, so the app speaks about both builds the same way.
         UpdateCard(
             update = k.update,
             title = { if (k.installed) "Keyboard build ${it.build}" else "Continuum Keyboard" },
@@ -130,7 +126,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                 onExpand = { openSetup("install") },
                 trailing = { SetupState(k.installed) },
             ) {
-                PillButton("Install", actions::installKeyboard, icon = R.drawable.ic_import, primary = true, height = 44.dp)
+                PillButton("Install", actions::installKeyboard, icon = R.drawable.ic_import, primary = true)
             }
             BenchRow(
                 "Switch it on",
@@ -140,7 +136,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                 onExpand = { openSetup("enable") },
                 trailing = { SetupState(k.enabled) },
             ) {
-                PillButton("Open keyboard list", actions::enableKeyboard, height = 44.dp)
+                PillButton("Open keyboard list", actions::enableKeyboard, icon = R.drawable.ic_keyboard)
             }
             BenchRow(
                 "Make it your keyboard",
@@ -150,29 +146,27 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
                 onExpand = { openSetup("choose") },
                 trailing = { SetupState(k.selected) },
             ) {
-                PillButton("Choose keyboard", actions::chooseKeyboard, height = 44.dp)
+                PillButton("Choose keyboard", actions::chooseKeyboard, icon = R.drawable.ic_keyboard)
             }
         }
 
         if (k.installed) {
             BenchSection(if (k.selected) 1 else 2, "Settings")
+            // The keyboard's settings, group by group in their own order, each caption saying
+            // what's in it. Each goes to a page of its own, so each ends in an arrow.
             val pages = listOf(
-                Triple("look", "Look", "Ink or tint, and the keys' height"),
-                Triple("typing", "Typing", "Corrections, suggestions, the number row"),
+                Triple("look", "Look", "Caps or Runner, ink or tint, the keys' height"),
+                Triple("typing", "Typing", "Corrections, capitals, sound and vibration"),
                 Triple("swipe", "Swiping", "Trace a word, and swipe to delete"),
                 Triple("clipboard", "Clipboard", "What you copied, kept and pinned"),
+                Triple("passwords", "Passwords", "Logins and sign-in codes in the strip"),
                 Triple("words", "Learned words", "What it picked up from you"),
                 Triple("about", "About", "Build number and licences"),
             )
-            // Each opens a page of the keyboard's settings: rows that lead somewhere end in an arrow.
             Column {
-                pages.forEach { (page, label, caption) -> SettingRow(label, caption) { actions.openKeyboardSettings(page) } }
+                pages.forEach { (page, label, caption) -> BenchLinkRow(label, caption, onOpen = { actions.openKeyboardSettings(page) }) }
             }
         }
-
-        Gap(8.dp)
-        // Everything it does happens on the phone.
-        Note("Offline · no internet access", p.quiet)
     }
 }
 
@@ -226,32 +220,6 @@ private fun DrawScope.drawKeyboardGlyph(p: Palette, k: KeyboardStatus) {
     }
 }
 
-/** A row that leads to one of the keyboard's pages: 56dp of it, an arrow at its end. */
-@Composable
-private fun SettingRow(label: String, caption: String, onOpen: () -> Unit) {
-    val p = LocalPalette.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onOpen,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(16.dp))
-        Spacer(Modifier.size(10.dp))
-        Column(Modifier.weight(1f).padding(end = 10.dp)) {
-            Txt(label, 16.5.sp, p.text, maxLines = 1)
-            Txt(caption, 13.sp, p.sub, maxLines = 1)
-        }
-        Chevron(null, p.quiet, 15.dp)
-    }
-}
-
 @Composable
 internal fun KeyboardDockBar(state: UiState, actions: AppActions) {
     val p = LocalPalette.current
@@ -272,7 +240,8 @@ internal fun KeyboardDockBar(state: UiState, actions: AppActions) {
             )
         }
         DockText(
-            "Continuum Keyboard", statusText(k),
+            // In use, the page's line says so; the dock says which build, and where its words go.
+            "Continuum Keyboard", if (k.selected) "Build ${k.build} · tap for settings" else statusText(k),
             when {
                 !k.installed -> "Install"
                 !k.enabled -> "Open keyboard list"

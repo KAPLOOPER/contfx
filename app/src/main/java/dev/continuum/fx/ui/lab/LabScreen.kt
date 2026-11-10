@@ -3,7 +3,6 @@ package dev.continuum.fx.ui.lab
 import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,9 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -69,6 +68,7 @@ import dev.continuum.fx.ui.AppActions
 import dev.continuum.fx.ui.Fmt
 import dev.continuum.fx.ui.Gap
 import dev.continuum.fx.ui.HeroLine
+import dev.continuum.fx.ui.INK_RAIL
 import dev.continuum.fx.ui.Kicker
 import dev.continuum.fx.ui.MoreSection
 import dev.continuum.fx.ui.bench.BenchRow
@@ -79,6 +79,7 @@ import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
 import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.ActionRow
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -156,6 +157,7 @@ private fun snap(v: Double, min: Double, max: Double, step: Double): Double {
 
 private fun one(v: Double) = Lab.fixed(v, 1)
 private fun dbShort(v: Double) = (if (v > 0.05) "+" else if (v < -0.05) "−" else "") + Lab.fixed(abs(v), 1)
+
 
 @Composable
 internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () -> Unit) {
@@ -268,14 +270,25 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
     var scrubHz by remember { mutableStateOf<Double?>(null) }
 
     Column(Modifier.fillMaxWidth().animateContentSize()) {
-        Row(verticalAlignment = Alignment.Top) {
-            Column(Modifier.weight(1f)) {
-                Kicker("Sound · Lab", "dB re ${if (v.normHz >= 1000) "1 kHz" else "500 Hz"}")
-                Gap(6.dp)
-                HeroLine(dev?.let { d -> tgt?.let { "${d.name} → ${it.name}" } } ?: "Lab", p.text, size = 28.sp)
-            }
+        // A page of its own, laid out as the keyboard's settings are: the title above is the page
+        // it hangs from (the pivot, on Sound); the kicker names this page; the line says what it's
+        // working on; and where a pivot page has its switch, at the line's end, is the way back.
+        // "Done" ends on the margin (a button keeps 18dp of room after it, which the margin
+        // already provides).
+        Kicker("Lab")
+        Gap(6.dp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HeroLine(
+                when {
+                    dev != null && tgt != null -> "${dev.name} → ${tgt.name}"
+                    dev != null -> "No target yet."
+                    lab.targets.isNotEmpty() -> "No measurement yet."
+                    else -> "Nothing in it yet."
+                },
+                p.text, Modifier.weight(1f), size = 28.sp,
+            )
             Spacer(Modifier.width(8.dp))
-            Box(Modifier.padding(top = 10.dp)) { PillButton("Done", onClose, icon = R.drawable.ic_check) }
+            Box(Modifier.offset(x = 18.dp)) { PillButton("Done", onClose, icon = R.drawable.ic_check) }
         }
         Gap(12.dp)
         LabGraph(
@@ -288,9 +301,11 @@ internal fun LabContent(store: ProfileStore, actions: AppActions, onClose: () ->
             modifier = Modifier.bleed(24.dp),
             inset = 24.dp,
             height = 300.dp,
+            // How the curves are levelled only means something once there's a curve to level.
+            reference = if (lines.isNotEmpty() && v.view != "bal") "0 dB at ${if (v.normHz >= 1000) "1 kHz" else "500 Hz"}" else null,
         )
         Gap(8.dp)
-        Box(Modifier.padding(start = 26.dp)) { LabLegend(lines, scrubHz, onClear = { scrubHz = null }, notes = notes) }
+        Box(Modifier.padding(start = INK_RAIL)) { LabLegend(lines, scrubHz, onClear = { scrubHz = null }, notes = notes) }
         GraphSettings(lab, v, studioShown, ::series)
 
         LibrarySection(lab, actions, ::series, onOpenStudio = { t ->
@@ -374,16 +389,18 @@ private fun LibrarySection(lab: LabState, actions: AppActions, series: (String) 
     fun toggle(id: String, on: Boolean) {
         if (!LabStore.show(id, on)) actions.say("Six curves are showing. Hide one to show another.")
     }
-    BenchSection(1, "Library", trail = "${v.visible.size} of ${LabStore.SLOTS} shown")
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    // How many of the graph's slots are showing: said once there's something in the library to show.
+    val empty = lab.measurements.isEmpty() && lab.targets.isEmpty()
+    BenchSection(1, "Library", trail = if (empty) null else "${v.visible.size} of ${LabStore.SLOTS} shown")
+    ActionRow(Modifier.padding(start = INK_RAIL)) {
         PillButton("Import files", actions::labImport, icon = R.drawable.ic_import)
         PillButton("Paste", actions::labPaste, icon = R.drawable.ic_paste)
     }
     if (lab.pending.isNotEmpty() || lab.problems.isNotEmpty()) PendingBlock(lab.pending, lab.problems, actions)
     if (lab.measurements.isEmpty() && lab.targets.isEmpty() && lab.pending.isEmpty()) {
         Txt(
-            "Nothing here yet. Bring in your measurements and targets: REW exports, squig.link .txt or AutoEq .csv files. Ones whose names end in L and R pair up into one measurement.",
-            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp, bottom = 8.dp),
+            "Bring in your measurements and targets: REW exports, squig.link .txt or AutoEq .csv files. Ones whose names end in L and R pair up into one measurement.",
+            14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 4.dp, bottom = 8.dp),
         )
     }
     var openRow by rememberSaveable { mutableStateOf<String?>(null) }
@@ -399,7 +416,7 @@ private fun LibrarySection(lab: LabState, actions: AppActions, series: (String) 
             switchDescription = "Show ${m.name} on the graph",
         ) {
             if (m.note.isNotEmpty()) Txt(m.note, 13.sp, p.sub)
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
+            ActionRow {
                 PillButton("Fit this", {
                     LabStore.updateView { it.copy(device = m.key) }
                     LabStore.show(m.key, true)
@@ -420,9 +437,9 @@ private fun LibrarySection(lab: LabState, actions: AppActions, series: (String) 
             switchDescription = "Show ${t.name} on the graph",
         ) {
             if (t.note.isNotEmpty()) Txt(t.note, 13.sp, p.sub)
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
+            ActionRow {
                 PillButton("Fit to this", { LabStore.updateView { it.copy(target = t.key) } }, icon = R.drawable.ic_tune)
-                PillButton(if (t.recipe != null) "Open in Studio" else "Shape in Studio", { onOpenStudio(t) })
+                PillButton(if (t.recipe != null) "Open in Studio" else "Shape in Studio", { onOpenStudio(t) }, icon = R.drawable.ic_tune)
                 PillButton("Share", { actions.labShare(t.name, Lab.targetTxt(t.v)) }, icon = R.drawable.ic_share)
                 ArmedButton("Delete") { LabStore.delete(t.key) }
             }
@@ -440,7 +457,7 @@ private fun rigName(rig: String) = when (rig) {
 @Composable
 private fun PendingBlock(pending: List<PendingImport>, problems: List<String>, actions: AppActions) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(start = 26.dp, top = 6.dp, bottom = 10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = INK_RAIL, top = 6.dp, bottom = 10.dp)) {
         for (item in pending) {
             NameField(item.name, onDone = { n -> LabStore.updatePending(item.key) { it.copy(name = n) } })
             Gap(4.dp)
@@ -454,7 +471,7 @@ private fun PendingBlock(pending: List<PendingImport>, problems: List<String>, a
                 }
             }
             Txt("${item.channels.joinToString(" + ") { it.label }} · ${item.span} · ${item.files.joinToString()}", 13.sp, p.sub)
-            PillButton("Leave out", { LabStore.dropPending(item.key) }, height = 38.dp)
+            PillButton("Leave out", { LabStore.dropPending(item.key) }, icon = R.drawable.ic_close)
             Gap(10.dp)
         }
         if (problems.isNotEmpty()) {
@@ -466,9 +483,9 @@ private fun PendingBlock(pending: List<PendingImport>, problems: List<String>, a
                 PillButton("Add to the library", {
                     val n = LabStore.commitPending()
                     actions.say(if (n == 1) "Added." else "Added $n.")
-                }, icon = R.drawable.ic_check, primary = true)
+                }, icon = R.drawable.ic_plus, primary = true)
             }
-            PillButton(if (pending.isEmpty()) "Dismiss" else "Cancel", { LabStore.dropPending(null) })
+            PillButton(if (pending.isEmpty()) "Dismiss" else "Cancel", { LabStore.dropPending(null) }, icon = R.drawable.ic_close)
         }
     }
 }
@@ -558,7 +575,8 @@ private fun FitSection(
         else -> null
     })
     if (dev == null) {
-        Txt("Bring in a measurement first: a fit starts from your earphones as they measure.", 14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp))
+        // The same air under it as the Library's empty note, so the three empty sections step evenly.
+        Txt("Bring in a measurement first: a fit starts from your earphones as they measure.", 14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 4.dp, bottom = 8.dp))
         return
     }
     var devOpen by rememberSaveable { mutableStateOf(false) }
@@ -580,7 +598,7 @@ private fun FitSection(
         if (lab.targets.isNotEmpty()) ChoiceLine("Studio target", "As Target Studio has it now", tgt?.id == "studio") { chooseT("studio") }
     }
     Gap(6.dp)
-    Column(Modifier.padding(start = 26.dp)) {
+    Column(Modifier.padding(start = INK_RAIL)) {
         LabSlider("Most filters", v.fit.maxFilters.toDouble(), 3.0, 12.0, 1.0, "${v.fit.maxFilters}") { n -> set { it.copy(maxFilters = n.roundToInt()) } }
         LabSlider("Largest boost", v.fit.maxBoost, 0.0, 12.0, 0.5, Fmt.db(v.fit.maxBoost)) { b -> set { it.copy(maxBoost = b) } }
     }
@@ -620,7 +638,7 @@ private fun FitSection(
         warns += "Left and right differ by up to ${one(lr.before.max)} dB (the $side side is quieter around ${LabIds.hz(lr.before.hz)}). That's more than units usually vary: check the quieter side's nozzle for wax or debris and measure again before leaning on EQ for it."
     }
     if (warns.isNotEmpty()) {
-        Column(Modifier.padding(start = 26.dp, top = 8.dp)) {
+        Column(Modifier.padding(start = INK_RAIL, top = 8.dp)) {
             for (w in warns) {
                 Row(Modifier.padding(vertical = 4.dp)) {
                     Note("check", p.danger, Modifier.padding(top = 3.dp, end = 10.dp))
@@ -636,7 +654,7 @@ private fun FitSection(
                 lab.targets.isEmpty() -> "Bring in a target to fit to: your own, as a REW, squig.link or AutoEq file."
                 else -> "Choose a target to fit to."
             },
-            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 10.dp),
+            14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 10.dp),
         )
         return
     }
@@ -654,25 +672,25 @@ private fun FitSection(
     }
     BenchValueRow("Preamp", Fmt.db(fit.preamp))
     Gap(4.dp)
-    Note(if (run.working) "fitting…" else "${run.ms} ms", p.quiet, Modifier.padding(start = 26.dp))
+    Note(if (run.working) "fitting…" else "fitted in ${run.ms} ms", p.quiet, Modifier.padding(start = INK_RAIL))
     Gap(10.dp)
     ResidualGraph(m.devBefore, m.devAfter, Modifier.bleed(24.dp), inset = 24.dp)
-    Txt("The error from the target: grey before, ink after. Shaded: within 1 dB.", 13.sp, p.sub, modifier = Modifier.padding(start = 26.dp))
+    Txt("The error from the target: grey before, ink after. Shaded: within 1 dB.", 13.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL))
     Gap(10.dp)
     FilterTable(m.filters, fit.chans)
     Gap(8.dp)
     val name = "${run.devName.ifEmpty { dev.name }} → ${run.tgtName.ifEmpty { tgt?.name ?: "target" }}"
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    ActionRow(Modifier.padding(start = INK_RAIL)) {
         PillButton("Use as an EQ", {
             store.add(profileOf(name, m.filters, fit.preamp, fit.chans))
             store.setEqEnabled(true)
             actions.say("$name is your EQ now." + if (fit.chans != null) " Left and right are matched too." else "")
-        }, icon = R.drawable.ic_check, primary = true)
+        }, icon = R.drawable.ic_tune, primary = true)
         PillButton("Copy", {
             actions.labCopy(fit.apoText(), if (fit.chans != null) "Copied, with left and right sections, for EqualizerAPO or Peace." else "Copied for EqualizerAPO or Peace.")
         }, icon = R.drawable.ic_copy)
         PillButton("Share", { actions.labShare(name, fit.apoText()) }, icon = R.drawable.ic_share)
-        PillButton("Save .txt", { actions.labSave("$name PEQ.txt", fit.apoText()) })
+        PillButton("Save .txt", { actions.labSave("$name PEQ.txt", fit.apoText()) }, icon = R.drawable.ic_import)
         PillButton("GraphicEQ", {
             actions.labCopy(
                 Lab.graphicEqText(m.eq, m.preamp),
@@ -687,7 +705,7 @@ private fun FitSection(
                 ),
             )
             actions.say("Kept in the Lab.")
-        })
+        }, icon = R.drawable.ic_plus)
     }
     if (lab.eqs.isNotEmpty()) {
         var keptOpen by rememberSaveable { mutableStateOf(false) }
@@ -695,17 +713,17 @@ private fun FitSection(
             for (e in lab.eqs.sortedByDescending { it.createdAt }) {
                 Txt(e.name, 16.sp, p.text, maxLines = 2)
                 Txt("${e.filters.size} filters${e.channels?.let { " + sides" } ?: ""} · preamp ${Fmt.db(e.preamp)} · error ${one(e.errBefore)} → ${Lab.fixed(e.errAfter, 2)} dB", 13.sp, p.sub)
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                ActionRow {
                     PillButton("Use as an EQ", {
                         store.add(profileOf(e.name, e.filters, e.preamp, e.channels))
                         store.setEqEnabled(true)
                         actions.say("${e.name} is your EQ now.")
-                    }, icon = R.drawable.ic_check)
+                    }, icon = R.drawable.ic_tune)
                     PillButton("Copy", { actions.labCopy(e.apoText(), "Copied for EqualizerAPO or Peace.") }, icon = R.drawable.ic_copy)
                     PillButton("Fit again", {
                         LabStore.updateView { it.copy(fit = e.settings, device = e.device.ifEmpty { it.device }, target = e.target.ifEmpty { it.target }) }
                         keptOpen = false
-                    })
+                    }, icon = R.drawable.ic_refresh)
                     ArmedButton("Delete") { LabStore.delete("e:${e.id}") }
                 }
                 Gap(8.dp)
@@ -737,7 +755,7 @@ private val HOW = listOf(
 @Composable
 private fun FilterTable(filters: List<LabFilter>, chans: List<ChannelFix>?) {
     val p = LocalPalette.current
-    Column(Modifier.fillMaxWidth().padding(start = 26.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = INK_RAIL)) {
         filters.forEachIndexed { i, f -> FilterRow(i + 1, f) }
         var n = filters.size
         chans?.forEach { c ->
@@ -756,7 +774,7 @@ private fun FilterTable(filters: List<LabFilter>, chans: List<ChannelFix>?) {
 private fun FilterRow(n: Int, f: LabFilter) {
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().heightIn(min = 30.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(26.dp)) { Note("%02d".format(n), p.quiet) }
+        Box(Modifier.width(INK_RAIL)) { Note("%02d".format(n), p.quiet) }
         Txt(when (f.type) { "LSC" -> "Low shelf"; "HSC" -> "High shelf"; else -> "Peak" }, 14.sp, p.sub, maxLines = 1, modifier = Modifier.weight(1f))
         Txt(Fmt.freq(f.fc), 14.sp, p.text, maxLines = 1, modifier = Modifier.width(78.dp))
         Txt(dbShort(f.gain), 14.sp, p.text, maxLines = 1, modifier = Modifier.width(48.dp))
@@ -843,7 +861,7 @@ private fun StudioSection(
     if (base == null) {
         Txt(
             "Target Studio reshapes one of your targets: the hall, your listening level, your taste. Bring in a target first.",
-            14.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 4.dp),
+            14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 4.dp, bottom = 8.dp),
         )
         return
     }
@@ -864,7 +882,7 @@ private fun StudioSection(
         val (kv, peak) = Lab.keyValues(studioY)
         val (kb, peakB) = Lab.keyValues(Lab.norm(base.v, 500.0))
         fun diff(a: Double, b: Double) = (a - b).let { d -> if (abs(d) >= 0.05) " (${dbShort(d)})" else "" }
-        FlowRow(Modifier.fillMaxWidth().padding(start = 26.dp, top = 8.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(Modifier.fillMaxWidth().padding(start = INK_RAIL, top = 8.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             kv.forEachIndexed { k, (hz, db) -> Note("${LabIds.hz(hz)} ${dbShort(db)}${diff(db, kb[k].second)}", p.sub) }
             Note("peak ${dbShort(peak.second)} at ${LabIds.hz(peak.first)}${diff(peak.second, peakB.second)}", p.text)
         }
@@ -878,7 +896,7 @@ private fun StudioSection(
             val x = v.model.get(s.key)
             LabSlider(s.label, x, s.min, s.max, s.step, s.fmt(x)) { n -> LabStore.updateView { it.copy(model = it.model.withValue(s.key, n)) } }
         }
-        PillButton("Reset", { LabStore.updateView { it.copy(model = StudioModel()) } }, height = 38.dp)
+        PillButton("Reset", { LabStore.updateView { it.copy(model = StudioModel()) } }, icon = R.drawable.ic_undo)
     }
     val tasteMoved = v.taste != StudioTaste()
     BenchValueRow("Taste", if (tasteMoved) "changed" else "as it is", expanded = tasteOpen, onExpand = { tasteOpen = !tasteOpen }) {
@@ -886,16 +904,16 @@ private fun StudioSection(
             val x = v.taste.get(s.key)
             LabSlider(s.label, x, s.min, s.max, s.step, s.fmt(x)) { n -> LabStore.updateView { it.copy(taste = it.taste.withValue(s.key, n)) } }
         }
-        PillButton("Reset", { LabStore.updateView { it.copy(taste = StudioTaste()) } }, height = 38.dp)
+        PillButton("Reset", { LabStore.updateView { it.copy(taste = StudioTaste()) } }, icon = R.drawable.ic_undo)
     }
     Gap(8.dp)
-    Column(Modifier.padding(start = 26.dp)) {
+    Column(Modifier.padding(start = INK_RAIL)) {
         Txt("Name", 15.sp, p.sub)
         NameField(v.studioName.ifEmpty { "${base.name} custom" }, onDone = { n -> LabStore.updateView { it.copy(studioName = n) } })
     }
     val y = studioY ?: return
     val name = v.studioName.trim().ifEmpty { "${base.name} custom" }
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+    ActionRow(Modifier.padding(start = INK_RAIL)) {
         PillButton("Keep", {
             val t = LabTarget(
                 LabIds.slug(name), name, base.rig, "Made in Target Studio from ${base.name}", System.currentTimeMillis(),
@@ -904,11 +922,11 @@ private fun StudioSection(
             LabStore.addTarget(t)
             LabStore.show(t.key, true)
             actions.say("Kept \"$name\" with your targets.")
-        }, icon = R.drawable.ic_check, primary = true)
+        }, icon = R.drawable.ic_plus, primary = true)
         PillButton("Fit to it", { LabStore.updateView { it.copy(target = "studio") } }, icon = R.drawable.ic_tune)
         PillButton("Share", { actions.labShare(name, Lab.targetTxt(y)) }, icon = R.drawable.ic_share)
-        PillButton("Save .txt", { actions.labSave("$name.txt", Lab.targetTxt(y)) })
-        PillButton("Save .csv", { actions.labSave("$name.csv", Lab.targetCsv(y)) })
+        PillButton("Save .txt", { actions.labSave("$name.txt", Lab.targetTxt(y)) }, icon = R.drawable.ic_import)
+        PillButton("Save .csv", { actions.labSave("$name.csv", Lab.targetCsv(y)) }, icon = R.drawable.ic_import)
         PillButton("Copy", { actions.labCopy(Lab.targetTxt(y), "Target copied as tab-separated text.") }, icon = R.drawable.ic_copy)
     }
 }

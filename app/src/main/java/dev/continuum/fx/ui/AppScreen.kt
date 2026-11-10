@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,7 +14,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -55,6 +53,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -101,9 +101,11 @@ import dev.continuum.fx.setup.Privileges
 import dev.continuum.fx.setup.ShizukuState
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
+import dev.continuum.fx.ui.components.Reveal
 import dev.continuum.fx.ui.components.InkSection
 import dev.continuum.fx.ui.components.rememberLiveLevels
 import dev.continuum.fx.ui.theme.Note
+import dev.continuum.fx.ui.bench.BenchSection
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -116,6 +118,7 @@ import dev.continuum.fx.ui.components.EqGraph
 import dev.continuum.fx.ui.components.IconBubble
 import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.InkSwitch
+import dev.continuum.fx.ui.components.ActionRow
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.PowerButton
 import dev.continuum.fx.ui.components.Surface
@@ -222,7 +225,8 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     val pivot = remember { PivotState(state.section.ordinal, sections.size) }
     val scope = rememberCoroutineScope()
     // Each page keeps its own place, as pivot pages do.
-    val scrolls = remember { sections.associateWith { ScrollState(0) } }
+    val scrolls = sections.associateWith { section -> key(section) { rememberScrollState() } }
+    val pageState = rememberSaveableStateHolder()
 
     // The page on screen, always current: the swipe handler is made once and must not hold on
     // to the page that was open when it was.
@@ -233,6 +237,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     // shortest way round. Should they ever disagree for longer than a page change takes, the
     // page on screen wins.
     val lastSection = remember { arrayOf(state.section) }
+    val drag = remember { PageDrag() }
     LaunchedEffect(state.section, pivot.contentSlot) {
         val opened = state.section != lastSection[0]
         lastSection[0] = state.section
@@ -242,18 +247,32 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
             if (!opened) delay(250)
             pivot.contentSlot = pivot.nearest(state.section.ordinal, pivot.contentSlot)
         }
-        // Carries on with whatever speed a fling left it.
-        pivot.slot.animateTo(pivot.contentSlot.toFloat(), Motion.flow())
+        // Carries on with whatever speed a fling left it. Not under a finger: a page changed
+        // halfway through a drag stays where the finger has it.
+        if (!drag.on) pivot.slot.animateTo(pivot.contentSlot.toFloat(), Motion.flow())
     }
-    fun go(slot: Int, velocity: Float = 0f) {
+    // The page on screen is the one the titles are nearest: it changes as they pass halfway, by a
+    // tap, a swipe or a fling alike. The page you're leaving slides and fades to nothing by then,
+    // and the new one comes in from the other side out of nothing, so neither pops.
+    fun show(slot: Int) {
+        if (slot == pivot.contentSlot) return
         val section = sections[pivot.indexOf(slot)]
         pivot.contentSlot = slot
         if (section != shown) actions.setSection(section)
-        scope.launch { pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) }
     }
-
     // The ink the rest of the app's ink comes from: the title's drop, and the dock.
     val seeds = remember { Seeds() }
+
+    // Compose a page only when it becomes the shown page. Composing it ahead also starts
+    // its effects (Volume's watchers, for example), even when it is never placed.
+    fun go(slot: Int, velocity: Float = 0f) {
+        scope.launch {
+            pivot.slot.animateTo(slot.toFloat(), Motion.flow(), initialVelocity = velocity) {
+                if (abs(value - slot) <= 0.5f) show(slot)
+            }
+            show(slot)
+        }
+    }
     // A new page is shown: whatever comes with it is simply there, not dripped in.
     remember(state.section) {
         seeds.pageAt = System.currentTimeMillis()
@@ -294,7 +313,9 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 pivot = pivot,
                 onSelect = { slot ->
                     if (slot == pivot.contentSlot) {
-                        // The current title takes its page back to the top.
+                        // Choosing the shown page also cancels a departure before halfway.
+                        // Its title still takes the reading position back to the top.
+                        go(slot)
                         scope.launch { scrolls.getValue(shown).animateScrollTo(0) }
                     } else {
                         go(slot)
@@ -314,12 +335,15 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 tracker.resetTracking()
+                                drag.on = true
+                                drag.from = pivot.slot.value.roundToInt()
                                 scope.launch { pivot.slot.stop() }
                             },
                             onDragEnd = {
+                                drag.on = false
                                 val width = size.width.toFloat().coerceAtLeast(1f)
                                 val v = tracker.calculateVelocity().x
-                                val from = pivot.contentSlot
+                                val from = drag.from
                                 val target = when {
                                     v < -FLING -> from + 1
                                     v > FLING -> from - 1
@@ -327,16 +351,23 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                                 }
                                 go(target, -v / width)
                             },
-                            onDragCancel = { go(pivot.contentSlot) },
+                            onDragCancel = {
+                                drag.on = false
+                                go(drag.from)
+                            },
                         ) { change, dx ->
                             tracker.addPosition(change.uptimeMillis, change.position)
                             change.consume()
                             val width = size.width.toFloat().coerceAtLeast(1f)
-                            val from = pivot.contentSlot.toFloat()
+                            // One page either side of where the drag began.
+                            val from = drag.from.toFloat()
                             val before = pivot.slot.value
                             val next = (before - dx / width).coerceIn(from - 1f, from + 1f)
                             // Halfway across, the page changes: felt as a detent.
-                            if (before.roundToInt() != next.roundToInt()) InkFeel.detent(view)
+                            if (before.roundToInt() != next.roundToInt()) {
+                                InkFeel.detent(view)
+                                show(next.roundToInt())
+                            }
                             scope.launch { pivot.slot.snapTo(next) }
                         }
                     },
@@ -353,7 +384,8 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                             else pivot.nearest(state.section.ordinal, pivot.slot.value.roundToInt())
                             val shift = own - pivot.slot.value
                             translationX = shift * size.width * 0.55f
-                            alpha = (1f - abs(shift) * 1.3f).coerceIn(0f, 1f)
+                            // Gone by halfway, where the next page takes over from nothing.
+                            alpha = (1f - abs(shift) * 2f).coerceIn(0f, 1f)
                         }
                         .onGloballyPositioned { if (state.section == Section.Effects) effectSpots.viewTop = it.positionInRoot().y }
                         .verticalScroll(scrolls.getValue(state.section))
@@ -373,36 +405,33 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         onAllow = actions::allowInstalls,
                         onDismiss = actions::dismissUpdate,
                     )
-                    when (state.section) {
-                        Section.Sound -> Column {
-                            // A player's Equalizer button sent you here: an ink card from the title's drop.
-                            val from = rememberLastOf(state.openedFrom)
-                            Seeded(visible = state.openedFrom != null, corner = 24.dp, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)) {
-                                if (from != null) OpenedFromRow(from, state.library, actions)
-                            }
-                            // The page only speaks up when something needs you; the strip says the rest.
-                            if (state.error != null) {
-                                StatusLine(state)
-                                Gap(18.dp)
-                            }
-                            SoundContent(state, store, actions, scrolls.getValue(Section.Sound))
-                        }
-                        Section.Effects -> EffectsContent(state, actions, scrolls.getValue(Section.Effects))
-                        Section.Island -> IslandContent(state, actions)
-                        Section.Volume -> VolumeContent(state, actions)
-                        Section.Keyboard -> KeyboardContent(state, actions)
+                    pageState.SaveableStateProvider(state.section.name) {
+                        PageBody(state.section, state, store, actions, scrolls)
                     }
-                    Gap(30.dp)
+                    Gap(8.dp)
                     UpdateFooter(state, actions)
                 }
                 // The page dissolves into the ground under the titles and above the dock, so a
-                // row is never sliced by either.
+                // row is never sliced by either. Under the titles it's a long, soft dissolve (a
+                // hero read down past the fold fades out rather than being cut), and only once the
+                // page has moved, so what rests at the top is never washed. It's at full strength
+                // by the time the first line (10dp down) reaches the edge, so a page too short to
+                // fold the pivot still lets its kicker go by dissolving, never half cut.
+                val reading = scrolls.getValue(state.section)
                 Box(
                     Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .height(14.dp)
-                        .background(Brush.verticalGradient(listOf(p.ground, p.ground.copy(alpha = 0f)))),
+                        .height(32.dp)
+                        .graphicsLayer { alpha = (reading.value / 10.dp.toPx()).coerceIn(0f, 1f) }
+                        .background(
+                            Brush.verticalGradient(
+                                0f to p.ground,
+                                0.35f to p.ground.copy(alpha = 0.85f),
+                                0.7f to p.ground.copy(alpha = 0.3f),
+                                1f to p.ground.copy(alpha = 0f),
+                            ),
+                        ),
                 )
                 Box(
                     Modifier
@@ -416,39 +445,52 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 if (dim > 0.01f) Box(Modifier.matchParentSize().background(p.ground.copy(alpha = dim)))
             }
             // The dock's place: it sits here, under the page, never on it.
-            Spacer(Modifier.navigationBarsPadding().height(DOCK_H + DOCK_GAP))
+            Spacer(Modifier.navigationBarsPadding().height(dockHeight() + DOCK_GAP))
         }
 
         SeedOverlay(seeds)
         DockMessage(state.message, dockRect, actions::dismissMessage)
-        Dock(state, actions, Modifier.align(Alignment.BottomCenter), onStepEffects = stepEffects) { dockRect.value = it }
+        Dock(state, actions, Modifier.align(Alignment.BottomStart), onStepEffects = stepEffects) { dockRect.value = it }
     }
     }
 }
 
-/** The way into the Lab: its name, what's in it, and a chevron pointing on to its page. */
+/** What a pivot page holds, under the Kit's update card and above its colophon. */
+@Composable
+private fun PageBody(section: Section, state: UiState, store: ProfileStore, actions: AppActions, scrolls: Map<Section, ScrollState>) {
+    when (section) {
+        Section.Sound -> Column {
+            // A player's Equalizer button sent you here: an ink card from the title's drop.
+            val from = rememberLastOf(state.openedFrom)
+            Seeded(visible = state.openedFrom != null, corner = 24.dp, edge = true, modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)) {
+                if (from != null) OpenedFromRow(from, state.library, actions)
+            }
+            // The page only speaks up when something needs you; the strip says the rest.
+            if (state.error != null) {
+                StatusLine(state)
+                Gap(18.dp)
+            }
+            SoundContent(state, store, actions, scrolls.getValue(Section.Sound))
+        }
+        Section.Effects -> EffectsContent(state, actions, scrolls.getValue(Section.Effects))
+        Section.Island -> IslandContent(state, actions)
+        Section.Volume -> VolumeContent(state, actions)
+        Section.Keyboard -> KeyboardContent(state, actions)
+    }
+}
+
+/** The way into the Lab: its name, what's in it, and an arrow pointing on to its page. */
 @Composable
 private fun LabRow(onOpen: () -> Unit) {
-    val p = LocalPalette.current
     val lab by dev.continuum.fx.lab.LabStore.state.collectAsState()
-    val source = remember { MutableInteractionSource() }
     val n = lab.measurements.size
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 60.dp)
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = "Open the Lab", onClick = onOpen),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(Modifier.width(26.dp))
-        Column(Modifier.weight(1f)) {
-            Txt("Lab", 16.5.sp, p.text, maxLines = 1)
-            Txt("Fit an EQ from a measurement to a target, or make a target of your own.", 13.5.sp, p.sub, maxLines = 2)
-        }
-        ValueNote(if (n == 0) "new" else if (n == 1) "1 measurement" else "$n measurements")
-        Spacer(Modifier.width(8.dp))
-        Chevron(null, p.quiet, 15.dp)
-    }
+    dev.continuum.fx.ui.bench.BenchLinkRow(
+        "Lab",
+        "Fit an EQ from a measurement to a target, or make a target of your own.",
+        onOpen = onOpen,
+        value = if (n == 0) "new" else if (n == 1) "1 measurement" else "$n measurements",
+        onClickLabel = "Open the Lab",
+    )
 }
 
 /**
@@ -468,13 +510,41 @@ private fun SidesNote(profile: dev.continuum.fx.dsp.EqProfile, onRemove: () -> U
         Gap(4.dp)
         Txt("${side("Left", profile.left)}. ${side("Right", profile.right)}.", 15.sp, p.text)
         Txt("On top of the filters above, so a pair that measures differently meets in the middle.", 13.sp, p.sub)
-        PillButton("Play both sides alike", onRemove, height = 38.dp)
+        PillButton("Play both sides alike", onRemove, icon = R.drawable.ic_undo)
     }
+}
+
+/** A sideways drag of the page: whether a finger has it, and the page it began on. */
+private class PageDrag {
+    var on = false
+    var from = 0
 }
 
 /** The dock's height closed, and the ground left under it. */
 private val DOCK_H = 72.dp
+
 private val DOCK_GAP = 10.dp
+
+/**
+ * How many lines the dock's words may take: one each, until the type is large enough (past 1.4)
+ * that "Volume panel off" or "Tap to set up · 2 steps" would be cut; then two, and the dock grows
+ * to hold them rather than ending them in "…".
+ */
+@Composable
+internal fun dockLines(): Int = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.4f) 2 else 1
+
+/**
+ * The dock's height closed: 72dp, or as tall as its words need at large type, with the same air
+ * above and below them that its round ends need at any size (more than a line's worth, so the
+ * first word never sits against the curve).
+ */
+@Composable
+private fun dockHeight(): Dp {
+    val lines = dockLines()
+    return with(androidx.compose.ui.platform.LocalDensity.current) {
+        maxOf(DOCK_H, ((18.sp * 1.38f).toDp() + (14.sp * 1.38f).toDp()) * lines + 3.dp + if (lines > 1) 44.dp else 24.dp)
+    }
+}
 
 @Composable
 private fun SoundContent(state: UiState, store: ProfileStore, actions: AppActions, scroll: ScrollState) {
@@ -489,7 +559,8 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         lab = open
         scope.launch { scroll.scrollTo(0) }
     }
-    BackHandler(enabled = lab) { openLab(false) }
+    // The dock owns Back while its sheet is open; the Lab underneath stays where it was.
+    BackHandler(enabled = lab && !state.setupOpen) { openLab(false) }
     if (lab) {
         dev.continuum.fx.ui.lab.LabContent(store, actions, onClose = { openLab(false) })
         return
@@ -513,7 +584,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
 
         val comparing by EngineStatus.comparing.collectAsState()
         // A flat EQ needs little room; one with filters to shape gets the room to shape them in.
-        val graphH by animateDpAsState(if (eqOn && profile.bands.isNotEmpty()) 236.dp else 172.dp, Motion.flow(), label = "graphHeight")
+        val graphH by animateDpAsState(if (eqOn && profile.bands.isNotEmpty()) 236.dp else 160.dp, Motion.flow(), label = "graphHeight")
         EqGraph(
             profile = profile,
             live = state.running,
@@ -544,25 +615,29 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                 }
             },
         )
-        if (eqOn && profile.bands.isEmpty()) {
-            // A flat graph says what it is, so the empty grid isn't a hole in the page.
-            Txt("Flat · no filters yet", 13.sp, p.sub, modifier = Modifier.padding(start = 26.dp, top = 8.dp))
+        Reveal(eqOn && profile.bands.isEmpty()) {
+            // A flat graph says what it is, so the empty grid isn't a hole in the page. It's the
+            // drawing's own caption, so it hangs from the drawing's edge.
+            Txt("Flat · no filters yet", 14.sp, p.sub, modifier = Modifier.padding(top = 8.dp, bottom = 10.dp))
         }
 
-        if (eqOn) {
-            Gap(14.dp)
+        // The ledger under the instrument, one grammar all the way down: this EQ's own controls,
+        // then the way to make new ones.
+        BenchSection(1, "This EQ")
+        // With the EQ off, this EQ's own controls go (they'd shape nothing), and come back with it.
+        Reveal(eqOn) {
             PreampRow(
                 preampDb = profile.preampDb,
                 suggested = EqResponse.suggestedPreamp(profile),
                 onPreamp = { v -> store.updateActive { it.copy(preampDb = v) } },
                 onAuto = { store.updateActive { it.copy(preampDb = EqResponse.suggestedPreamp(it)) } },
             )
-            Gap(14.dp)
 
             // The filters, folded into one line: the graph is where you shape the sound; this is
             // for exact numbers and filter types.
             dev.continuum.fx.ui.bench.BenchValueRow(
                 label = "Filters",
+                caption = "Exact frequency, gain and shape of each one",
                 value = if (profile.bands.isEmpty()) "None" else "${profile.bands.size}",
                 expanded = filtersOpen,
                 onExpand = { filtersOpen = !filtersOpen },
@@ -573,6 +648,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
                         action = "Import an EQ",
                         icon = R.drawable.ic_import,
                         onAction = actions::importFile,
+                        inRail = false,
                     )
                 }
                 profile.bands.forEachIndexed { i, band ->
@@ -606,8 +682,11 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         val output by OutputWatcher.current.collectAsState()
         val linkedHere = output?.let { library.devices[it.key] == profile.id } == true
         val appCount = library.appsFor(profile.id).size
+        // A device's own name only while it's short enough to be a value; a long one (a headphone
+        // named like a sentence) is "here", what you're listening on, and its whole name is in the
+        // row that opens below.
         val parts = listOfNotNull(
-            if (linkedHere) output?.name else null,
+            if (linkedHere) output?.name?.let { if (it.length <= 20) it else "Here" } else null,
             when (appCount) {
                 0 -> null
                 1 -> "1 app"
@@ -616,6 +695,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
         )
         dev.continuum.fx.ui.bench.BenchValueRow(
             label = "Comes on by itself",
+            caption = "Headphones and apps that bring this EQ in",
             value = if (parts.isEmpty()) "Not yet" else parts.joinToString(" · "),
             expanded = linksOpen,
             onExpand = { linksOpen = !linksOpen },
@@ -626,21 +706,22 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             AppsList(library, actions)
         }
 
-        // The Lab: a page of its own, for making EQs from measurements and targets of your own.
-        LabRow(onOpen = { openLab(true) })
-
-        if (eqOn) {
+        Reveal(eqOn) {
             // What's about this EQ itself, and rarely needed.
-            MoreSection(moreOpen, { moreOpen = !moreOpen }, label = "More for ${profile.name}") {
+            MoreSection(moreOpen, { moreOpen = !moreOpen }, label = moreFor(profile.name)) {
                 PolarityRow(profile.polarity) { pol -> store.updateActive { it.copy(polarity = pol) } }
                 Gap(6.dp)
-                Row {
+                ActionRow {
                     PillButton("Share", actions::shareActive, icon = R.drawable.ic_share)
                     PillButton("Delete", { store.delete(profile.id) }, icon = R.drawable.ic_trash)
                 }
                 Gap(8.dp)
             }
         }
+
+        // The Lab: a page of its own, for making EQs from measurements and targets of your own.
+        BenchSection(2, "New EQs")
+        LabRow(onOpen = { openLab(true) })
 
         if (state.blocked.isNotEmpty()) {
             Gap(18.dp)
@@ -649,6 +730,7 @@ private fun SoundContent(state: UiState, store: ProfileStore, actions: AppAction
             Txt(
                 "$names ${if (one) "blocks" else "block"} audio capture, so ${if (one) "it plays" else "they play"} without effects.",
                 14.sp, p.sub,
+                modifier = Modifier.padding(start = INK_RAIL),
             )
         }
     }
@@ -682,7 +764,8 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
     }
     val latestChoose by rememberUpdatedState<(Int) -> Unit>({ i -> choose(i) })
     val latestIndex by rememberUpdatedState(index)
-    Kicker(if (eqOn) "Listening through" else "No EQ", if (eqOn) "$index of ${profiles.size}" else "off")
+    // Off is the first of the list, so the hero says it; the kicker only says where in the list.
+    Kicker("Listening through", if (eqOn) "$index of ${profiles.size}" else null)
     Gap(6.dp)
     val source = remember { MutableInteractionSource() }
     InkSection(listOpen, header = {
@@ -692,6 +775,7 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
                 .clickable(interactionSource = source, indication = null, role = Role.Button, onClickLabel = if (listOpen) "Close the list" else "Show every EQ") {
                     listOpen = !listOpen
                 }
+                .opens(listOpen) { listOpen = !listOpen }
                 .pointerInput(Unit) {
                     var dx = 0f
                     detectHorizontalDragGestures(
@@ -717,12 +801,12 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
                 },
                 label = "eqName",
             ) { name ->
-                HeroLine(name, if (name == "Off" && !eqOn) p.sub else p.text, size = 30.sp)
+                HeroLine(name, p.text, size = 30.sp)
             }
             Box(Modifier.padding(start = 8.dp, top = 10.dp)) { Chevron(listOpen, p.quiet, 18.dp) }
         }
     }) {
-        Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {
+        Column(Modifier.padding(start = INK_RAIL, top = 6.dp, bottom = 6.dp)) {
             EqListRow("Off", null, chosen = !eqOn) {
                 latestChoose(0)
                 listOpen = false
@@ -736,7 +820,7 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
                 }
             }
             Gap(6.dp)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            ActionRow {
                 PillButton("Import", { listOpen = false; actions.importFile() }, icon = R.drawable.ic_import)
                 PillButton("Paste", { listOpen = false; actions.pasteFromClipboard() }, icon = R.drawable.ic_paste)
                 PillButton("Lab", { listOpen = false; onLab() }, icon = R.drawable.ic_tune)
@@ -744,6 +828,13 @@ private fun EqHero(library: Library, store: ProfileStore, actions: AppActions, o
         }
     }
 }
+
+/**
+ * "More for Flat": the EQ's name where it's short enough to sit on the line with its chevron; a
+ * long one (an imported "Sennheiser HD 800 S, Harman over-ear 2018…") is said as "this EQ"
+ * instead, since the rule above already names the group and the hero names the EQ.
+ */
+private fun moreFor(name: String): String = if (name.length <= 22) "More for $name" else "More for this EQ"
 
 /** One EQ in the list: a small drawing of its curve, its name, and "now" on the one playing. */
 @Composable
@@ -784,33 +875,35 @@ private fun EqListRow(name: String, profile: dev.continuum.fx.dsp.EqProfile?, ch
             )
         }
         Spacer(Modifier.width(16.dp))
-        Txt(name, 17.sp, color, bold = chosen, maxLines = 1, modifier = Modifier.weight(1f))
+        // Up to three lines: two EQs for the same headphones often differ only at the end of
+        // their names ("…Harman 2018" / "…Harman 2019"), and this is where you choose between them.
+        Txt(name, 17.sp, color, bold = chosen, maxLines = 3, modifier = Modifier.weight(1f))
         if (chosen) Note("Now", p.sub, Modifier.padding(start = 12.dp))
     }
 }
 
-/** The preamp: its value, and "auto" beside its name while it's where the EQ wants it. */
+/**
+ * The preamp, a field like the volume page's: its name at the rail and, at the far end, its value
+ * with the one thing to know about it said on the same baseline: "auto" while it's where the EQ
+ * wants it, "by hand" once it's been moved. Moved, the way back is a button under the slider (a
+ * real 48dp target, below the finger that's dragging, so nothing shifts under it).
+ */
 @Composable
 private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) -> Unit, onAuto: () -> Unit) {
     val p = LocalPalette.current
     val span = EqLimits.MAX_PREAMP - EqLimits.MIN_PREAMP
     val auto = kotlin.math.abs(preampDb - suggested) < 0.05
-    val source = remember { MutableInteractionSource() }
     var held by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().animateContentSize(Motion.flow())) {
-        Row(Modifier.fillMaxWidth().padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt("Preamp", 16.5.sp, p.text, maxLines = 1)
-            // Set by hand, the word offers to hand it back.
-            dev.continuum.fx.ui.theme.Note(
-                if (auto) "auto" else "back to auto",
-                if (auto) p.quiet else p.sub,
-                Modifier
-                    .padding(start = 10.dp)
-                    .clickable(interactionSource = source, indication = null, enabled = !auto, onClick = onAuto)
-                    .padding(vertical = 10.dp),
-            )
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}.animateContentSize(Motion.flow())) {
+        Row(Modifier.fillMaxWidth().padding(start = INK_RAIL, top = 6.dp)) {
+            Txt("Preamp", 17.sp, p.text, maxLines = 1, modifier = Modifier.alignByBaseline())
             Spacer(Modifier.weight(1f))
-            Txt(Fmt.db(preampDb), 17.sp, p.text, maxLines = 1)
+            dev.continuum.fx.ui.theme.Note(
+                if (auto) "auto" else "by hand",
+                if (auto) p.quiet else p.sub,
+                Modifier.alignByBaseline().padding(horizontal = 12.dp),
+            )
+            Txt(Fmt.db(preampDb), 17.sp, p.text, maxLines = 1, modifier = Modifier.alignByBaseline())
         }
         InkSlider(
             value = ((preampDb - EqLimits.MIN_PREAMP) / span).toFloat(),
@@ -823,7 +916,10 @@ private fun PreampRow(preampDb: Double, suggested: Double, onPreamp: (Double) ->
                 if (preampDb > suggested + 0.05) "Louder, but the EQ's boosts may clip: auto keeps them clean."
                 else "Everything quieter together, leaving room for the EQ's boosts.",
                 14.sp, p.text,
+                modifier = Modifier.padding(start = INK_RAIL),
             )
+        } else if (!auto) {
+            PillButton("Back to auto", onAuto, icon = R.drawable.ic_undo, modifier = Modifier.padding(start = INK_RAIL))
         }
     }
 }
@@ -851,14 +947,17 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
             colorFilter = ColorFilter.tint(p.text),
         )
         Column(Modifier.weight(1f).padding(start = 16.dp, end = 8.dp)) {
-            Txt(device.name, 17.sp, p.text, maxLines = 1)
+            // Names that aren't ours (a headphone's, an imported EQ's) can be long: they wrap
+            // whole (a fifty-letter headphone name is three lines here, four at 1.3) rather than
+            // cutting off, with a row's 3dp before what happens here.
+            Txt(device.name, 17.sp, p.text, maxLines = 4)
             Txt(
                 when {
                     linked -> "${profile.name} comes on by itself here"
                     other != null -> "${other.name} comes on by itself here"
                     else -> "Link this EQ to come on whenever you use it"
                 },
-                14.sp, p.sub, maxLines = 1,
+                14.sp, p.sub, maxLines = 3, modifier = Modifier.padding(top = 3.dp),
             )
         }
         InkSwitch(linked, "Link ${profile.name} to ${device.name}", onClick = { onLink(!linked) })
@@ -870,7 +969,7 @@ private fun OutputRow(device: OutputDevice, library: Library, onLink: (Boolean) 
 private fun ModeRow(actions: AppActions) {
     val p = LocalPalette.current
     val mode by EngineSettings.mode.collectAsState()
-    ChoiceRow(Modifier.padding(start = 26.dp), scroll = false, on = Surface.Ink) {
+    ChoiceRow(Modifier.padding(start = INK_RAIL), fill = false, on = Surface.Ink) {
         Chip("Capture", mode == EngineMode.Capture, onClick = { actions.setEngineMode(EngineMode.Capture) }, on = Surface.Ink)
         Chip("Direct", mode == EngineMode.Direct, onClick = { actions.setEngineMode(EngineMode.Direct) }, on = Surface.Ink)
     }
@@ -881,6 +980,7 @@ private fun ModeRow(actions: AppActions) {
             EngineMode.Direct -> "Puts the EQ on each app's own sound: no capture icon, less battery and delay, within a fraction of a decibel."
         },
         15.sp, p.onInkSub,
+        modifier = Modifier.padding(start = INK_RAIL),
     )
 }
 
@@ -929,7 +1029,8 @@ private fun PolarityRow(polarity: Polarity, onPick: (Polarity) -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 64.dp)
-                .clickable(interactionSource = source, indication = null) { open = !open }
+                .clickable(interactionSource = source, indication = null, role = Role.Button) { open = !open }
+                .opens(open) { open = !open }
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -998,7 +1099,8 @@ private fun BandCard(
             Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .clickable(interactionSource = source, indication = null, onClick = onToggle),
+                .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onToggle)
+                .opens(expanded, onToggle),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Txt(band.type.shortLabel, 14.sp, if (band.enabled) p.text else p.sub, bold = true, modifier = Modifier.width(36.dp))
@@ -1024,7 +1126,7 @@ private fun BandCard(
                 SliderField("Frequency", Fmt.freq(band.frequency), Fmt.freqToT(band.frequency), hear = "Moves it along: left for the bass, right for the treble.") { t ->
                     onChange(band.copy(frequency = Fmt.roundFreq(Fmt.tToFreq(t))))
                 }
-                if (band.type.usesGain) {
+                Reveal(band.type.usesGain) {
                     val gSpan = EqLimits.MAX_GAIN - EqLimits.MIN_GAIN
                     SliderField("Gain", Fmt.db(band.gainDb), ((band.gainDb - EqLimits.MIN_GAIN) / gSpan).toFloat(), hear = "Up brings this part of the sound forward; down sets it back.") { t ->
                         onChange(band.copy(gainDb = Fmt.round1(EqLimits.MIN_GAIN + t * gSpan)))
@@ -1034,7 +1136,7 @@ private fun BandCard(
                     onChange(band.copy(q = Fmt.roundQ(Fmt.tToQ(t))))
                 }
                 Gap(8.dp)
-                PillButton("Remove filter", onRemove, icon = R.drawable.ic_trash, on = Surface.Card, height = 40.dp)
+                PillButton("Remove filter", onRemove, icon = R.drawable.ic_trash, on = Surface.Card)
             }
     }
 }
@@ -1047,7 +1149,7 @@ private fun BandCard(
 internal fun SliderField(label: String, valueText: String, value: Float, hear: String? = null, onChange: (Float) -> Unit) {
     val p = LocalPalette.current
     var held by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).animateContentSize(Motion.flow())) {
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}.padding(vertical = 2.dp).animateContentSize(Motion.flow())) {
         Row(Modifier.fillMaxWidth()) {
             Txt(label, 15.sp, p.sub, modifier = Modifier.weight(1f))
             Txt(valueText, 15.sp, p.text)
@@ -1076,15 +1178,20 @@ private fun Dock(
     val p = LocalPalette.current
     val config = LocalConfiguration.current
     val openHeight = (config.screenHeightDp - 120).coerceIn(420, 660).dp
-    val height by animateDpAsState(if (state.setupOpen) openHeight else DOCK_H, Motion.flow(), label = "dockHeight")
+    // Out on Flow, a little past and back; home on a firmer spring, so the bar settles onto its
+    // own height instead of dipping a third of the way under it (Flow from a full sheet overshoots
+    // by ~50dp, which cut "Off / Tap to set up" in half for a fifth of a second).
+    val height by animateDpAsState(if (state.setupOpen) openHeight else dockHeight(), if (state.setupOpen) Motion.flow() else Motion.settle(), label = "dockHeight")
     val side by animateDpAsState(if (state.setupOpen) 8.dp else 12.dp, Motion.flow(), label = "dockSide")
-    // Its full width is the screen's (to a comfortable reading width on large screens).
-    val width = minOf(config.screenWidthDp.dp, CONTENT_MAX + 24.dp) - side * 2
+    // Under the page's column: the screen's width on a phone; on a tablet or an open foldable,
+    // the reading width, hung from the same left edge as the page's words (12dp outside their
+    // margin on each side, as on a phone), rather than centred under a column that isn't.
+    val width = minOf(config.screenWidthDp.dp, CONTENT_MAX + 48.dp) - side * 2
     val shape = RoundedCornerShape(36.dp)
     Box(
         modifier
             .navigationBarsPadding()
-            .padding(bottom = DOCK_GAP)
+            .padding(start = side, bottom = DOCK_GAP)
             .width(width)
             .height(height)
             .onGloballyPositioned { onPlaced(it.boundsInRoot()) }
@@ -1092,7 +1199,16 @@ private fun Dock(
             .clip(shape)
             .background(p.ink),
     ) {
-        Crossfade(targetState = state.setupOpen to state.section, label = "dockContent") { (open, section) ->
+        // The bar's words and the sheet's never show at once: the old ones are gone before the new
+        // ones come (a crossfade left two sets of words on top of each other for a few frames).
+        androidx.compose.animation.AnimatedContent(
+            targetState = state.setupOpen to state.section,
+            transitionSpec = {
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, delayMillis = 80)) togetherWith
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(80)) using null
+            },
+            label = "dockContent",
+        ) { (open, section) ->
             when {
                 open && section == Section.Island -> IslandSetupSheet(state, actions)
                 open && section == Section.Volume -> VolumeSetupSheet(state, actions)
@@ -1162,21 +1278,16 @@ private fun DockBar(state: UiState, actions: AppActions, onStepEffects: (() -> U
             PowerButton(state.running, R.drawable.ic_power, actions::togglePower, waiting = state.running && state.processing.isEmpty())
             val spatialOn by dev.continuum.fx.audio.SpatialStore.state.collectAsState()
             val ready = readyFor(mode, priv)
-            if (onStepEffects != null && (ready || state.running)) {
-                val active = activeEffects(fx, spatialOn.enabled).size
+            val active = activeEffects(fx, spatialOn.enabled).size
+            // On Effects the dock is about the effects once there are some to hear: to compare
+            // them or step through them. With none on, the page's hero already says so, and the
+            // dock goes on saying what it says on Sound: whether anything's being processed.
+            if (onStepEffects != null && (ready || state.running) && active > 0) {
                 EffectsDockText(
-                    title = when {
-                        !fx.enabled -> "Effects off"
-                        active == 0 -> "No effects on"
-                        else -> "$active ${if (active == 1) "effect" else "effects"} active"
-                    },
-                    subtitle = when {
-                        active == 0 -> if (fx.enabled) "Switch one on below" else "The EQ plays on its own"
-                        !state.running -> "Start processing to hear them"
-                        else -> "Hold to compare · tap to find them"
-                    },
-                    canCompare = state.running && active > 0,
-                    onStep = if (active > 0) onStepEffects else null,
+                    title = "$active ${if (active == 1) "effect" else "effects"} active",
+                    subtitle = if (!state.running) "Start processing to hear them" else "Hold to compare · tap to find them",
+                    canCompare = state.running,
+                    onStep = onStepEffects,
                 )
             } else {
                 DockText(if (state.running) "Processing" else "Off", subtitle, "Open setup") { actions.setSetupOpen(true) }
@@ -1203,8 +1314,9 @@ internal fun androidx.compose.foundation.layout.RowScope.DockText(title: String,
         verticalArrangement = Arrangement.Center,
     ) {
         Column(Modifier.squash(source, pill = true)) {
-            Txt(title, 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(subtitle, 14.sp, p.onInkSub, maxLines = 1)
+            Txt(title, 18.sp, p.onInk, bold = true, maxLines = dockLines())
+            // A row's 3dp between name and caption, so a descender never meets the line below.
+            Txt(subtitle, 14.sp, p.onInkSub, maxLines = dockLines(), modifier = Modifier.padding(top = 3.dp))
         }
     }
 }
@@ -1223,6 +1335,9 @@ private fun androidx.compose.foundation.layout.RowScope.EffectsDockText(title: S
     var comparing by remember { mutableStateOf(false) }
     // Nothing to compare any more (stopped, or the last effect off): let go.
     LaunchedEffect(canCompare) { if (!canCompare && comparing) { comparing = false; EngineStatus.comparing.value = false } }
+    // Gone mid-hold (the last effect switched off with another finger, and the dock goes back to
+    // saying what's processing): let go too.
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (comparing) EngineStatus.comparing.value = false } }
     val squeeze by animateFloatAsState(if (comparing) 1f else 0f, Motion.snap(), label = "dockHold")
     Column(
         Modifier
@@ -1263,8 +1378,8 @@ private fun androidx.compose.foundation.layout.RowScope.EffectsDockText(title: S
         verticalArrangement = Arrangement.Center,
     ) {
         Column(Modifier.graphicsLayer { val k = 1f - 0.04f * squeeze; scaleX = k; scaleY = k }) {
-            Txt(if (comparing) "Without them" else title, 18.sp, p.onInk, bold = true, maxLines = 1)
-            Txt(if (comparing) "Let go to hear them again" else subtitle, 14.sp, p.onInkSub, maxLines = 1)
+            Txt(if (comparing) "Without them" else title, 18.sp, p.onInk, bold = true, maxLines = dockLines())
+            Txt(if (comparing) "Let go to hear them again" else subtitle, 14.sp, p.onInkSub, maxLines = dockLines(), modifier = Modifier.padding(top = 3.dp))
         }
     }
 }
@@ -1293,7 +1408,7 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             .padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(if (direct) "Set up the EQ" else "Set up capture", 21.sp, p.onInk, modifier = Modifier.weight(1f))
+            Txt(if (direct) "Set up the EQ" else "Set up capture", 22.sp, p.onInk, bold = true, modifier = Modifier.weight(1f))
             IconBubble(R.drawable.ic_chevron_down, "Close setup", onClick = { actions.setSetupOpen(false) }, on = Surface.Ink)
         }
         Gap(4.dp)
@@ -1313,11 +1428,11 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
             if (direct) "Lets the graph show the music moving. The EQ works without it." else "Lets the app capture the sound other apps play.",
             optional = direct,
         ) {
-            PillButton("Allow", actions::requestRecord, icon = R.drawable.ic_check, primary = !direct, on = Surface.Ink)
+            PillButton("Allow", actions::requestRecord, icon = R.drawable.ic_wave, primary = !direct, on = Surface.Ink)
         }
         if (Build.VERSION.SDK_INT >= 33) {
             StepRow(++step, priv.notifications, "Notifications", "Shows when processing is on, with a stop button.", optional = true) {
-                PillButton("Allow", actions::requestNotifications, icon = R.drawable.ic_check, on = Surface.Ink)
+                PillButton("Allow", actions::requestNotifications, icon = R.drawable.ic_bell, on = Surface.Ink)
             }
         }
         StepRow(
@@ -1368,21 +1483,24 @@ private fun SetupSheet(state: UiState, actions: AppActions) {
                 icon = R.drawable.ic_power,
                 primary = true,
                 on = Surface.Ink,
+                modifier = Modifier.padding(start = INK_RAIL),
             )
         }
-        // Rarely wanted, so kept here rather than on a page.
-        Gap(28.dp)
-        Note("Backup", p.onInkSub)
-        Gap(6.dp)
-        Txt(
-            "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
-                "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
-            14.sp, p.onInkSub,
-        )
-        Gap(6.dp)
-        Row {
-            PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_share, on = Surface.Ink)
-            PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_import, on = Surface.Ink)
+        // Rarely wanted, so kept here rather than on a page: the sheet's end matter, under a rule
+        // without a number, as the colophon is at a page's foot.
+        Gap(12.dp)
+        BenchSection(null, "Backup", onInk = true)
+        Column(Modifier.padding(start = INK_RAIL)) {
+            Txt(
+                "Everything you've set up in one file: your EQs and which apps and headphones use them, the effects, the island, " +
+                    "the volume panel and each app's volume. Restoring replaces what's here, and Continuum Kit restarts to load it.",
+                14.sp, p.onInkSub,
+            )
+            Gap(6.dp)
+            ActionRow {
+                PillButton("Save a backup", actions::saveBackup, icon = R.drawable.ic_import, on = Surface.Ink)
+                PillButton("Restore", actions::restoreBackup, icon = R.drawable.ic_undo, on = Surface.Ink)
+            }
         }
     }
 }
@@ -1399,7 +1517,7 @@ internal fun StepRow(
     val p = LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
         // The same margin column as every page: the step's number, or a drop once it's done.
-        Box(Modifier.width(26.dp).padding(top = 3.dp)) {
+        Box(Modifier.widthIn(min = INK_RAIL).padding(top = 3.dp)) {
             if (done) {
                 Box(
                     Modifier
@@ -1409,12 +1527,12 @@ internal fun StepRow(
                         .background(p.onInk),
                 )
             } else {
-                Note("%02d".format(number), p.onInkSub)
+                Note("%02d".format(number), p.onInkSub, Modifier.padding(end = dev.continuum.fx.ui.bench.NUMBER_GAP), tracking = dev.continuum.fx.ui.bench.NUMBER_TRACKING)
             }
         }
         Column(Modifier.weight(1f)) {
-            Txt(if (optional) "$title · optional" else title, 16.5.sp, p.onInk)
-            Gap(3.dp)
+            Txt(if (optional) "$title · optional" else title, 17.sp, p.onInk)
+            Gap(4.dp)
             Txt(body, 14.sp, p.onInkSub)
             if (!done) {
                 Gap(6.dp)

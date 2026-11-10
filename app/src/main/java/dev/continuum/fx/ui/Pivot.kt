@@ -13,6 +13,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,9 +45,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -149,11 +153,13 @@ internal fun PivotHeader(
     // The page drops: where each sits, and the pill's size.
     val pillW = px(22f)
     val pillH = px(9f)
+    // As close together as the pill is wide: a compact row of drops under the current title,
+    // which is what makes the pivot this app's. The finger's room comes from the strip below.
     val step = px(22f)
     fun dropX(i: Int) = x0 + px(2f) + pillW / 2f + i * step
     val dropY = textH - px(3f)
     val latestFold = androidx.compose.runtime.rememberUpdatedState(fold)
-    val fullH = with(density) { textH.toDp() } + 22.dp
+    val fullH = with(density) { textH.toDp() } + 28.dp
 
     // Folded, the header gives back the height it no longer needs (read in layout, so a fold
     // doesn't recompose anything).
@@ -254,23 +260,37 @@ internal fun PivotHeader(
                 val cur = pivot.indexOf(pivot.contentSlot)
                 glint(Offset(dropX(cur) + pillW / 2f, dropY + pillH / 2f), px(13f), glintU.value, p.text)
             }
-            // Each drop takes you to its page.
-            titles.forEachIndexed { i, title ->
-                val source = remember(i) { MutableInteractionSource() }
-                val current = pivot.indexOf(pivot.contentSlot) == i
-                Box(
-                    Modifier
-                        .offset { IntOffset((dropX(i) - step / 2f).roundToInt(), (dropY + pillH / 2f - px(18f)).roundToInt()) }
-                        .size(with(density) { step.toDp() }, 36.dp)
-                        .semantics {
-                            selected = current
-                            contentDescription = if (current) "$title, this page" else "Go to $title"
-                        }
-                        .clickable(interactionSource = source, indication = null, role = Role.Tab) {
-                            if (!current) InkFeel.split(view)
-                            onSelect(pivot.nearest(i, pivot.contentSlot))
-                        },
-                )
+            // Each drop takes you to its page. The drops stay a tight row, so the touch area isn't
+            // theirs one by one: it is one strip, 48dp tall with room at either end, and a tap in
+            // it goes to the nearest drop. (TalkBack still meets one node per page, as tabs.)
+            val reach = px(10f)
+            val stripH = 48.dp
+            val choose by androidx.compose.runtime.rememberUpdatedState<(Int) -> Unit> { i ->
+                if (pivot.indexOf(pivot.contentSlot) != i) InkFeel.split(view)
+                onSelect(pivot.nearest(i, pivot.contentSlot))
+            }
+            Box(
+                Modifier
+                    .offset { IntOffset((dropX(0) - step / 2f - reach).roundToInt(), (fullH.toPx() - stripH.toPx()).roundToInt()) }
+                    .size(with(density) { (step * titles.size + reach * 2f).toDp() }, stripH)
+                    .pointerInput(titles.size, step) {
+                        detectTapGestures { at -> choose(((at.x - reach) / step).toInt().coerceIn(0, titles.size - 1)) }
+                    },
+            ) {
+                titles.forEachIndexed { i, title ->
+                    val current = pivot.indexOf(pivot.contentSlot) == i
+                    Box(
+                        Modifier
+                            .offset { IntOffset((reach + i * step).roundToInt(), 0) }
+                            .size(with(density) { step.toDp() }, stripH)
+                            .semantics {
+                                selected = current
+                                role = Role.Tab
+                                contentDescription = if (current) "$title, this page" else "Go to $title"
+                                onClick { choose(i); true }
+                            },
+                    )
+                }
             }
         }
     }

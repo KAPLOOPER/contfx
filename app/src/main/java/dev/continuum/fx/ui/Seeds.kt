@@ -42,6 +42,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,7 +59,6 @@ import dev.continuum.fx.island.ui.neckDown
 import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
-import dev.continuum.fx.ui.theme.Txt
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.min
@@ -114,6 +115,8 @@ internal fun Seeded(
     color: Color? = null,
     /** Already in place if it's there from the start (it came with the page), rather than dripping in. */
     settledAtStart: Boolean = false,
+    /** Keeps the dock's edge on the dark ground once it has spread, so ink reads as ink there too. */
+    edge: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val seeds = LocalSeeds.current
@@ -154,7 +157,22 @@ internal fun Seeded(
                 card.size = Size(it.size.width.toFloat(), it.size.height.toFloat())
             }
             .clip(shape)
-            .then(if (settled || seeds == null) Modifier.background(ink) else Modifier),
+            .then(if (settled || seeds == null) Modifier.background(ink) else Modifier)
+            .then(
+                if (edge && p.dark) {
+                    Modifier.drawWithContent {
+                        drawContent()
+                        val a = if (settled || seeds == null) 1f else ((q - 0.78f) / 0.22f).coerceIn(0f, 1f)
+                        if (a > 0.01f) {
+                            val w = 1.dp.toPx()
+                            drawRoundRect(
+                                p.edge.copy(alpha = p.edge.alpha * a), Offset(w / 2f, w / 2f), Size(size.width - w, size.height - w),
+                                CornerRadius(cornerPx - w / 2f), style = androidx.compose.ui.graphics.drawscope.Stroke(w),
+                            )
+                        }
+                    }
+                } else Modifier,
+            ),
     ) {
         Box(Modifier.graphicsLayer { alpha = if (settled || seeds == null) 1f else ((q - 0.78f) / 0.22f).coerceIn(0f, 1f) }) {
             content()
@@ -232,13 +250,24 @@ internal fun DockMessage(message: String?, dock: State<Rect?>, onDismiss: () -> 
 
     val screenW = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val measurer = rememberTextMeasurer()
-    val style = TextStyle(fontFamily = Libron, fontSize = 15.sp, color = p.onInk)
+    // Measured exactly as it's drawn (the same words, held the same way, the same line height),
+    // so the bubble is never a line shorter than its words and cuts the last one off.
+    val style = TextStyle(fontFamily = Libron, fontSize = 15.sp, lineHeight = 15.sp * 1.38f, color = p.onInk)
     val padX = with(density) { 20.dp.toPx() }
     val padY = with(density) { 12.dp.toPx() }
-    val maxText = (screenW - with(density) { 48.dp.toPx() } - padX * 2f).roundToInt().coerceAtLeast(1)
+    // As wide as the dock's column allows (the screen on a phone; the reading width on a tablet,
+    // where the dock hangs from the left), so a bubble centred on the dock stays on the screen.
+    val column = min(screenW, k.width + with(density) { 24.dp.toPx() })
+    val maxText = (column - with(density) { 48.dp.toPx() } - padX * 2f).roundToInt().coerceAtLeast(1)
+    // Its last two words held together, as every line of words is, unless that would break a word.
     val layout = remember(text, maxText) {
-        measurer.measure(text, style, overflow = TextOverflow.Ellipsis, maxLines = 3, constraints = Constraints(maxWidth = maxText))
+        fun measure(words: String) =
+            measurer.measure(words, style, overflow = TextOverflow.Ellipsis, maxLines = 3, constraints = Constraints(maxWidth = maxText))
+        val held = dev.continuum.fx.ui.theme.keepLastTwo(text)
+        val r = measure(held)
+        if (held != text && (r.hasVisualOverflow || dev.continuum.fx.ui.theme.brokeInsideAWord(r, held))) measure(text) else r
     }
+    val words = layout.layoutInput.text.text
     // A hair wider than measured, so the text never wraps differently when it's drawn.
     val w = layout.size.width + padX * 2f + with(density) { 2.dp.toPx() }
     val h = layout.size.height + padY * 2f
@@ -278,7 +307,14 @@ internal fun DockMessage(message: String?, dock: State<Rect?>, onDismiss: () -> 
                 }
                 .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
-            Txt(text, 15.sp, p.onInk, maxLines = 3)
+            // Read out as written, without the no-break spaces that hold its last words together.
+            androidx.compose.foundation.text.BasicText(
+                words,
+                Modifier.clearAndSetSemantics { this.text = androidx.compose.ui.text.AnnotatedString(text) },
+                style = style,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

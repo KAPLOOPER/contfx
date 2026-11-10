@@ -57,6 +57,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.stateDescription
 import dev.continuum.fx.island.ui.InkFeel
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -98,7 +101,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -135,40 +137,74 @@ fun Modifier.squash(source: MutableInteractionSource, pill: Boolean = false): Mo
 enum class Surface { Ground, Card, Ink }
 
 /**
- * A button that's just its word (and icon), on the surface it sits on: no shape, no border. It
- * presses in like everything else. [primary] sets the word in bold. [height] is the least it
- * takes up, so it's always easy to hit; the space after it keeps the next one apart.
+ * A line of buttons that wraps onto the next when it runs out of width (a long label, large type),
+ * so an action is never left past the page's edge where only a sideways drag would find it, and
+ * never squeezed until its word breaks ("Res/to…").
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun ActionRow(
+    modifier: Modifier = Modifier,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = horizontalArrangement,
+    ) { content() }
+}
+
+/**
+ * A button is a word with its icon, on the surface it sits on: no shape, no border. The icon is
+ * required, so a bare line of words never passes for one: it's what says "press me" with no frame
+ * to say it. It presses in like everything else. [primary] sets the word in bold. It's never
+ * less than 48dp tall, so it's always easy to hit; the space after it keeps the next one apart.
+ *
+ * [enabled] false is for an act that can't happen yet (Volume's Try it before setup): words and
+ * icon go [Palette.faint], it takes no touch, and TalkBack hears it as unavailable. Only ever
+ * under words that say when it will work, and only on the ground. Anything you can touch is
+ * drawn at full strength; this is the one thing that isn't.
  */
 @Composable
 fun PillButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    @DrawableRes icon: Int? = null,
+    @DrawableRes icon: Int,
     primary: Boolean = false,
     on: Surface = Surface.Ground,
-    height: Dp = 44.dp,
+    enabled: Boolean = true,
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    val fg = if (on == Surface.Ink) p.onInk else p.text
+    val fg by animateColorAsState(
+        when {
+            on == Surface.Ink -> p.onInk
+            enabled -> p.text
+            else -> p.faint
+        },
+        Motion.flow(),
+        label = "button",
+    )
     Row(
         modifier
             .squash(source, pill = true)
-            .heightIn(min = height)
-            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
-            .padding(end = 18.dp),
+            .heightIn(min = 48.dp)
+            .clickable(enabled = enabled, interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            // Air above and below once its words take two lines (large type); at one line the
+            // 48dp is what sets its height.
+            .padding(end = 18.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (icon != null) {
-            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(fg))
-        }
-        Txt(text, 16.sp, fg, bold = primary, maxLines = 1)
+        Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(fg))
+        // Wraps rather than losing its end at large type (a row of them wraps first; see
+        // [ActionRow]), so a button never says half of what it does.
+        Txt(text, 16.sp, fg, bold = primary, maxLines = 3)
     }
 }
 
-/** Icon-only button: no shape at rest, a flat bubble grows out from behind the icon when pressed. */
+/** Icon-only button, 48dp: no shape at rest, a flat bubble grows out from behind the icon when pressed. */
 @Composable
 fun IconBubble(
     @DrawableRes icon: Int,
@@ -177,7 +213,6 @@ fun IconBubble(
     modifier: Modifier = Modifier,
     on: Surface = Surface.Ground,
     active: Boolean = false,
-    size: Dp = 44.dp,
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
@@ -188,13 +223,13 @@ fun IconBubble(
     val bubbleColor = if (on == Surface.Ink) p.inkTonal else p.surface
     Box(
         modifier
-            .size(size)
+            .size(48.dp)
             .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
-                .size(size)
+                .size(48.dp)
                 .graphicsLayer {
                     val s = 0.4f + 0.6f * bubble
                     scaleX = s
@@ -292,7 +327,7 @@ internal fun Modifier.spreadInk(spread: Spread): Modifier = drawWithContent {
 @Composable
 fun Chip(label: String, selected: Boolean, onClick: () -> Unit, on: Surface = Surface.Ground) {
     if (LocalChoiceGroup.current == null) {
-        ChoiceRow(scroll = false, on = on) { ChipWord(label, selected, onClick, on) }
+        ChoiceRow(fill = false, on = on) { ChipWord(label, selected, onClick, on) }
     } else {
         ChipWord(label, selected, onClick, on)
     }
@@ -318,7 +353,7 @@ private fun ChipWord(label: String, selected: Boolean, onClick: () -> Unit, on: 
             .choice(selected)
             .notes(touch)
             .selectable(selected, interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -382,11 +417,18 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
 }
 
 /**
- * A switch, in ink. Off, it's a hairline channel with a drop resting at its near end. Turned on,
- * the drop slides to the far end, drawn out a little by its speed, and ink pours into the channel
- * after it, from a bead at the near end out to the whole channel; the drop is left in the page's
- * own colour with a tick in it. Off again, the ink drains back first and the drop follows it home.
- * The hairline keeps 3:1 against the ground, so an off switch is still plainly a switch.
+ * A switch, in ink. Off, it's a hollow drop waiting in the open mouth of an empty channel: the
+ * channel's hairline runs round the far end and stops short of the drop, so the drop's own round
+ * side is the near end, outside the channel, about to go in. That open mouth is what makes it this
+ * app's in a still (an outlined capsule with a circle in it is every platform's toggle) while the
+ * silhouette stays a switch's. It's drawn the way the app draws what isn't poured yet (the
+ * keyboard's outlined keys, the effect chain's ring nodes), and it's never the ink colour, which
+ * is kept for on. Turned on, the drop slides in to the far end, drawn out a little by its speed,
+ * and ink pours after it, from a bead at the near end out to the whole channel, closing it; the
+ * drop fills with the page's own colour and a tick surfaces in it. Off again, the ink drains back
+ * first and the drop follows it home, emptying. The channel keeps 3:1 against the ground (`quiet`:
+ * 5.4:1 dark, 4.6:1 light) and the drop more (`sub`), so an off switch is plainly a switch you can
+ * touch, not a disabled one. The keyboard's settings draw the same switch.
  */
 @Composable
 fun InkSwitch(
@@ -412,8 +454,10 @@ fun InkSwitch(
     val onInk = surface == Surface.Ink
     val ink = if (onInk) p.onInk else p.primary
     val paper = if (onInk) p.ink else p.onPrimary
-    val rim = if (onInk) p.onInkSub else p.quiet
-    val resting = if (onInk) p.onInkSub else p.sub
+    // Off is not "unavailable": a full-strength hollow drop in a clear channel. The ink's own
+    // colour is only ever on.
+    val ring = if (onInk) p.onInkSub else p.sub
+    val channel = if (onInk) lerp(p.ink, p.onInkSub, 0.62f) else p.quiet
     Box(
         modifier
             .size(width = 56.dp, height = 48.dp)
@@ -424,37 +468,54 @@ fun InkSwitch(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(width = 42.dp, height = 24.dp)) {
+        Canvas(Modifier.size(width = 46.dp, height = 26.dp)) {
             val w = size.width
             val h = size.height
             val r = h / 2f
             val cy = h / 2f
             val x0 = r
             val x1 = w - r
-            val hair = 1.4.dp.toPx()
-            drawRoundRect(
-                rim, Offset(hair / 2f, hair / 2f), Size(w - hair, h - hair), CornerRadius(r - hair / 2f),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(hair),
-            )
-            // The ink in the channel: a bead at the near end that swells to fill it as it pours.
+            val hair = 1.6.dp.toPx()
+            // The channel is open at the near end: the drop waits in its mouth, outside it, and
+            // its own round side is the channel's near end. Only the ink closes it.
+            val rr = r - hair / 2f
+            val mouth = x0 + MOUTH.toPx()
+            val rim = Path().apply {
+                moveTo(mouth, hair / 2f)
+                lineTo(x1, hair / 2f)
+                arcTo(Rect(x1 - rr, cy - rr, x1 + rr, cy + rr), -90f, 180f, false)
+                lineTo(mouth, h - hair / 2f)
+            }
+            drawPath(rim, channel, style = androidx.compose.ui.graphics.drawscope.Stroke(hair, cap = StrokeCap.Round))
+            // The ink in the channel: a bead at the near end that swells to fill it as it pours,
+            // from nothing (inside the hollow drop, a bead that started a third grown would appear
+            // in one frame, and on the way off shrink to that and vanish in one).
             val f = flood.value.coerceIn(0f, 1f)
             if (f > 0.002f) {
-                val rr = r * min(1f, 0.35f + f * 3f)
+                val rr = r * min(1f, f * 4.5f)
                 val left = x0 - rr
                 val right = lerpF(x0, x1, f) + rr
                 drawRoundRect(ink, Offset(left, cy - rr), Size(right - left, rr * 2f), CornerRadius(rr))
             }
             // The drop, drawn out along its way by its speed, and a touch fuller under a finger.
+            // It starts hollow and fills with paper as it crosses into the ink.
             val v = pos.value
             val cx = lerpF(x0, x1, v.coerceIn(0f, 1f))
             val stretch = (abs(pos.velocity) * 0.035f).coerceAtMost(0.3f)
-            val dr = (r - 4.dp.toPx()) * (1f + 0.12f * press)
-            val color = lerp(resting, paper, ((v - 0.25f) / 0.6f).coerceIn(0f, 1f))
-            drawOval(
-                color,
-                Offset(cx - dr * (1f + stretch), cy - dr * (1f - stretch * 0.45f)),
-                Size(dr * 2f * (1f + stretch), dr * 2f * (1f - stretch * 0.45f)),
-            )
+            val dr = (r - 3.5.dp.toPx()) * (1f + 0.12f * press)
+            val dropAt = Offset(cx - dr * (1f + stretch), cy - dr * (1f - stretch * 0.45f))
+            val dropSize = Size(dr * 2f * (1f + stretch), dr * 2f * (1f - stretch * 0.45f))
+            val filled = ((v - 0.25f) / 0.6f).coerceIn(0f, 1f)
+            if (filled > 0.01f) drawOval(paper.copy(alpha = paper.alpha * filled), dropAt, dropSize)
+            if (filled < 0.99f) {
+                val line = 1.8.dp.toPx()
+                drawOval(
+                    ring.copy(alpha = ring.alpha * (1f - filled)),
+                    Offset(dropAt.x + line / 2f, dropAt.y + line / 2f),
+                    Size(dropSize.width - line, dropSize.height - line),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(line),
+                )
+            }
             // Its tick, surfacing as it arrives.
             val t = ((v - 0.65f) / 0.35f).coerceIn(0f, 1f)
             if (t > 0.01f) {
@@ -476,17 +537,28 @@ fun InkSwitch(
 }
 
 /**
- * The one switch for a whole page, with its name under it in small capitals, so it's plain what
- * it turns off: "All effects", "Island", "Panel".
+ * The one switch for a whole page, at the end of the hero line, wearing its name ([label]) under
+ * it in small capitals: "All effects", "Island", "Volume panel". The line beside it says what's
+ * true (what's on, what the status bar shows, what the volume keys open), not what the switch is,
+ * so a bare switch there reads as the line's own on or off: "Android's own icons", off. The name is
+ * the control's, so it stays even where it's also the page's: it's what the eye and TalkBack read.
  */
 @Composable
 fun MasterSwitch(on: Boolean, label: String, onClick: () -> Unit) {
     val p = LocalPalette.current
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    // Flush right, so the switch keeps the page's end on every page whatever its name's length
+    // (centred, "Volume panel" pulled it 20dp in from Island's), and the name ends where the
+    // drawn channel does: the drawing sits 5dp inside the switch's 56dp target.
+    Column(horizontalAlignment = Alignment.End) {
         InkSwitch(on, label, onClick)
-        dev.continuum.fx.ui.theme.Note(label, p.sub)
+        // The switch is already named by it, so TalkBack hears "Island, switch" once, not the
+        // name again after it.
+        dev.continuum.fx.ui.theme.Note(label, p.sub, Modifier.padding(end = 5.dp).clearAndSetSemantics {})
     }
 }
+
+/** How far past the resting drop's centre the switch's channel begins: its open mouth. */
+private val MOUTH = 6.dp
 
 /** The drop crosses quickly and settles with the slightest give. */
 private val SLIDE = spring<Float>(dampingRatio = 0.72f, stiffness = 520f)
@@ -585,7 +657,17 @@ fun InkSlider(
     Box(
         modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .height(48.dp)
+            .semantics {
+                // A slider to TalkBack: where it is along its run, said as its own value ("+4 dB",
+                // "33%"), and moved by swiping up and down or with the volume keys.
+                progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(value.coerceIn(0f, 1f), 0f..1f, steps = 0)
+                if (label != null) stateDescription = label
+                setProgress { next ->
+                    latest.value(next.coerceIn(0f, 1f))
+                    true
+                }
+            }
             .onPlaced { coords[0] = it }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(

@@ -1,6 +1,7 @@
 package dev.continuum.fx.ui
 
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -58,12 +59,12 @@ import dev.continuum.fx.dsp.Listener
 import dev.continuum.fx.dsp.Loudness
 import dev.continuum.fx.dsp.PunchMode
 import dev.continuum.fx.dsp.StageMode
-import dev.continuum.fx.ui.bench.BenchMore
 import dev.continuum.fx.ui.bench.BenchRow
 import dev.continuum.fx.ui.bench.BenchSection
 import dev.continuum.fx.ui.bench.BenchValueRow
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
+import dev.continuum.fx.ui.components.Reveal
 import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.MasterSwitch
 import dev.continuum.fx.ui.theme.LocalPalette
@@ -98,8 +99,8 @@ private fun About(about: String, notes: List<String> = emptyList()) {
         Txt(n, 14.sp, p.text)
     }
     Gap(4.dp)
-    BenchMore("How it works", how.value) { how.value = !how.value }
-    if (how.value) {
+    More(how.value, { how.value = !how.value }, label = "How it works", inRail = false)
+    Reveal(how.value) {
         Gap(4.dp)
         Txt(about, 14.sp, p.sub)
     }
@@ -120,12 +121,8 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val spots = LocalEffectSpots.current
     val scope = rememberCoroutineScope()
-    val padPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     fun expand(key: String) {
         open = if (open == key) null else key
-    }
-    fun toRow(key: String) {
-        spots?.topFor(key, padPx)?.let { y -> scope.launch { scroll.animateScrollTo(y, Motion.flow()) } }
     }
     // Tapping a group of the chain takes you to its section's rule, a little above its first row.
     val groupPad = with(LocalDensity.current) { 54.dp.roundToPx() }
@@ -143,7 +140,15 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
     Column {
         // What's on, said once as a sentence, with the one switch for all of it beside it, named.
         val waiting = fx.copy(enabled = true).onNames() + if (spaces.enabled) listOf("Spatial audio") else emptyList()
-        Kicker(if (fx.enabled) "${names.size} of $EFFECTS on" else "Off")
+        // The kicker counts what the line names, against the whole chain; it never counts a zero
+        // over "Nothing on yet." With the effects off, it's how many will come back with them.
+        Kicker(
+            when {
+                names.isNotEmpty() -> "${names.size} of $EFFECTS on"
+                !fx.enabled && waiting.isNotEmpty() -> "${waiting.size} set to come back"
+                else -> "$EFFECTS to choose from"
+            },
+        )
         Gap(6.dp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             HeroLine(
@@ -152,24 +157,21 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
                     names.isEmpty() -> "Nothing on yet."
                     else -> inWords(names)
                 },
-                if (fx.enabled && names.isNotEmpty()) p.text else p.sub,
+                p.text,
                 Modifier.weight(1f).padding(end = 12.dp),
             )
-            MasterSwitch(fx.enabled, "All effects") { set { it.copy(enabled = !it.enabled) } }
+            MasterSwitch(fx.enabled, "All effects", { set { it.copy(enabled = !it.enabled) } })
         }
-        val quiet = listOfNotNull(
-            if (!fx.enabled && waiting.isNotEmpty()) "${waiting.size} set to come back" else null,
-            if (fx.enabled && names.isNotEmpty() && !state.running) "Start processing to hear them" else null,
-            if (ctx.direct) "Direct · a few work more simply" else null,
-        )
-        if (quiet.isNotEmpty()) {
+        // "Start processing to hear them" is the dock's to say, beside the power it's about.
+        if (ctx.direct) {
             Gap(8.dp)
-            Txt(quiet.joinToString(" · "), 13.sp, p.sub, maxLines = 2)
+            Txt("Direct · a few work more simply", 14.sp, p.sub, maxLines = 2)
         }
         ChainStrip(active, ::toGroup, Modifier.padding(top = 18.dp, bottom = 22.dp))
 
+        // What the chain is fitted to: the hero's own control, under the drawing it changes, so it
+        // takes no rule (rules open the page's groups; see [OpensName]).
         output?.let { device ->
-            BenchSection(null, "Listening")
             ListeningOn(device.name, ctx.onPhoneSpeaker, ctx.listener(fx)) { l ->
                 set { it.copy(listeners = it.listeners + (device.key to l)) }
             }
@@ -208,9 +210,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
             "Punch",
             if (fx.punch == PunchMode.Off) "Kicks and bass notes hit harder" else "Up to ${db1(fx.punch.maxDb)} at each note's start",
             on = fx.punch != PunchMode.Off, expanded = open == "punch", onExpand = { expand("punch") },
-            trailing = {
-                if (fx.punch != PunchMode.Off) Txt(fx.punch.label, 15.sp, p.text, maxLines = 1) else Note("Off", p.sub)
-            },
+            trailing = { ModeNote(fx.punch.label, fx.punch != PunchMode.Off) },
             modifier = Modifier.effectSpot("punch"),
         ) {
             ChoiceRow {
@@ -338,9 +338,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
                 StageMode.Wide -> "Wide open, the deepest bass centred"
             },
             on = fx.stage != StageMode.Off, expanded = open == "stage", onExpand = { expand("stage") },
-            trailing = {
-                if (fx.stage != StageMode.Off) Txt(fx.stage.label, 15.sp, p.text, maxLines = 1) else Note("Off", p.sub)
-            },
+            trailing = { ModeNote(fx.stage.label, fx.stage != StageMode.Off) },
             resting = spatialPlacing && fx.stage != StageMode.Off,
             modifier = Modifier.effectSpot("stage"),
         ) {
@@ -386,9 +384,7 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
                 DynamicsMode.Restore -> "Squashed masters opened up"
             },
             on = fx.dynamics != DynamicsMode.Off, expanded = open == "dynamics", onExpand = { expand("dynamics") },
-            trailing = {
-                if (fx.dynamics != DynamicsMode.Off) Txt(fx.dynamics.label, 15.sp, p.text, maxLines = 1) else Note("Off", p.sub)
-            },
+            trailing = { ModeNote(fx.dynamics.label, fx.dynamics != DynamicsMode.Off) },
             modifier = Modifier.effectSpot("dynamics"),
         ) {
             ChoiceRow {
@@ -448,6 +444,18 @@ internal fun EffectsContent(state: UiState, actions: AppActions, scroll: android
 
         Gap(30.dp)
     }
+}
+
+/**
+ * The end of a row whose effect is a mode chosen inside it (Punch, Stage, Dynamics), where its
+ * neighbours have a switch: the mode, said as a value, "Off" too. A word at a row's end is always
+ * a value and a channel always a switch, so the right edge still says what each row is and how it
+ * changes: this one opens (the chevron after its name) to be set.
+ */
+@Composable
+private fun ModeNote(label: String, on: Boolean) {
+    val p = LocalPalette.current
+    Note(label, if (on) p.text else p.sub)
 }
 
 /** Keeps a row down the page, so the chain strip and the stepping can find it. */
@@ -537,7 +545,7 @@ private fun ChainStrip(on: Set<String>, onTap: (String) -> Unit, modifier: Modif
             beads.getValue(k).animateTo(if (lit) 1f else 0f, if (lit) BEAD_IN else BEAD_OUT)
         }
     }
-    Box(modifier.fillMaxWidth().height(52.dp)) {
+    Box(modifier.fillMaxWidth().heightIn(min = 52.dp)) {
         // Where each stage sits along the page: spaced evenly within its group's quarter.
         fun DrawScope.stageX(g: Int, i: Int): Float {
             val cell = size.width / STAGES.size
@@ -571,7 +579,13 @@ private fun ChainStrip(on: Set<String>, onTap: (String) -> Unit, modifier: Modif
                 }
             }
         }
-        Row(Modifier.fillMaxSize()) {
+        // The groups' names, each centred under its quarter while they fit, and moved apart (never
+        // over each other, never past the page's edges) when large type makes them wider than it.
+        GroupNames(
+            STAGES.indices.map { g -> GROUP_NAMES[g] to STAGES[g].any { it.first in on } },
+            Modifier.fillMaxWidth().padding(top = 31.dp, bottom = 6.dp).clearAndSetSemantics {},
+        )
+        Row(Modifier.matchParentSize()) {
             STAGES.forEachIndexed { g, group ->
                 val anyOn = group.any { it.first in on }
                 val name = GROUP_NAMES[g]
@@ -589,12 +603,46 @@ private fun ChainStrip(on: Set<String>, onTap: (String) -> Unit, modifier: Modif
                             onClickLabel = "Go to $name",
                         ) { onTap(group.first().first) }
                         .semantics { contentDescription = description },
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Note(name, if (anyOn) p.text else p.sub, Modifier.padding(bottom = 6.dp))
-                }
+                )
             }
         }
+    }
+}
+
+/**
+ * The chain's group names in a line: each centred under its quarter of the page, unless that would
+ * run it into a neighbour or off the page; then they're set apart by at least a word's space,
+ * the first and last held to the page's edges. Only past what the line can hold at all does the
+ * spacing between letters close up.
+ */
+@Composable
+private fun GroupNames(names: List<Pair<String, Boolean>>, modifier: Modifier = Modifier) {
+    val p = LocalPalette.current
+    val tight = LocalDensity.current.fontScale > 1.3f
+    androidx.compose.ui.layout.Layout(
+        content = {
+            names.forEach { (name, anyOn) ->
+                Note(name, if (anyOn) p.text else p.sub, tracking = if (tight) 0.4.sp else 0.9.sp)
+            }
+        },
+        modifier = modifier,
+    ) { measurables, c ->
+        val w = c.maxWidth
+        val labels = measurables.map { it.measure(androidx.compose.ui.unit.Constraints(maxWidth = w / 2)) }
+        val gap = 10.dp.roundToPx()
+        val cell = w.toFloat() / labels.size
+        val x = FloatArray(labels.size) { i -> cell * i + cell / 2f - labels[i].width / 2f }
+        // Pushed apart left to right, then held inside the right edge and pushed back.
+        for (i in x.indices) {
+            val least = if (i == 0) 0f else x[i - 1] + labels[i - 1].width + gap
+            x[i] = maxOf(x[i], least)
+        }
+        for (i in x.indices.reversed()) {
+            val most = if (i == x.lastIndex) (w - labels[i].width).toFloat() else x[i + 1] - gap - labels[i].width
+            x[i] = minOf(x[i], most).coerceAtLeast(0f)
+        }
+        val h = labels.maxOf { it.height }
+        layout(w, h) { labels.forEachIndexed { i, l -> l.place(x[i].toInt(), h - l.height) } }
     }
 }
 
@@ -611,9 +659,13 @@ private val GROUP_NAMES = listOf("Bass", "Clarity", "Space", "Level")
 @Composable
 private fun ListeningOn(name: String, phone: Boolean, current: Listener, onPick: (Listener) -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
+    // What the effects are fitted to is the value ("Over-ear"); the device's name, which can be as
+    // long as a sentence, is said under it, whole, rather than cut off at the end of the line with
+    // the fit after it lost.
     BenchValueRow(
         label = "Listening on",
-        value = if (phone || current == Listener.Unsure) name else "$name · ${current.label}",
+        value = if (phone) name else current.label,
+        caption = if (phone) null else name,
         expanded = open,
         onExpand = { open = !open },
     ) {

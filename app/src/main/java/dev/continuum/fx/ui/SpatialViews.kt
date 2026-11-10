@@ -72,6 +72,7 @@ import dev.continuum.fx.dsp.SpeakerRole
 import dev.continuum.fx.island.ui.InkFeel
 import dev.continuum.fx.ui.components.Chip
 import dev.continuum.fx.ui.components.ChoiceRow
+import dev.continuum.fx.ui.components.Reveal
 import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
@@ -199,10 +200,10 @@ private fun SetupHeader(lib: SpatialLibrary, s: SpatialSetup) {
     Spacer(Modifier.size(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (s.id != lib.defaultId) {
-            PillButton("Make default", { SpatialStore.update { it.copy(defaultId = s.id) } }, icon = R.drawable.ic_check, height = 36.dp, on = Surface.Card)
+            PillButton("Make default", { SpatialStore.update { it.copy(defaultId = s.id) } }, icon = R.drawable.ic_check, on = Surface.Card)
         }
         if (lib.setups.size > 1) {
-            PillButton("Delete", { SpatialStore.delete(s.id) }, icon = R.drawable.ic_trash, height = 36.dp, on = Surface.Card)
+            PillButton("Delete", { SpatialStore.delete(s.id) }, icon = R.drawable.ic_trash, on = Surface.Card)
         }
     }
 }
@@ -247,7 +248,7 @@ private fun SetupEditor(s: SpatialSetup) {
     ChoiceRow {
         SpatialLayout.entries.forEach { l -> Chip(l.label, s.layout == l, onClick = { set { it.withLayout(l) } }, on = Surface.Card) }
     }
-    if (s.layout != SpatialLayout.Stereo) {
+    Reveal(s.layout != SpatialLayout.Stereo) {
         Spacer(Modifier.size(6.dp))
         Txt(
             "Android mixes surround down to stereo before any app can capture it, so the centre and surrounds are drawn back out of the mix: clearly placed sounds (a lead voice) to the speakers either side of where they sit, the space around them to the surrounds. Anything only partly shared stays left and right, so the front stays wide.",
@@ -279,18 +280,18 @@ private fun SetupEditor(s: SpatialSetup) {
         },
         13.sp, p.sub,
     )
-    if (s.room != RoomKind.None) {
+    Reveal(s.room != RoomKind.None) {
         SliderField("Reflections", "${(s.reflections * 100).roundToInt()}%", s.reflections, hear = "More of the walls: the sound moves out of your head.") { v -> set { it.copy(reflections = (v * 20).roundToInt() / 20f) } }
     }
     SliderField("Tail", s.tailDb?.let { dbText(it) } ?: "Off", s.tail, hear = "More of the room ringing on after each sound.") { v -> set { it.copy(tail = (v * 20).roundToInt() / 20f) } }
-    if (s.tailDb != null) {
+    Reveal(s.tailDb != null) {
         SliderField("Decay", "%.2f s".format(s.decay), (s.decay - 0.1f) / 1.4f, hear = "A bigger room: the ring lasts longer.") { v -> set { it.copy(decay = ((0.1f + v * 1.4f) * 20).roundToInt() / 20f) } }
     }
     Txt("The tail is the room's echo after the reflections. Leave it low for a dry, close sound.", 13.sp, p.sub)
 
     Spacer(Modifier.size(6.dp))
     MoreSection(fine, { fine = !fine }, label = "Head, bass and mix") {
-        if (s.layout != SpatialLayout.Stereo) {
+        Reveal(s.layout != SpatialLayout.Stereo) {
             Spacer(Modifier.size(14.dp))
             Txt("Mix", 15.sp, p.sub)
             SliderField("Front width", "${(s.width * 100).roundToInt()}%", (s.width - 0.5f), hear = "The front speakers spread further apart.") { v -> set { it.copy(width = ((0.5f + v) * 20).roundToInt() / 20f) } }
@@ -370,7 +371,7 @@ private fun SpeakerMap(
             return Offset(sidePx / 2f + (r * sin(a)).toFloat(), sidePx / 2f - (r * cos(a)).toFloat())
         }
         fun nearest(at: Offset): Speaker? = live.minByOrNull { (position(it) - at).getDistance() }
-            ?.takeIf { (position(it) - at).getDistance() < dropPx * 1.4f }
+            ?.takeIf { (position(it) - at).getDistance() < dropPx * 1.6f }
 
         Box(
             Modifier

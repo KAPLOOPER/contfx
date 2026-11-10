@@ -5,11 +5,23 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/** Continuum's two springs: Flow for most motion, Snap for presses. */
+/** Continuum's two springs: Flow for most motion, Snap for presses; and the ink's own. */
 class SpringSpec(val damping: Float, val stiffness: Float) {
     companion object {
         val Flow = SpringSpec(0.613f, 240f)
         val Snap = SpringSpec(0.843f, 620f)
+
+        /** Ink's back edge, slower than its front, so it stretches as it runs. */
+        val Trail = SpringSpec(0.72f, 130f)
+
+        /** A drop left behind, shrinking away. */
+        val Tail = SpringSpec(0.9f, 260f)
+
+        /** Ink coming in: past its size by a little, then back. */
+        val Swell = SpringSpec(0.55f, 420f)
+
+        /** And drying away. */
+        val Dry = SpringSpec(1f, 520f)
     }
 }
 

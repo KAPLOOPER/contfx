@@ -203,6 +203,12 @@ class SettingsActivity : ComponentActivity() {
             item {
                 Heading(g, "Look")
                 Card(g) {
+                    var theme by remember { mutableStateOf(prefs.theme) }
+                    Choice(
+                        g, "Theme",
+                        listOf(Prefs.THEME_CAPS to "Caps", Prefs.THEME_RUNNER to "Runner"),
+                        theme,
+                    ) { theme = it; prefs.theme = it }
                     var look by remember { mutableStateOf(prefs.look) }
                     Choice(
                         g, "Colour",
@@ -217,7 +223,10 @@ class SettingsActivity : ComponentActivity() {
                     ) { height = it; prefs.keyHeight = it }
                     Toggle(g, "Number row", "Numbers above the letters", prefs.numberRow) { prefs.numberRow = it }
                     Toggle(g, "Number hints", "Show the number on each top-row letter", prefs.numberHints) { prefs.numberHints = it }
-                    Toggle(g, "Letter drops", "Letters rise out of the key as you press", prefs.balloons) { prefs.balloons = it }
+                    // Runner's ink is the press, so this is Caps' alone.
+                    if (theme == Prefs.THEME_CAPS) {
+                        Toggle(g, "Letter drops", "Letters rise out of the key as you press", prefs.balloons) { prefs.balloons = it }
+                    }
                 }
             }
             item {

@@ -18,7 +18,7 @@ While you scroll down to read, the page's big title folds out of the way and ope
 
 Continuum's own keyboard, written from scratch so every part of it can follow the liquid ink rule. It lives in `keyboard/` and builds as its own app (`./gradlew -p keyboard assembleRelease`). It has no internet access: your typing, learned words and clipboard stay on the phone.
 
-- **Ink keys:** pressed letters rise out of their key as a drop and fall back into it; a long press grows a bar of accents out of the key; keys pop in row by row; Ink (pure black) or Tint (from your wallpaper).
+- **Ink keys:** the keys are bare letters on the ink, and one pill of bright ink sits on the last key you pressed. It runs to the next as you type, its front ahead and its back lagging, leaving a drop where it was (a bigger one the further it goes), with that key's letter riding in its front; it gives as it lands, and rests as a drop when you stop. A long press grows a bar of accents out of the key; keys pop in row by row; Ink (pure black) or Tint (from your wallpaper).
 - **Corrections and suggestions:** a 115,000-word English list with a touch-aware corrector (a slip onto a neighbouring key costs less than a real typo), completions, next-word predictions, and learning that picks up your words and phrases. Delete straight after a correction to undo it; long-press a suggestion to stop it coming up.
 - **Swipe typing** with an ink trail that's drawn back in when you lift.
 - **Delete swiping:** drag left from delete to select whole words, lift to delete them.

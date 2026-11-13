@@ -1062,8 +1062,8 @@ private val REVEAL_BLEED = 48.dp
 private val REVEAL_FADE = 24.dp
 
 /**
- * A setting that only means something while another says so (Letter drops while the theme is
- * Caps; how long clips are kept while history is on) follows it in and out instead of popping,
+ * A setting that only means something while another says so (how long clips are kept
+ * while history is on) follows it in and out instead of popping,
  * as in the Kit: the page makes room at Flow's pace without the give ([Motion.settle]), so the
  * rows below glide and never bounce, and it's uncovered from the top through a soft edge, so no
  * line is ever cut. It goes the same way back, and once gone it's gone (not composed, so not read

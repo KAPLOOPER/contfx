@@ -9,15 +9,12 @@ import kotlin.reflect.KProperty
 class Prefs(context: Context) {
     val sp: SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    /** "caps" (each key on its cap) or "runner" (bare keys, one pill of ink running between them). */
-    var theme by string("theme", THEME_CAPS)
     /** "ink" (pure black) or "tint" (from the wallpaper, Android 12 and later). */
     var look by string("look", LOOK_INK)
     /** "compact", "normal" or "tall". */
     var keyHeight by string("key_height", HEIGHT_NORMAL)
     var numberRow by bool("number_row", false)
     var numberHints by bool("number_hints", false)
-    var balloons by bool("balloons", true)
 
     var autocorrect by bool("autocorrect", true)
     var autoCaps by bool("auto_caps", true)
@@ -74,8 +71,6 @@ class Prefs(context: Context) {
 
     companion object {
         const val NAME = "continuum_keyboard"
-        const val THEME_CAPS = "caps"
-        const val THEME_RUNNER = "runner"
         const val LOOK_INK = "ink"
         const val LOOK_TINT = "tint"
         const val HEIGHT_COMPACT = "compact"

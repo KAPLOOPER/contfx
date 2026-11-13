@@ -74,7 +74,6 @@ import dev.continuum.keyboard.scan.ScanTextActivity
 import dev.continuum.keyboard.settings.SettingsActivity
 import dev.continuum.keyboard.ui.EditAction
 import dev.continuum.keyboard.ui.KeyPalette
-import dev.continuum.keyboard.ui.KeyStyle
 import dev.continuum.keyboard.ui.KeyboardView
 import dev.continuum.keyboard.ui.PanelActions
 import dev.continuum.keyboard.ui.PanelState
@@ -281,10 +280,8 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
         val palette = KeyPalette.from(this, prefs)
         kv.palette = palette
         panelState.palette = palette
-        kv.style = if (prefs.theme == Prefs.THEME_RUNNER) KeyStyle.Runner else KeyStyle.Caps
         kv.heightScale = prefs.heightScale
         kv.numberRow = prefs.numberRow
-        kv.balloonsOn = prefs.balloons
         kv.swipeOn = prefs.swipe
         kv.trailOn = prefs.swipeTrail
         kv.deleteSwipeOn = prefs.deleteSwipe

@@ -155,7 +155,7 @@ internal fun KeyboardContent(state: UiState, actions: AppActions) {
             // The keyboard's settings, group by group in their own order, each caption saying
             // what's in it. Each goes to a page of its own, so each ends in an arrow.
             val pages = listOf(
-                Triple("look", "Look", "Caps or Runner, ink or tint, the keys' height"),
+                Triple("look", "Look", "Ink or tint, the keys' height"),
                 Triple("typing", "Typing", "Corrections, capitals, sound and vibration"),
                 Triple("swipe", "Swiping", "Trace a word, and swipe to delete"),
                 Triple("clipboard", "Clipboard", "What you copied, kept and pinned"),

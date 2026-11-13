@@ -28,7 +28,7 @@ data class Key(
 ) {
     val isLetter: Boolean get() = type == KeyType.Text && text.length == 1 && text[0].isLetter()
 
-    /** Function keys get the darker cap and a press squash instead of a balloon. */
+    /** Function keys are pinned to a row's edges; the letters between them are centred. */
     val isFunction: Boolean get() = type != KeyType.Text
 
     companion object {

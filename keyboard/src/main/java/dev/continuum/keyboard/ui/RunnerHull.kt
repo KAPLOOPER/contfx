@@ -6,7 +6,7 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * The Runner theme's ink as it moves: the smallest shape holding both of its ends, each a pill
+ * The runner's ink as it moves: the smallest shape holding both of its ends, each a pill
  * the size of a key (the convex hull of two rounded rectangles). Worked out without allocating,
  * since it's redrawn on every frame while the ink runs.
  */

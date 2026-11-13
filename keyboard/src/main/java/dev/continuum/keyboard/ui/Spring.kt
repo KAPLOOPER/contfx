@@ -20,6 +20,9 @@ class SpringSpec(val damping: Float, val stiffness: Float) {
         /** Ink coming in: past its size by a little, then back. */
         val Swell = SpringSpec(0.55f, 420f)
 
+        /** The front of the ink giving as it lands, before it rounds out again. */
+        val Land = SpringSpec(0.62f, 860f)
+
         /** And drying away. */
         val Dry = SpringSpec(1f, 520f)
     }

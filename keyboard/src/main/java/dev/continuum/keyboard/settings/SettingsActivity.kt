@@ -232,12 +232,6 @@ class SettingsActivity : ComponentActivity() {
                     }
 
                     Section(++n, "Look", modifier = Modifier.marks("look"))
-                    var theme by remember { mutableStateOf(prefs.theme) }
-                    FieldLabel("Theme")
-                    Choices(
-                        listOf(Prefs.THEME_CAPS to "Caps", Prefs.THEME_RUNNER to "Runner"),
-                        theme,
-                    ) { theme = it; prefs.theme = it }
                     var look by remember { mutableStateOf(prefs.look) }
                     FieldLabel("Colour")
                     Choices(
@@ -253,10 +247,6 @@ class SettingsActivity : ComponentActivity() {
                     Gap(4.dp)
                     Toggle("Number row", "Numbers above the letters", prefs.numberRow) { prefs.numberRow = it }
                     Toggle("Number hints", "Show the number on each top-row letter", prefs.numberHints) { prefs.numberHints = it }
-                    // Runner's ink is the press, so this is Caps' alone: it follows the theme in and out.
-                    Reveal(theme == Prefs.THEME_CAPS) {
-                        Toggle("Letter drops", "Letters rise out of the key as you press", prefs.balloons) { prefs.balloons = it }
-                    }
 
                     Section(++n, "Typing", modifier = Modifier.marks("typing"))
                     Toggle("Autocorrect", "Fix typos when you press space. Delete straight after to undo.", prefs.autocorrect) { prefs.autocorrect = it }

@@ -1,7 +1,7 @@
 # Continuum Keyboard
 
-Continuum's own keyboard: one sheet of ink that keys rise out of and fall back into. Written from scratch for Continuum;
-it shares no code with other keyboards.
+Continuum's own keyboard: bare keys on one sheet of ink, and a pill of bright ink that runs from key to key as you
+type. Written from scratch for Continuum; it shares no code with other keyboards.
 
 ## Layout
 
@@ -9,7 +9,7 @@ it shares no code with other keyboards.
   a packed trie (`Words`), the touch-aware corrector (`Corrector`), next words (`NextWords`), learning (`Learned`), the
   swipe decoder (`Swipe`) and text rules (`TextRules`). Tested in `src/test/`.
 - `layout/` — the sheets of keys and where they sit.
-- `ui/KeyboardView.kt` — draws the keys, drops, accent bar, trail and delete tongue, and handles touch.
+- `ui/KeyboardView.kt`: draws the keys, the runner and its drops, the accent bar, trail and delete tongue, and handles touch.
 - `ui/Panels.kt` — clipboard and emoji, in Compose; `ui/EditPanel.kt` — the edit panel (cursor, selection, clipboard, undo).
 - `ContinuumIME.kt` — the input method: the word in progress, corrections and undo, spacing, swipes, panels, autofill.
 - `scan/` — Scan text (CameraX and ML Kit, on the phone).

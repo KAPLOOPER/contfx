@@ -55,17 +55,11 @@ sealed class Strip {
 enum class Tool { Clipboard, Emoji, Edit, Scan, Settings, Hide }
 
 /**
- * How the keys are drawn. Caps: each key on its grey cap, the letter rising out of it as you
- * press. Runner: no caps, and one pill of ink on the last key you pressed, which runs to the
- * next as you type (its front edge ahead, its back edge lagging) and rests as a drop.
- */
-enum class KeyStyle { Caps, Runner }
-
-/**
- * Continuum Keyboard's keys, drawn as one sheet of ink. Pressed letters rise out of their
- * key as a droplet and fall back into it; long presses grow a bar of accents out of the
- * key; swipes leave an ink trail that's drawn back in; delete stretches into a tongue as
- * you drag it across words.
+ * Continuum Keyboard's keys: bare marks on one sheet of ink, and one pill of bright ink, the
+ * runner, on the last key you pressed. It runs to the next as you type (its front ahead, its back
+ * lagging, a drop left where it was) with that key's mark riding in its front, gives as it lands,
+ * and rests as a drop. Long presses grow a bar of accents out of the key; swipes leave an ink
+ * trail that's drawn back in; delete stretches into a tongue as you drag it across words.
  */
 @SuppressLint("ViewConstructor")
 class KeyboardView(context: Context, private val listener: Listener) : View(context) {
@@ -101,19 +95,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     var palette: KeyPalette = KeyPalette.Ink
         set(value) { field = value; invalidate() }
 
-    var style = KeyStyle.Caps
-        set(value) {
-            if (field != value) {
-                field = value
-                hideRunner()
-                invalidate()
-            }
-        }
-
     var heightScale = 1f
         set(value) { if (field != value) { field = value; requestLayout() } }
     var numberRow = false
-    var balloonsOn = true
     var swipeOn = true
     var trailOn = true
     var deleteSwipeOn = true
@@ -184,7 +168,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     // ---- Motion. ----
 
-    private var press = Array(0) { Spring() }
     private var appear = Array(0) { Spring(1f) }
     private val stripPress = HashMap<Int, Spring>()
     private val stripAppear = Spring(1f)
@@ -194,7 +177,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private var codeGlintAt = 0L
     private val starPath = Path()
     private val codeRect = RectF()
-    private val balloons = ArrayList<Balloon>()
     private var popup: Popup? = null
     private val tongueLeft = Spring()
     private var tongueKey: RectF? = null
@@ -214,7 +196,31 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private val runHull = RunnerHull()
     private val runPath = Path()
 
-    /** Everything Runner's ink covers this frame, so the labels under it can be knocked out. */
+    /** The key's mark is riding in the runner's front, on its way to the key. */
+    private var runCarry = false
+
+    /** A key whose mark the runner was carrying when it was sent on elsewhere: it has it back, growing. */
+    private var runGave: PlacedKey? = null
+    private val runGaveBack = Spring(1f)
+
+    /** Where the runner set off from, and how far it had to go. */
+    private var runFromX = 0f
+    private var runFromY = 0f
+    private var runTrip = 0f
+
+    /** The landing: 0 none, 1 on its way, 2 giving. */
+    private var runLand = 0
+    private var runLandFor = 0f
+
+    /** How much of the way in was across and how much down, and how near the key it starts giving. */
+    private var runLandX = 0f
+    private var runLandY = 1f
+    private var runLandAt = 0f
+
+    /** The bright ink that stays put this frame: shift and send while they're on. */
+    private val stillPath = Path()
+
+    /** All the bright ink this frame: what stays put, and the runner. */
     private val inkPath = Path()
     private val inkBounds = RectF()
 
@@ -243,11 +249,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val r = Spring(r)
     }
 
-    private class Balloon(val keyRect: RectF, val label: String) {
-        val rise = Spring(0f)
-        var held = true
-    }
-
     private class Popup(
         val keyRect: RectF,
         val items: List<String>,
@@ -267,7 +268,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         var y = y0
         var mode = Mode.Tap
         val downAt = SystemClock.uptimeMillis()
-        var keyIndex = -1
         var stripTarget = -1
         var spaceSteps = 0
         var deleteWords = 0
@@ -275,7 +275,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         var xs = FloatArray(64)
         var ys = FloatArray(64)
         var n = 0
-        var balloon: Balloon? = null
         var repeated = false
         var longPress: Runnable? = null
         var repeat: Runnable? = null
@@ -401,7 +400,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             l = Layouts.place(sheet, rows, w, p2, p2 - gapV, keysTop)
         }
         layout = l
-        press = Array(l.keys.size) { Spring() }
+        // The runner stays where it is: the key under it now is the one whose mark it holds.
+        runKey = runKey?.let { l.keyAt(it.cx, it.cy) }
+        runCarry = false
+        runGave = null
+        runLand = 0
         appear = Array(l.keys.size) { Spring(if (keysHidden) 0f else 1f) }
         held = Array(l.keys.size) { Spring(if (isOn(l.keys[it])) 1f else 0f) }
         listener.onLayout(l)
@@ -477,18 +480,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val dt = if (lastFrame == 0L) 0.016f else ((now - lastFrame) / 1000f).coerceIn(0f, 0.034f)
         lastFrame = now
         var moving = false
-        for (s in press) if (s.step(dt)) moving = true
         for (s in appear) if (s.step(dt)) moving = true
         for (s in stripPress.values) if (s.step(dt)) moving = true
         if (stripAppear.step(dt)) moving = true
         if (codeSpread.step(dt)) moving = true
         if (now - codeGlintAt < CODE_GLINT_MS) moving = true
-        val it = balloons.iterator()
-        while (it.hasNext()) {
-            val b = it.next()
-            if (b.rise.step(dt)) moving = true
-            if (!b.held && b.rise.value <= 0.01f && b.rise.target == 0f) it.remove()
-        }
         popup?.let { if (it.open.step(dt)) moving = true }
         if (tongueLeft.step(dt)) moving = true
         if (!tongueHeld && tongueKey != null && !tongueLeft.moving) tongueKey = null
@@ -500,7 +496,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             moving = true
         }
         if (trailLive) moving = true
-        if (style == KeyStyle.Runner && stepRunner(dt)) moving = true
+        if (stepRunner(dt)) moving = true
         return moving
     }
 
@@ -508,6 +504,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         var moving = false
         for (s in runLead) if (s.step(dt)) moving = true
         for (s in runTrail) if (s.step(dt)) moving = true
+        if (stepLanding(dt)) moving = true
+        // Landed: the mark is the key's own again, exactly where the key draws it.
+        if (runCarry && !runLead[0].moving && !runLead[1].moving) runCarry = false
+        if (runGave != null) {
+            if (runGaveBack.step(dt)) moving = true else runGave = null
+        }
         val drops = runDrops.iterator()
         while (drops.hasNext()) {
             val d = drops.next()
@@ -531,6 +533,40 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return moving
     }
 
+    /**
+     * The runner's front gives as it lands: shorter along the way it came and fuller across it, by
+     * a few pixels at most whatever the key's size, then round again. A press on the key it
+     * already sits on is a pill's press, wider and flatter. It starts giving just short of the
+     * key, so it's flattest as it arrives. True while there's more of it to come.
+     */
+    private fun stepLanding(dt: Float): Boolean {
+        val k = runKey
+        if (runLand == 0 || k == null) {
+            runLand = 0
+            return false
+        }
+        if (runLand == 1) {
+            // Still on its way (and still moving: ink that has stopped has arrived).
+            val left = hypot(k.cx - runLead[0].value, k.cy - runLead[1].value)
+            if (left > runLandAt && (runLead[0].moving || runLead[1].moving)) return true
+            val alongW = min(k.w * LAND_ALONG, LAND_ALONG_MOST * u)
+            val alongH = min(k.h * LAND_ALONG, LAND_ALONG_MOST * v)
+            val acrossW = min(k.w * LAND_ACROSS, LAND_ACROSS_MOST * u)
+            val acrossH = min(k.h * LAND_ACROSS, LAND_ACROSS_MOST * v)
+            runLead[2].to(k.w - alongW * runLandX + acrossW * runLandY, SpringSpec.Land)
+            runLead[3].to(k.h - alongH * runLandY + acrossH * runLandX, SpringSpec.Land)
+            runLand = 2
+            runLandFor = 0f
+            return true
+        }
+        runLandFor += dt
+        if (runLandFor < LAND_HOLD) return true
+        runLead[2].to(k.w, SpringSpec.Snap)
+        runLead[3].to(k.h, SpringSpec.Snap)
+        runLand = 0
+        return true
+    }
+
     /** Shift while it's on, and send while there's something to send. */
     private fun isOn(k: PlacedKey) = (k.key.type == KeyType.Shift && shift > 0) || (k.key.type == KeyType.Enter && enterBright)
 
@@ -549,7 +585,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         massPath.addRoundRect(0f, massTop, w, h + r, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), Path.Direction.CW)
         canvas.drawPath(massPath, fill)
 
-        if (style == KeyStyle.Runner) buildInk() else inkPath.reset()
+        buildInk()
         drawStrip(canvas)
         drawKeys(canvas)
         drawGoo(canvas)
@@ -557,17 +593,25 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         drawTrail(canvas)
 
         // The word's ink can be sent somewhere new while the strip is drawn.
-        if (moving || (style == KeyStyle.Runner && pillMoving())) frame() else lastFrame = 0L
+        if (moving || pillMoving()) frame() else lastFrame = 0L
     }
 
-    /** Runner's keys: no caps, just what they type. The ink says which you pressed. */
-    private fun drawBareKeys(canvas: Canvas) {
+    /**
+     * The keys: no caps, just what they type. The ink says which you pressed. The key the runner
+     * is carrying its mark to gives that mark up as it comes out in the ink, so it's never there
+     * twice, and has it back under the ink as it lands.
+     */
+    private fun drawKeys(canvas: Canvas) {
         val l = layout ?: return
         val p = palette
+        val rk = if (runCarry) runKey else null
         for ((i, k) in l.keys.withIndex()) {
             val a = appear.getOrNull(i)?.value ?: 1f
             if (a <= 0.01f) continue
-            val s = 0.5f + 0.5f * a
+            var s = 0.5f + 0.5f * a
+            if (k === rk) s *= 1f - carried(k)
+            else if (k === runGave) s *= runGaveBack.value
+            if (s <= 0.01f) continue
             canvas.save()
             canvas.scale(s, s, k.cx, k.cy)
             drawLabel(canvas, k, p.label, (a.coerceIn(0f, 1f) * 255).toInt(), sub = p.sub, sheetColor = p.sub)
@@ -575,35 +619,88 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
-    /** Where Runner's ink covers a key, the key's label is knocked out of the ink. */
+    /**
+     * The marks the bright ink covers, knocked out of it. Ink that stays put (shift and send while
+     * they're on) knocks out what it covers, where it is. The runner holds one
+     * mark only, that of the key it's on or going to: while it runs, the mark rides in its front
+     * and lands exactly where the key draws it, so nothing is handed over, and the keys it passes
+     * over simply go under it (the ink is drawn over their marks, and knocks nothing out of them).
+     */
     private fun drawKnockedLabels(canvas: Canvas) {
-        if (style != KeyStyle.Runner || inkPath.isEmpty) return
+        if (inkPath.isEmpty) return
         val l = layout ?: return
         val p = palette
-        inkPath.computeBounds(inkBounds, false)
+        val rk = runKey
+        if (!stillPath.isEmpty) knock(canvas, l, stillPath, p.onBright, rk)
+
+        if (rk == null || drawnElsewhere(rk)) return
+        val a = appear.getOrNull(l.keys.indexOf(rk))?.value ?: 1f
+        if (a <= 0.01f) return
+        var s = 0.5f + 0.5f * a
+        var dx = 0f
+        var dy = 0f
+        if (runCarry) {
+            dx = runLead[0].value - rk.cx
+            dy = runLead[1].value - rk.cy
+            s *= carried(rk)
+        }
+        if (s <= 0.01f) return
         canvas.save()
         canvas.clipPath(inkPath)
+        canvas.translate(dx, dy)
+        canvas.scale(s, s, rk.cx, rk.cy)
+        drawLabel(canvas, rk, p.onBright, (a.coerceIn(0f, 1f) * 255).toInt(), sub = p.onBright, sheetColor = p.onBright)
+        canvas.restore()
+    }
+
+    /** Draws in [color] the marks of the keys [ink] covers (all but [skip]), only where it covers them. */
+    private fun knock(canvas: Canvas, l: Layout, ink: Path, color: Int, skip: PlacedKey?) {
+        ink.computeBounds(inkBounds, false)
+        canvas.save()
+        canvas.clipPath(ink)
         for ((i, k) in l.keys.withIndex()) {
+            if (k === skip || drawnElsewhere(k)) continue
             if (k.right < inkBounds.left || k.x > inkBounds.right || k.bottom < inkBounds.top || k.y > inkBounds.bottom) continue
-            // Held for accents or swiped for words, the key is drawn by that instead.
-            val pop = popup
-            if (pop != null && pop.keyRect.left == k.x && pop.keyRect.top == k.y) continue
-            val tk = tongueKey
-            if (tk != null && tk.right == k.right && tk.top == k.y) continue
             val a = appear.getOrNull(i)?.value ?: 1f
             if (a <= 0.01f) continue
             val s = 0.5f + 0.5f * a
             canvas.save()
             canvas.scale(s, s, k.cx, k.cy)
-            drawLabel(canvas, k, p.onBright, (a.coerceIn(0f, 1f) * 255).toInt(), sub = p.onBright, sheetColor = p.onBright)
+            drawLabel(canvas, k, color, (a.coerceIn(0f, 1f) * 255).toInt(), sub = color, sheetColor = color)
             canvas.restore()
         }
         canvas.restore()
     }
 
-    /** Runner's ink this frame: shift and send while they're on, the runner, and its drops. */
+    /**
+     * How much of [k]'s mark has come out in the runner's front while the runner carries it, 0 to
+     * 1. It comes out as the ink makes its way to the key, so it never sits on the mark left
+     * behind, and it's never bigger than the ink carrying it (a rested drop swelling as it sets
+     * off). Both are whole well before it lands. The way is measured toward the key: ink sent on
+     * while still running the other way carries nothing until it has turned.
+     */
+    private fun carried(k: PlacedKey): Float {
+        val x = runLead[0].value
+        val y = runLead[1].value
+        val toward = if (runTrip > 1f) ((x - runFromX) * (k.cx - runFromX) + (y - runFromY) * (k.cy - runFromY)) / runTrip else 0f
+        val out = toward / max(1f, min(0.6f * Key.LETTER * u, 0.5f * runTrip))
+        val room = min(runLead[2].value / k.w, runLead[3].value / k.h) / 0.8f
+        return min(out, room).coerceIn(0f, 1f)
+    }
+
+    /** Held for accents or swiped for words, a key is drawn by that instead. */
+    private fun drawnElsewhere(k: PlacedKey): Boolean {
+        val pop = popup
+        if (pop != null && pop.keyRect.left == k.x && pop.keyRect.top == k.y) return true
+        val tk = tongueKey
+        return tk != null && tk.right == k.right && tk.top == k.y
+    }
+
+    /** The bright ink this frame: shift and send while they're on, the runner, and the drops it left behind. */
     private fun buildInk() {
         inkPath.reset()
+        stillPath.reset()
+        runPath.reset()
         val l = layout
         if (l != null) {
             for ((i, k) in l.keys.withIndex()) {
@@ -619,9 +716,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     }
                     val w = min(k.w - 4f * u, max(64f * u, enterWidth + 26f * u)) * h
                     val hh = 36f * v * h
-                    inkPath.addRoundRect(k.cx - w / 2f, k.cy - hh / 2f, k.cx + w / 2f, k.cy + hh / 2f, hh / 2f, hh / 2f, Path.Direction.CW)
+                    stillPath.addRoundRect(k.cx - w / 2f, k.cy - hh / 2f, k.cx + w / 2f, k.cy + hh / 2f, hh / 2f, hh / 2f, Path.Direction.CW)
                 } else {
-                    inkPath.addCircle(k.cx, k.cy, min(18f * u, k.h / 2f) * h, Path.Direction.CW)
+                    stillPath.addCircle(k.cx, k.cy, min(18f * u, k.h / 2f) * h, Path.Direction.CW)
                 }
             }
         }
@@ -631,29 +728,64 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 runTrail[0].value, runTrail[1].value, max(0.5f, runTrail[2].value), max(0.5f, runTrail[3].value),
             )
             if (runHull.count >= 3) {
-                runPath.reset()
                 runPath.moveTo(runHull.xs[0], runHull.ys[0])
                 for (i in 1 until runHull.count) runPath.lineTo(runHull.xs[i], runHull.ys[i])
                 runPath.close()
-                inkPath.addPath(runPath)
             }
         }
+        inkPath.addPath(stillPath)
+        inkPath.addPath(runPath)
+        // A drop left behind is on its way out: it covers the mark under it and knocks nothing out.
         for (d in runDrops) inkPath.addCircle(d.x, d.y, d.r.value, Path.Direction.CW)
     }
 
-    /** The ink runs to [k]: its front edge on Snap, its back edge behind, a drop left where it was. */
+    /**
+     * The runner goes to [k]: its front edge on Snap, its back edge behind, and a drop left where
+     * it was, a bigger one the further it has to go but never wider than the ink it comes off.
+     * [k]'s mark rides in its front (shift and send keep theirs, having ink of their own there),
+     * and the front gives as it lands. Pressed where it already sits, it gives like any pill.
+     */
     private fun runTo(k: PlacedKey) {
         removeCallbacks(rest)
         postDelayed(rest, REST_MS)
         val first = runLead[2].value < 1f && runTrail[2].value < 1f
+        val x = runLead[0].value
+        val y = runLead[1].value
+        val moved = !first && runKey !== k
         if (first) {
             runLead[0].snap(k.cx); runTrail[0].snap(k.cx)
             runLead[1].snap(k.cy); runTrail[1].snap(k.cy)
             for (i in 2..3) { runLead[i].snap(0f); runTrail[i].snap(0f) }
-        } else if (runKey !== k) {
-            val d = Drop(runLead[0].value, runLead[1].value, min(runLead[2].value, runLead[3].value) * 0.42f)
+            runCarry = false
+            runLand = 0
+        } else if (moved) {
+            val was = runKey
+            if (runCarry && was != null) {
+                runGave = was
+                runGaveBack.snap(1f - carried(was))
+                runGaveBack.to(1f, SpringSpec.Snap)
+            }
+            val trip = hypot(k.cx - x, k.cy - y)
+            val short = min(runLead[2].value, runLead[3].value)
+            val far = (trip / max(k.w, k.h)).coerceIn(0.65f, 1.45f)
+            val d = Drop(x, y, min(short * 0.42f * far, short * 0.47f))
             d.r.to(0f, SpringSpec.Tail)
             runDrops += d
+            runFromX = x
+            runFromY = y
+            runTrip = trip
+            val going = trip > 1f
+            runCarry = going && k.key.type != KeyType.Shift && k.key.type != KeyType.Enter
+            runLandX = if (going) abs(k.cx - x) / trip else 0f
+            runLandY = if (going) abs(k.cy - y) / trip else 1f
+            runLandAt = trip * LAND_AT
+            runLand = 1
+        } else if (runLand == 0 && hypot(k.cx - x, k.cy - y) < k.h * 0.25f && runLead[2].value > k.w * 0.8f && runLead[3].value > k.h * 0.8f) {
+            // Already here and whole (not rested into its drop): a press, straight away.
+            runLandX = 0f
+            runLandY = 1f
+            runLandAt = Float.MAX_VALUE
+            runLand = 1
         }
         val size = if (first) SpringSpec.Swell else SpringSpec.Snap
         val behind = if (first) SpringSpec.Swell else SpringSpec.Trail
@@ -671,6 +803,8 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             postDelayed(rest, REST_MS)
             return
         }
+        runCarry = false
+        runLand = 0
         val d = 14f * v
         for (s in arrayOf(runLead[2], runLead[3], runTrail[2], runTrail[3])) s.to(d, SpringSpec.Flow)
         runKey?.let { k ->
@@ -684,6 +818,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     /** Drawn back in, as a panel opens over the keys. */
     private fun shrinkRunner() {
         removeCallbacks(rest)
+        runLand = 0
         for (i in 2..3) { runLead[i].to(0f, SpringSpec.Snap); runTrail[i].to(0f, SpringSpec.Snap) }
     }
 
@@ -693,47 +828,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         for (s in runTrail) s.snap(0f)
         runDrops.clear()
         runKey = null
+        runCarry = false
+        runGave = null
+        runLand = 0
     }
-
-    private fun drawKeys(canvas: Canvas) {
-        if (style == KeyStyle.Runner) {
-            drawBareKeys(canvas)
-            return
-        }
-        val l = layout ?: return
-        val p = palette
-        for ((i, k) in l.keys.withIndex()) {
-            val a = appear.getOrNull(i)?.value ?: 1f
-            if (a <= 0.01f) continue
-            val pr = press.getOrNull(i)?.value ?: 0f
-            val key = k.key
-            var sx = 0.5f + 0.5f * a
-            var sy = sx
-            if (key.isFunction || isWide(k)) {
-                if (k.w > 1.6f * Key.LETTER * u) { sx *= 1f + 0.05f * pr; sy *= 1f - 0.14f * pr } else { sx *= 1f - 0.14f * pr; sy *= 1f - 0.14f * pr }
-            }
-            val bright = (key.type == KeyType.Shift && shift > 0) || (key.type == KeyType.Enter && enterBright)
-            val sliding = key.type == KeyType.Space && spaceSliding
-            val cap = when {
-                bright -> p.bright
-                sliding -> p.preview
-                key.type == KeyType.Text || key.type == KeyType.Space -> p.key
-                else -> p.fn
-            }
-            val alpha = (a.coerceIn(0f, 1f) * 255).toInt()
-            canvas.save()
-            canvas.scale(sx, sy, k.cx, k.cy)
-            fill.color = cap
-            fill.alpha = alpha
-            val radius = min(if (k.w < 40f * u) 16f * u else 23f * u, k.h / 2f)
-            rect.set(k.x, k.y, k.right, k.bottom)
-            canvas.drawRoundRect(rect, radius, radius, fill)
-            drawLabel(canvas, k, if (bright) p.onBright else p.label, alpha)
-            canvas.restore()
-        }
-    }
-
-    private fun isWide(k: PlacedKey) = k.key.type == KeyType.Text && k.w > 1.6f * Key.LETTER * u
 
     /** [k]'s label in [color]; [sub] for the quieter parts, and [sheetColor] for 123 and ABC. */
     private fun drawLabel(canvas: Canvas, k: PlacedKey, color: Int, alpha: Int, sub: Int = palette.sub, sheetColor: Int = color) {
@@ -797,35 +895,26 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val p = palette
         val a = stripAppear.value.coerceIn(0f, 1f)
         val tools = strip is Strip.Tools || activeTool != null
-        val runner = style == KeyStyle.Runner
-        // Runner's word ink only shows behind words; anything else and it goes.
-        if (runner && (tools || strip !is Strip.Words)) pillTo(0f, 0f, -1)
+        // The word's ink only shows behind words; anything else and it goes.
+        if (tools || strip !is Strip.Words) pillTo(0f, 0f, -1)
 
-        // The hub: tools, or back to words. Lit while the tools are showing.
+        // The hub: tools, or back to words. Bare until the tools are showing, when it sits on ink.
         run {
             val pr = stripPress[STRIP_HUB]?.value ?: 0f
             val s = 1f - 0.14f * pr
-            val lit = tools && activeTool == null
             canvas.save()
             canvas.scale(s, s, hubRect.centerX(), hubRect.centerY())
             val r = hubRect.height() / 2f
             fill.alpha = 255
-            if (runner) {
-                // Bare until it's lit, when it sits on ink.
-                val h = hubLit.value
-                if (h > 0.01f) {
-                    fill.color = p.bright
-                    canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), min(r, (r - 2f * v) * h), fill)
-                } else if (pr > 0.01f) {
-                    fill.color = p.key
-                    canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), (r - 2f * v) * pr.coerceIn(0f, 1f), fill)
-                }
-                icon.color = if (h > 0.5f) p.onBright else p.label
-            } else {
-                fill.color = if (lit) p.bright else p.fn
-                canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), r, fill)
-                icon.color = if (lit) p.onBright else p.label
+            val h = hubLit.value
+            if (h > 0.01f) {
+                fill.color = p.bright
+                canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), min(r, (r - 2f * v) * h), fill)
+            } else if (pr > 0.01f) {
+                fill.color = p.key
+                canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), (r - 2f * v) * pr.coerceIn(0f, 1f), fill)
             }
+            icon.color = if (h > 0.5f) p.onBright else p.label
             icon.alpha = 255
             Icons.draw(canvas, Icons.HUB, hubRect.centerX(), hubRect.centerY(), 18f * v, icon)
             canvas.restore()
@@ -838,21 +927,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val s = 1f - 0.14f * pr
                 canvas.save()
                 canvas.scale(s * (0.85f + 0.15f * a), s * (0.85f + 0.15f * a), r.centerX(), r.centerY())
-                if (runner) {
-                    // Bare icons; the chosen one sits on ink, a pressed one on a shadow of it.
-                    if (active) {
-                        fill.color = p.bright
-                        fill.alpha = (255 * a).toInt()
-                        canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f, fill)
-                    } else if (pr > 0.01f) {
-                        fill.color = p.key
-                        fill.alpha = (255 * a).toInt()
-                        canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f * pr.coerceIn(0f, 1f), fill)
-                    }
-                } else {
-                    fill.color = if (active) p.bright else p.fn
+                // Bare icons; the chosen one sits on ink, a pressed one on a shadow of it.
+                if (active) {
+                    fill.color = p.bright
                     fill.alpha = (255 * a).toInt()
                     canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f, fill)
+                } else if (pr > 0.01f) {
+                    fill.color = p.key
+                    fill.alpha = (255 * a).toInt()
+                    canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f * pr.coerceIn(0f, 1f), fill)
                 }
                 icon.color = if (active) p.onBright else p.label
                 icon.alpha = (255 * a).toInt()
@@ -871,39 +954,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
 
         when (val s = strip) {
-            is Strip.Words -> if (runner) drawRunnerWords(canvas, s, a) else {
-                for (i in 0 until min(3, s.words.size)) {
-                    val r = slotRects[i]
-                    val pr = stripPress[i]?.value ?: 0f
-                    if (pr > 0.01f) {
-                        fill.color = p.fn
-                        fill.alpha = (255 * pr.coerceIn(0f, 1f)).toInt()
-                        val sc = 0.4f + 0.6f * pr
-                        canvas.save()
-                        canvas.scale(sc, sc, r.centerX(), r.centerY())
-                        canvas.drawRoundRect(r, r.height() / 2f, r.height() / 2f, fill)
-                        canvas.restore()
-                    }
-                    val word = shownWord(s, i)
-                    val stagger = (a - i * 0.08f).coerceIn(0f, 1f)
-                    val alpha = (255 * stagger).toInt()
-                    canvas.save()
-                    val sc = 0.85f + 0.15f * stagger
-                    canvas.scale(sc, sc, r.centerX(), r.centerY())
-                    drawText(
-                        canvas, word, r.centerX(), r.centerY(), 17f * v,
-                        if (i == s.typedIndex && s.typedIndex != s.commitIndex) p.sub else p.label,
-                        alpha, r.width() - 12f * u, if (i == s.commitIndex && s.commitIndex != s.typedIndex) bold else regular,
-                    )
-                    canvas.restore()
-                }
-            }
+            is Strip.Words -> drawRunnerWords(canvas, s, a)
             is Strip.Paste -> {
                 val pr = stripPress[STRIP_PASTE]?.value ?: 0f
                 val sc = (1f - 0.05f * pr) * (0.9f + 0.1f * a)
                 canvas.save()
                 canvas.scale(sc, sc, pasteRect.centerX(), pasteRect.centerY())
-                fill.color = if (runner) p.key else p.fn
+                fill.color = p.key
                 fill.alpha = (255 * a).toInt()
                 canvas.drawRoundRect(pasteRect, pasteRect.height() / 2f, pasteRect.height() / 2f, fill)
                 icon.color = p.label
@@ -970,7 +1027,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun shownWord(s: Strip.Words, i: Int) =
         if (i == s.typedIndex && s.typedIndex != s.commitIndex) "\u201C${s.words[i]}\u201D" else s.words[i]
 
-    /** Runner's words: the one space will use sits on a pill of ink, which runs to the next. */
+    /** The words: the one space will use sits on a pill of ink, which runs to the next. */
     private fun drawRunnerWords(canvas: Canvas, s: Strip.Words, a: Float) {
         val p = palette
         val n = min(3, s.words.size)
@@ -1141,9 +1198,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         return shown
     }
 
-    /** Everything liquid: balloons, the accent bar, the delete tongue and Runner's ink, fused by the goo. */
+    /** Everything liquid: the bright ink, the accent bar and the delete tongue, fused by the goo. */
     private fun drawGoo(canvas: Canvas) {
-        val hasInk = balloons.isNotEmpty() || popup != null || tongueKey != null || !inkPath.isEmpty
+        val hasInk = popup != null || tongueKey != null || !inkPath.isEmpty
         if (!hasInk) return
         val node = gooNode
         if (node != null && canvas.isHardwareAccelerated && Build.VERSION.SDK_INT >= 31) {
@@ -1171,24 +1228,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
         fill.color = p.preview
         fill.alpha = 255
-        for (b in balloons) {
-            val t = b.rise.value
-            if (t <= 0.005f) continue
-            val k = b.keyRect
-            // The cap: the key itself turns to ink while it's held.
-            fill.alpha = (255 * (t * 1.6f).coerceIn(0f, 1f)).toInt()
-            val r = min(16f * u, k.height() / 2f)
-            c.drawRoundRect(k, r, r, fill)
-            fill.alpha = 255
-            // The neck, rising from the key.
-            val nw = 18f * u
-            val neckH = 20f * v * t
-            rect.set(k.centerX() - nw / 2f, k.top + 6f * v - neckH, k.centerX() + nw / 2f, k.top + 6f * v)
-            c.drawRect(rect, fill)
-            balloonRect(b, rect)
-            val rr = 24f * u * (0.3f + 0.7f * t)
-            c.drawRoundRect(rect, rr, rr, fill)
-        }
         popup?.let { pop ->
             val t = pop.open.value.coerceIn(0f, 1.2f)
             val k = pop.keyRect
@@ -1212,12 +1251,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun drawOverGoo(canvas: Canvas) {
         val p = palette
         drawKnockedLabels(canvas)
-        for (b in balloons) {
-            val t = b.rise.value
-            if (t <= 0.05f) continue
-            balloonRect(b, rect)
-            drawText(canvas, b.label, rect.centerX(), rect.centerY() - 2f * v, 32f * v, p.label, (255 * t.coerceIn(0f, 1f)).toInt(), rect.width())
-        }
         popup?.let { pop ->
             val t = pop.open.value
             if (t < 0.2f) return@let
@@ -1254,17 +1287,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 drawText(canvas, if (tongueWords == 1) "1 word" else "$tongueWords words", (left + k.right) / 2f + 10f * u, k.centerY(), 15f * v, p.label, 255, k.right - left - 60f * u)
             }
         }
-    }
-
-    private fun balloonRect(b: Balloon, out: RectF) {
-        val t = b.rise.value
-        val k = b.keyRect
-        val bw = 52f * u
-        val bh = 60f * v
-        val cx = k.centerX().coerceIn(4f * u + bw / 2f, width - 4f * u - bw / 2f)
-        val bottom = k.top - 6f * v + 44f * v * (1f - t)
-        val s = 0.3f + 0.7f * t
-        out.set(cx - bw * s / 2f, bottom - bh * s, cx + bw * s / 2f, bottom)
     }
 
     private fun popupRect(pop: Popup, t: Float, out: RectF) {
@@ -1324,7 +1346,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         for (other in touches.values) {
             if (other.mode == Mode.Tap && other.key?.key?.type == KeyType.Text) {
                 fire(other)
-                release(other)
                 other.mode = Mode.Done
             }
         }
@@ -1351,7 +1372,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val l = layout ?: return
         val k = l.keyAt(x, y) ?: return
         val t = Touch(id, k, x, y)
-        t.keyIndex = l.keys.indexOf(k)
         t.addPoint(x, y)
         touches[id] = t
         feedback(k.key)
@@ -1434,7 +1454,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     k.key.isLetter && swipeOn && touches.size == 1 && hypot(dx, dy) > 0.45f * keyW -> {
                         cancelTimers(t)
                         t.mode = Mode.Gesture
-                        releaseBalloon(t, quick = true)
                         pressKey(t, false)
                         startTrail(t)
                     }
@@ -1445,7 +1464,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                             cancelTimers(t)
                             pressKey(t, false)
                             t.key = now
-                            t.keyIndex = l.keys.indexOf(now)
                             pressKey(t, true)
                             if (now.key.popup.isNotEmpty()) {
                                 t.longPress = Runnable { if (t.mode == Mode.Tap) openPopup(t) }.also { postDelayed(it, LONG_PRESS) }
@@ -1473,10 +1491,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun up(t: Touch, x: Float, y: Float) {
         cancelTimers(t)
         when (t.mode) {
-            Mode.Tap -> {
-                fire(t)
-                release(t)
-            }
+            Mode.Tap -> fire(t)
             Mode.Gesture -> {
                 addTrail(t, x, y)
                 trailLive = false
@@ -1488,19 +1503,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             Mode.DeleteSwipe -> {
                 listener.onDeleteWords(t.deleteWords, true)
                 endTongue()
-                release(t)
             }
-            Mode.SpaceSlide -> {
-                spaceSliding = false
-                release(t)
-            }
+            Mode.SpaceSlide -> spaceSliding = false
             Mode.Popup -> {
                 popup?.let { pop ->
                     val item = pop.items[pop.selected]
                     if (item == Layouts.EMOJI) listener.onEmoji() else listener.onText(item, Float.NaN, Float.NaN)
                 }
                 closePopup()
-                release(t)
             }
             Mode.SheetSlide -> {
                 val k = t.key
@@ -1519,7 +1529,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     if (stripTargetAt(x, y) == target || still) fireStrip(target)
                 }
             }
-            Mode.Done -> release(t)
+            Mode.Done -> Unit
         }
         frame()
     }
@@ -1534,7 +1544,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         if (t.mode == Mode.Strip && t.stripTarget != -1) pressStrip(t.stripTarget, false)
         spaceSliding = false
         trailLive = false
-        release(t)
+        frame()
     }
 
     private fun cancelTimers(t: Touch) {
@@ -1566,41 +1576,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     /** Plays the key sound, when switched on. Set by the input method. */
     var sound: ((Key) -> Unit)? = null
 
+    /** The ink is the press: the runner goes to the key as the finger lands. */
     private fun pressKey(t: Touch, down: Boolean) {
         val k = t.key ?: return
-        val i = layout?.keys?.indexOf(k) ?: -1
-        if (down && style == KeyStyle.Runner) runTo(k)
-        if (k.key.type == KeyType.Text && !isWide(k)) {
-            // Runner's ink is the press, so its letters don't rise.
-            if (down && balloonsOn && style == KeyStyle.Caps) {
-                val b = Balloon(RectF(k.x, k.y, k.right, k.bottom), labelFor(k.key))
-                b.rise.to(1f, SpringSpec.Snap)
-                balloons += b
-                t.balloon = b
-            } else if (!down) releaseBalloon(t, quick = false)
-        } else if (i >= 0 && i < press.size) {
-            press[i].to(if (down) 1f else 0f, if (down) SpringSpec.Snap else SpringSpec.Flow)
-        }
-        frame()
-    }
-
-    private fun labelFor(key: Key) = if (key.isLetter && shift > 0) key.label.uppercase() else key.label
-
-    private fun releaseBalloon(t: Touch, quick: Boolean) {
-        t.balloon?.let {
-            it.held = false
-            it.rise.to(0f, if (quick) SpringSpec.Snap else SpringSpec.Flow)
-        }
-        t.balloon = null
-    }
-
-    private fun release(t: Touch) {
-        releaseBalloon(t, quick = false)
-        val k = t.key
-        if (k != null) {
-            val i = layout?.keys?.indexOf(k) ?: -1
-            if (i >= 0 && i < press.size) press[i].to(0f, SpringSpec.Flow)
-        }
+        if (down) runTo(k)
         frame()
     }
 
@@ -1610,7 +1589,6 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val k = t.key ?: return
         val items = k.key.popup
         if (items.isEmpty()) return
-        releaseBalloon(t, quick = true)
         text.typeface = regular
         text.textSize = 17f * v
         val itemW = max(40f * u, items.maxOf { if (it == Layouts.EMOJI) 0f else text.measureText(it) } + 18f * u)
@@ -1772,8 +1750,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val STRIP_PASTE = 11
         private const val STRIP_CODE = 12
         private const val CODE_GLINT_MS = 440L
-        /** How long Runner's ink waits on a key before settling into a drop. */
+        /** How long the runner waits on a key before settling into a drop. */
         private const val REST_MS = 1400L
+
+        /** How much of the way is left when the runner's front starts to give. */
+        private const val LAND_AT = 0.15f
+        /** How long, in seconds, it stays given before rounding out again. */
+        private const val LAND_HOLD = 0.09f
+        /** What it gives along its way and gains across it: a share of the key, and the most in design units. */
+        private const val LAND_ALONG = 0.12f
+        private const val LAND_ALONG_MOST = 5f
+        private const val LAND_ACROSS = 0.06f
+        private const val LAND_ACROSS_MOST = 3f
         private const val STRIP_TOOL = 20
         /** The tools in the strip, in order after the hub. */
         private val STRIP_TOOLS = listOf(Tool.Clipboard, Tool.Emoji, Tool.Edit, Tool.Scan, Tool.Settings)

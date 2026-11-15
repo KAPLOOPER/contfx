@@ -5,7 +5,6 @@ import android.media.AudioManager
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
-import dev.continuum.fx.island.ui.glint
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -26,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -52,10 +52,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
-import dev.continuum.fx.island.ui.Goo
-import dev.continuum.fx.island.ui.InkColors
+import dev.continuum.fx.island.ui.Isle
+import dev.continuum.fx.ui.eidolon.GroteskTight
+import dev.continuum.fx.ui.eidolon.Star
+import androidx.compose.ui.graphics.drawscope.Stroke
 import dev.continuum.fx.island.ui.lerpF
-import dev.continuum.fx.ui.theme.Libron
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.volume.AppVolumes
 import dev.continuum.fx.volume.Booster
@@ -72,17 +73,18 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** The rim drawn round the ink, so it still has an edge on a black screen. */
-private val Rim = Color(0xFF3A3A38)
-
 /**
- * The volume panel, in ink, growing out of the screen edge beside the volume buttons. A key
- * press brings out just a sliver against the edge, filled to the level. Press it and it swells
- * off the edge into a capsule you drag, with a drop pinching off its side to say the number and
- * two more separating from its ends: the ringer above, and below, the way into everything.
- * Opened out, the capsule spreads into a sheet. Folding away, everything merges back and sinks
- * into the edge, so ink only ever separates and merges, and always comes from the edge.
+ * The volume panel, printed in Eidolon beside the volume buttons. A key press brings out just a
+ * sliver against the edge, ruled to the level. Press it and it comes off the edge as a square-cut
+ * column hung from the edge on two threads, a gauge you drag: a flat print of paper-white for the
+ * level, the stream's steps ruled up its sides, a lit star riding the surface, and the number on a
+ * tag tied beside it. A star comes off each end: the ringer above, and below, the way into
+ * everything. Opened out, the column spreads into a slip; folding away, it all goes back into the
+ * edge it came from.
  */
+/** True only in previews: the panel drawn already at rest, with nothing left to animate in. */
+internal val LocalPanelStill = staticCompositionLocalOf { false }
+
 @Composable
 fun VolumePanel(
     ui: PanelUi,
@@ -111,10 +113,12 @@ fun VolumePanel(
     if (stripW <= 0f || screenH <= 0f) return
 
     // ---- Motion ----
-    val out = remember { Animatable(0f) }
-    val buds = remember { Animatable(0f) }
-    val open = remember { Animatable(0f) }
-    val tell = remember { Animatable(0f) }
+    // Held still for a drawing of it (the previews), it starts where it would have come to rest.
+    val still = LocalPanelStill.current && visible
+    val out = remember { Animatable(if (still) 1f else 0f) }
+    val buds = remember { Animatable(if (still && opened) 1f else 0f) }
+    val open = remember { Animatable(if (still && expanded) 1f else 0f) }
+    val tell = remember { Animatable(if (still && opened && !expanded) 1f else 0f) }
     // 0 the sliver against the edge, 1 the capsule.
     val wide = remember { Animatable(if (opened) 1f else 0f) }
     val fill = remember { Animatable(snap[stream].fraction) }
@@ -193,7 +197,7 @@ fun VolumePanel(
     val extraH = boostShown * px(52f)
     val margin = px(12f)
     val d = px(46f)
-    // Far enough apart that the goo lets the drops go at rest; they only join while moving.
+    // The stars off each end keep a clear gap from the column.
     val gap = px(16f)
     val stackH = d + gap + baseH + gap + d
     // Kept clear of the screen's ends; on a short (landscape) screen the room shrinks, never inverts.
@@ -215,7 +219,7 @@ fun VolumePanel(
     val wc = wv.coerceIn(0f, 1f)
     // The sliver: ink grown out of the edge, a little of it past the edge so it's flush there.
     val sliverW = px(8f)
-    // Most of it is past the edge, so the goo keeps the part you see full and flush.
+    // Most of it is past the edge, so the part you see sits flush.
     val past = px(24f)
     val sliverWidth = past + sliverW * o.coerceIn(0f, 1f)
     // The capsule: hidden, it sits just past the edge; it slides out as it emerges.
@@ -227,15 +231,15 @@ fun VolumePanel(
     val rBottom = lerpF(cy + sliverH / 2f, capBottom, wc)
     val capsule = side(near, lerpF(sliverWidth, w, wv), rTop, rBottom)
     // At rest the sliver is drawn crisp, as itself: flush with the edge, its ends rounded off,
-    // a hairline rim round it. The goo takes over once it starts to open.
+    // a hairline rule round it.
     val crisp = wc < 0.02f && e < 0.01f
     val crispRect = side(-sliverW, sliverW + sliverW * o.coerceIn(0f, 1f), rTop, rBottom)
 
     val cardW = min(stripW - margin * 2f, px(360f))
     val cardH = min(
         screenH - px(112f),
-        px(16f + 44f + 12f + 44f + 10f + 52f) + VolStream.entries.size * px(50f) +
-            (if (apps.isNotEmpty()) px(30f) + apps.size * px(50f) else 0f) + px(30f),
+        px(12f + 18f + 6f + 44f + 12f + 42f + 6f + 42f + 15f) + VolStream.entries.size * px(54f) +
+            (if (apps.isNotEmpty()) px(28f) + apps.size * px(54f) else 0f) + px(22f),
     )
     val cardTop = (cy - cardH / 2f).coerceIn(px(56f), (screenH - px(56f) - cardH).coerceAtLeast(px(56f)))
     val card = side(margin, cardW, cardTop, cardTop + cardH)
@@ -258,10 +262,10 @@ fun VolumePanel(
         boostSteps > 0 && stream == VolStream.Media -> "${BoostPolicy.percent(boostSteps)}%"
         else -> "${((dragFraction ?: level.fraction) * 100f).roundToInt()}"
     }
-    val labelStyle = TextStyle(color = InkColors.on, fontSize = 14.sp, fontFamily = Libron, fontWeight = FontWeight.Bold)
+    val labelStyle = TextStyle(color = Isle.on, fontSize = 14.sp, fontFamily = GroteskTight, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
     val labelLayout = remember(label) { measurer.measure(label, labelStyle) }
-    val tellW = labelLayout.size.width + px(26f)
-    val tellH = px(32f)
+    val tellW = labelLayout.size.width + px(22f)
+    val tellH = px(30f)
     val t = tell.value.coerceIn(0f, 1.1f) * (1f - e) * o.coerceIn(0f, 1f) * wc
     // The liquid sits inside: a thread of it in the sliver, a column in the capsule.
     val ins = lerpF(px(2.2f), px(5f), wc)
@@ -288,117 +292,134 @@ fun VolumePanel(
         reportBounds(boundsKey?.let { r -> AndroidRect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt()) })
     }
 
-    val goo = remember(density) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(px(9f)) else null }
-    val rim = goo
     val edgeX = if (left) 0f else stripW
-    // Where the ink leaves the edge: a lip as the capsule comes out, or steps off the sliver.
-    val lipW = px(22f) * max(
-        sin(PI.toFloat() * o.coerceIn(0f, 1f)) * wc,
-        sin(PI.toFloat() * wc) * o.coerceIn(0f, 1f),
-    ).coerceAtLeast(0f)
-    val lip = if (left) Rect(edgeX - px(4f), cy - baseH * 0.32f, edgeX + lipW, cy + baseH * 0.32f)
-    else Rect(edgeX - lipW, cy - baseH * 0.32f, edgeX + px(4f), cy + baseH * 0.32f)
     if (o <= 0.001f && !visible) return
 
-    fun DrawScope.ink(color: Color, grow: Float) {
-        if (lipW > 0.5f) drawRoundRect(color, lip.topLeft - Offset(grow, grow), Size(lip.width + grow * 2, lip.height + grow * 2), CornerRadius(lipW))
-        drawRoundRect(color, body.topLeft - Offset(grow, grow), Size(body.width + grow * 2, body.height + grow * 2), CornerRadius(radius + grow))
-        if (budK > 0.02f && e < 0.98f) {
-            drawCircle(color, budR + grow, ringerBud.center)
-            drawCircle(color, budR + grow, moreBud.center)
-        }
-        if (t > 0.02f) {
-            drawRoundRect(color, tellRect.topLeft - Offset(grow, grow), Size(tellRect.width + grow * 2, tellRect.height + grow * 2), CornerRadius(tellH / 2f + grow))
-        }
-    }
-
-    // The blurred layers cover only the ink and a margin for the blur, not the whole window.
-    val area = unionOf(body, lip, ringerBud, moreBud, tellRect).inflate(px(28f))
-    val areaW = with(density) { area.width.toDp() }
-    val areaH = with(density) { area.height.toDp() }
+    // What sits on the ink: the level, the icons and the number.
+    val streamPainter = painterResource(streamIcon(stream, level.index == level.min, snap.ringer))
+    val ringerPainter = painterResource(ringerIcon(snap.ringer))
+    val morePainter = painterResource(R.drawable.ic_tune)
+    val liquid = if (stream == VolStream.Call) Isle.charge else Isle.on
+    val bodyPath = remember { Path() }
+    val starPath = remember { Path() }
 
     Box(Modifier.fillMaxSize()) {
-        if (crisp) {
-            Canvas(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            if (crisp) {
+                // The sliver: a square-cut strip flush with the edge, a thread of the level inside it.
                 val r = crispRect
-                val g = px(1.2f)
-                val rad = min(r.width, r.height) / 2f
-                drawRoundRect(Rim, r.topLeft - Offset(g, g), Size(r.width + g * 2f, r.height + g * 2f), CornerRadius(rad + g))
-                drawRoundRect(InkColors.ink, r.topLeft, r.size, CornerRadius(rad))
+                val visibleW = r.width - sliverW
+                if (visibleW > 0.5f) {
+                    val strip = side(0f, visibleW, r.top, r.bottom)
+                    cutRect(strip, min(px(2.5f), visibleW / 2f), bodyPath)
+                    drawPath(bodyPath, Isle.ink)
+                    drawPath(bodyPath, Isle.rule, style = Stroke(px(1f)))
+                    val lineW = min(px(2f), visibleW * 0.4f)
+                    val x = if (left) strip.right - visibleW / 2f else strip.left + visibleW / 2f
+                    val inTop = strip.top + px(4f)
+                    val inBottom = strip.bottom - px(4f)
+                    val y = lerpF(inBottom, inTop, fill.value.coerceIn(0f, 1f))
+                    drawLine(Isle.rule, Offset(x, inTop), Offset(x, inBottom), lineW)
+                    drawLine(liquid, Offset(x, y), Offset(x, inBottom), lineW)
+                }
+                return@Canvas
+            }
+            val cut = lerpF(px(5f), px(8f), e.coerceIn(0f, 1f))
+            val budA = ((1f - e) * wc).coerceIn(0f, 1f)
+            // It hangs off the screen's edge on two threads, as the island's slips hang from the star.
+            if (budA > 0.02f) {
+                val nearX = if (left) body.left else body.right
+                listOf(body.top + px(22f), body.bottom - px(22f)).forEach { y ->
+                    drawLine(Isle.ink.copy(alpha = budA), Offset(edgeX, y), Offset(nearX, y), px(2.2f))
+                    drawLine(Color.White.copy(alpha = 0.26f * budA), Offset(edgeX, y), Offset(nearX, y), px(0.7f))
+                }
+            }
+            cutRect(body, cut, bodyPath)
+            drawPath(bodyPath, Isle.slip)
+            drawPath(bodyPath, Isle.rule, style = Stroke(px(1f)))
+            // The ringer and the way into everything, a star each off the column's ends.
+            if (budK > 0.02f && e < 0.98f) {
+                listOf(ringerBud, moreBud).forEach { bud ->
+                    val rr = budR * 1.22f
+                    Star.path(bud.center, rr, rr, Star.SOFT, rotation = (1f - budK.coerceIn(0f, 1f)) * 45f, into = starPath)
+                    drawPath(starPath, Isle.ink)
+                    drawPath(starPath, Isle.rule, style = Stroke(px(1f)))
+                }
+            }
+            // The number, on a tag beside the level, tied to it by a hair.
+            if (t > 0.02f) {
+                val a = t.coerceIn(0f, 1f)
+                val fromX = if (left) capsule.right else capsule.left
+                val toX = if (left) tellRect.left else tellRect.right
+                drawLine(Isle.ruleStrong.copy(alpha = a * 0.6f), Offset(fromX, tellRect.center.y), Offset(toX, tellRect.center.y), px(1f))
+                cutRect(tellRect, px(4f), bodyPath)
+                drawPath(bodyPath, Isle.ink.copy(alpha = a))
+                drawPath(bodyPath, Isle.rule.copy(alpha = Isle.rule.alpha * a), style = Stroke(px(1f)))
             }
         }
-        // The rim, then the ink: both through the goo, so they fuse into one liquid shape.
-        if (!crisp) Canvas(
-            Modifier
-                .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
-                .size(areaW, areaH)
-                .graphicsLayer { renderEffect = rim },
-        ) { translate(-area.left, -area.top) { ink(Rim, px(1.3f)) } }
-        if (!crisp) Canvas(
-            Modifier
-                .offset { IntOffset(area.left.roundToInt(), area.top.roundToInt()) }
-                .size(areaW, areaH)
-                .graphicsLayer { renderEffect = goo },
-        ) { translate(-area.left, -area.top) { ink(InkColors.ink, 0f) } }
 
-        // What sits on the ink: the liquid, the icons and the number.
-        val streamPainter = painterResource(streamIcon(stream, level.index == level.min, snap.ringer))
-        val ringerPainter = painterResource(ringerIcon(snap.ringer))
-        val morePainter = painterResource(R.drawable.ic_tune)
-        val liquid = if (stream == VolStream.Call) InkColors.live else InkColors.on
-        // The liquid shows at full strength early on, rather than greying in with the capsule.
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - e * 2.2f).coerceIn(0f, 1f) * ((o - 0.15f) / 0.35f).coerceIn(0f, 1f) }) {
-            val box = if (crisp) crispRect else capsule
-            val inner = RoundRect(
-                // In the sliver it runs right to the edge, the ink's source.
-                Rect(box.left + ins, innerTop, box.right - ins, innerBottom),
-                CornerRadius(((box.width - ins * 2f) / 2f).coerceAtLeast(0f)),
-            )
-            val clip = Path().apply { addRoundRect(inner) }
-            // The liquid's surface bulges with its speed: up as it rises, down as it falls.
-            val wave = (-fill.velocity * px(10f)).coerceIn(-px(7f), px(7f))
-            val surface = Path().apply {
-                moveTo(inner.left, liquidY)
-                quadraticTo(inner.left + inner.width / 2f, liquidY - wave, inner.right, liquidY)
-                lineTo(inner.right, inner.bottom)
-                lineTo(inner.left, inner.bottom)
-                close()
-            }
-            clipPath(clip) {
-                drawPath(surface, liquid)
-                // Above 100%, the boost fills the top in green, with a drop of ink for each step.
+            if (crisp) return@Canvas
+            val box = capsule
+            val inner = Rect(box.left + ins, innerTop, box.right - ins, innerBottom)
+            if (inner.width <= 1f || inner.height <= 1f) return@Canvas
+            cutRect(inner, px(3f), bodyPath)
+            clipPath(bodyPath) {
+                // The level: a flat print of paper-white from the foot up, the boost in charge green above 100%.
+                drawRect(liquid, Offset(inner.left, liquidY), Size(inner.width, inner.bottom - liquidY))
                 if (extraH > 0.5f) {
-                    drawRect(InkColors.live, Offset(inner.left, innerTop), Size(inner.width, (fullY - innerTop + px(2f)).coerceAtLeast(0f)))
+                    drawRect(Isle.charge, Offset(inner.left, innerTop), Size(inner.width, (fullY - innerTop + px(2f)).coerceAtLeast(0f)))
                     val steps = if (stream == VolStream.Media) boostSteps else 0
                     if (steps > 0 && wc > 0.5f) {
                         val each = (fullY - innerTop) / steps
-                        val r = min(px(2.4f), each * 0.3f)
-                        for (i in 0 until steps) drawCircle(InkColors.ink.copy(alpha = 0.6f), r, Offset((inner.left + inner.right) / 2f, fullY - each * (i + 0.5f)))
+                        val r = min(px(4f), each * 0.32f)
+                        for (i in 0 until steps) {
+                            drawPath(Star.path(Offset(inner.center.x, fullY - each * (i + 0.5f)), r, r, Star.SOFT, into = starPath), Isle.onCharge.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+                // The stream's own steps, ruled up both sides like a gauge.
+                val steps = level.steps.coerceIn(1, 40)
+                if (wc > 0.5f) {
+                    val tickA = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
+                    val tick = px(4f)
+                    for (i in 1 until steps) {
+                        val y = lerpF(rBottom - ins, fullY, i / steps.toFloat())
+                        val over = y > liquidY
+                        val c = (if (over) Isle.ink else Color.White).copy(alpha = 0.28f * tickA)
+                        drawLine(c, Offset(inner.left, y), Offset(inner.left + tick, y), px(1f))
+                        drawLine(c, Offset(inner.right - tick, y), Offset(inner.right, y), px(1f))
                     }
                 }
             }
-            glint(Offset(capsule.center.x, fullY + px(4f)), px(30f), fullGlint.value, InkColors.on)
-            // The stream's icon, dark where the liquid covers it and light where it doesn't.
+            // A lit star rides the level's surface, and flares when it reaches the top.
+            if (wc > 0.3f && extraH <= 0.5f) {
+                val a = ((wc - 0.3f) / 0.7f).coerceIn(0f, 1f)
+                val flare = 1f + 0.5f * sin(PI.toFloat() * fullGlint.value)
+                val sx = inner.width * 0.36f * flare
+                Star.path(Offset(inner.center.x, liquidY), sx, sx * 0.42f, Star.KEEN, into = starPath)
+                drawPath(starPath, Isle.lit.copy(alpha = a))
+            }
+            // The stream's icon, light on the ink and dark where the level covers it.
             val iconSize = px(22f)
             val iconTop = innerBottom - px(14f) - iconSize
             val iconLeft = capsule.center.x - iconSize / 2f
             if (wc > 0.5f) {
                 val a = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
-                clipRect(top = 0f, bottom = liquidY) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.on.copy(alpha = a)) }
-                clipRect(top = liquidY, bottom = size.height) { icon(streamPainter, iconLeft, iconTop, iconSize, InkColors.ink.copy(alpha = a)) }
+                clipRect(top = 0f, bottom = liquidY) { icon(streamPainter, iconLeft, iconTop, iconSize, Isle.on.copy(alpha = a)) }
+                clipRect(top = liquidY, bottom = size.height) { icon(streamPainter, iconLeft, iconTop, iconSize, Isle.ink.copy(alpha = a)) }
             }
-
             if (budK > 0.3f) {
                 val a = ((budK - 0.3f) / 0.6f).coerceIn(0f, 1f)
-                val s = px(20f)
-                icon(ringerPainter, ringerBud.center.x - s / 2f, ringerBud.center.y - s / 2f, s, InkColors.on.copy(alpha = a))
-                icon(morePainter, moreBud.center.x - s / 2f, moreBud.center.y - s / 2f, s, InkColors.on.copy(alpha = a))
+                val sz = px(18f)
+                icon(ringerPainter, ringerBud.center.x - sz / 2f, ringerBud.center.y - sz / 2f, sz, Isle.on.copy(alpha = a))
+                icon(morePainter, moreBud.center.x - sz / 2f, moreBud.center.y - sz / 2f, sz, Isle.on.copy(alpha = a))
             }
             if (t > 0.6f) {
                 val a = ((t - 0.6f) / 0.4f).coerceIn(0f, 1f)
                 drawText(
                     labelLayout,
-                    color = InkColors.on.copy(alpha = a),
+                    color = (if (boostSteps > 0 && stream == VolStream.Media) Isle.charge else Isle.on).copy(alpha = a),
                     topLeft = Offset(tellRect.center.x - labelLayout.size.width / 2f, tellRect.center.y - labelLayout.size.height / 2f),
                 )
             }
@@ -550,6 +571,22 @@ internal fun nextRinger(mode: Int): Int = when (mode) {
     AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
     AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
     else -> AudioManager.RINGER_MODE_NORMAL
+}
+
+/** [r] cut square at its corners by [cut], written into [into]: the Eidolon tag. */
+private fun cutRect(r: Rect, cut: Float, into: Path): Path {
+    val c = cut.coerceAtMost(min(r.width, r.height) / 2f).coerceAtLeast(0f)
+    into.rewind()
+    into.moveTo(r.left + c, r.top)
+    into.lineTo(r.right - c, r.top)
+    into.lineTo(r.right, r.top + c)
+    into.lineTo(r.right, r.bottom - c)
+    into.lineTo(r.right - c, r.bottom)
+    into.lineTo(r.left + c, r.bottom)
+    into.lineTo(r.left, r.bottom - c)
+    into.lineTo(r.left, r.top + c)
+    into.close()
+    return into
 }
 
 private fun lerpRect(a: Rect, b: Rect, t: Float): Rect = Rect(

@@ -16,8 +16,8 @@ While you scroll down to read, the page's big title folds out of the way and ope
 
 ## Eidolon
 
-The app's own screens and the island are drawn in a second design language, **Eidolon**. The
-volume panel and the keyboard are still in Continuum's liquid ink.
+The app's own screens, the island and the volume panel are drawn in a second design language,
+**Eidolon**. The keyboard is still in Continuum's liquid ink.
 
 - **The masthead is a poster.** A four-point star is cut out of the paper behind its top-right
   corner, and through it a dithered halftone sky drifts. Read down a page and the star opens until
@@ -61,7 +61,7 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 
 ## Volume
 
-Press a volume key and an ink capsule grows out of the screen edge beside the buttons. Liquid fills it to the level and sloshes as it moves; a drop pinches off its side with the number and merges back when you stop. Two more drops separate from its ends: the ringer (ring, vibrate, silent) above, and below, the way into everything else. Tap that and the capsule spreads into a sheet: where sound is going (tap it for Android 14's output picker), the ringer, media, calls, ring, notifications and alarms, and a slider for each app that's playing. Drag the capsule itself to set the level, with a tick on every step.
+Press a volume key and a slim square-cut sliver comes out of the screen edge beside the buttons, ruled to the level. Press it and it comes off the edge as a column hung from the edge on two threads, a gauge you drag: a flat print of paper-white for the level, the stream's steps ruled up both sides, a lit star riding the surface (it flares when you reach the top), and the number on a tag tied beside it. A star comes off each end: the ringer (ring, vibrate, silent) above, and below, the way into everything else. Tap that and the column spreads into a slip: where sound is going (tap it for Android 14's output picker), the ringer, Do not disturb and Past 100%, then media, calls, ring, notifications and alarms, and a slider for each app that's playing, each a rule with a star riding it. Drag the column itself to set the level, with a tick on every step.
 
 - **Each app's own volume** (with Shizuku): turn one app down without touching the rest. The level is kept while the app is open, re-applied whenever it opens a new player, and remembered for next time; back to full forgets it.
 - **Play alongside** (with Shizuku): switch an app on and it neither pauses others when it starts nor gets paused when they do; calls and alarms still pause it, and directions still lower it. While any app is on, the helper looks after audio focus for the phone (as an audio focus policy, run the way Android runs it), because simply refusing an app focus, the usual trick, stops most music and video apps from playing at all.

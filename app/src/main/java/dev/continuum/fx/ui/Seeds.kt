@@ -56,7 +56,7 @@ import dev.continuum.fx.island.ui.Goo
 import dev.continuum.fx.island.ui.NeckLatch
 import dev.continuum.fx.island.ui.lerpF
 import dev.continuum.fx.island.ui.neckDown
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Motion
 import kotlinx.coroutines.delay
@@ -252,7 +252,7 @@ internal fun DockMessage(message: String?, dock: State<Rect?>, onDismiss: () -> 
     val measurer = rememberTextMeasurer()
     // Measured exactly as it's drawn (the same words, held the same way, the same line height),
     // so the bubble is never a line shorter than its words and cuts the last one off.
-    val style = TextStyle(fontFamily = Libron, fontSize = 15.sp, lineHeight = 15.sp * 1.38f, color = p.onInk)
+    val style = TextStyle(fontFamily = Grotesk, fontSize = 15.sp, lineHeight = 15.sp * 1.38f, color = p.onInk)
     val padX = with(density) { 20.dp.toPx() }
     val padY = with(density) { 12.dp.toPx() }
     // As wide as the dock's column allows (the screen on a phone; the reading width on a tablet,

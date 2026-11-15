@@ -1,5 +1,11 @@
 package dev.continuum.fx.ui.bench
 
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import dev.continuum.fx.ui.eidolon.skyWindow
+
 import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
@@ -74,9 +80,9 @@ import dev.continuum.fx.ui.INK_RAIL
 import dev.continuum.fx.ui.opens
 import dev.continuum.fx.ui.components.inkNeck
 import dev.continuum.fx.ui.components.squash
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import dev.continuum.fx.ui.theme.LocalPalette
-import dev.continuum.fx.ui.theme.Mark
+import dev.continuum.fx.ui.eidolon.GroteskWide
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
@@ -117,61 +123,114 @@ private val DROP_IN = 3.5.dp
 
 /**
  * A section's rule: its number, its name, and a hairline running from 8dp after the name to the
- * right edge, on the name's baseline, with what the group is doing at the end of it. No box, no
- * card, no border: space does the grouping.
+ * right edge, with what the group is doing at the end of it.
+ *
+ * On a page, the rule also cuts the page's sheet: a strip of whatever lies behind the sheet (the
+ * paper at the top of a page, the night once the poster has opened into it) shows through from
+ * edge to edge above it, so each group of settings is a slip of its own, pasted down the page.
  *
  * [index] is the group's place among the page's own groups, counted from 01; null only for end
  * matter (the colophon, a sheet's Backup), which closes a page rather than being part of it. The
  * whole rule for headings is written beside the disclosure rule, at [dev.continuum.fx.ui.OpensName].
- * [onInk] sets it on the dock's ink, in a sheet.
+ * [onInk] sets it on the dock's ink, in a sheet, where nothing is cut.
  */
 @Composable
 fun BenchSection(index: Int?, name: String, trail: String? = null, onInk: Boolean = false) {
     val p = LocalPalette.current
-    val nameColor = if (onInk) p.onInkSub else p.sub
+    val sheet = dev.continuum.fx.ui.eidolon.LocalPageSheet.current
+    val nameColor = if (onInk) p.onInkSub else p.text
     val quiet = if (onInk) p.onInkSub else p.quiet
-    val rule = if (onInk) androidx.compose.ui.graphics.lerp(p.ink, p.onInkSub, 0.4f) else p.line
-    Row(
+    val number = if (onInk) p.onInkSub else p.primary
+    val rule = if (onInk) androidx.compose.ui.graphics.lerp(p.ink, p.onInkSub, 0.4f) else p.text.copy(alpha = 0.28f)
+    Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 6.dp)
             // TalkBack meets it as a heading, by its name and what it says at its end; the number
-            // is only where it sits.
+            // and the cut are only where it sits.
             .clearAndSetSemantics {
                 heading()
                 contentDescription = name + (trail?.let { ", $it" } ?: "")
             },
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The number has the rail, and the name begins where the rail ends: unless the type is
-        // large enough that the number needs more, and then the name makes room (a gap of its own
-        // is always kept), so "01" never runs into "THIS EQ".
-        Box(Modifier.widthIn(min = INK_RAIL), contentAlignment = Alignment.CenterStart) {
-            if (index != null) Note("%02d".format(index), quiet, Modifier.padding(end = NUMBER_GAP), tracking = NUMBER_TRACKING)
+        if (!onInk && sheet != null) SheetCut(sheet)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = if (!onInk && sheet != null) 16.dp else 20.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // The number has the rail, and the name begins where the rail ends: unless the type is
+            // large enough that the number needs more, and then the name makes room (a gap of its own
+            // is always kept), so "01" never runs into "THIS EQ".
+            Box(Modifier.widthIn(min = INK_RAIL), contentAlignment = Alignment.CenterStart) {
+                if (index != null) Note("%02d".format(index), number, Modifier.padding(end = NUMBER_GAP), tracking = NUMBER_TRACKING)
+            }
+            // The name, the rule level with its middle out to the edge, and the trail at the end. At
+            // large type the trail keeps its words whole and the name wraps between its own words
+            // rather than either being cut off; the rule keeps at least a stroke's length between them.
+            RuleLine(
+                name = {
+                    BasicText(
+                        name.uppercase(),
+                        style = TextStyle(
+                            color = nameColor,
+                            fontSize = 11.5.sp,
+                            fontFamily = GroteskWide,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.2.sp,
+                        ),
+                        maxLines = 2,
+                    )
+                },
+                rule = { Box(Modifier.height(1.dp).background(rule)) },
+                trail = trail?.let { t -> { Note(t, quiet) } },
+                modifier = Modifier.weight(1f),
+            )
         }
-        // The name, the rule level with its middle out to the edge, and the trail at the end. At
-        // large type the trail keeps its words whole and the name wraps between its own words
-        // rather than either being cut off; the rule keeps at least a stroke's length between them.
-        RuleLine(
-            name = {
-                BasicText(
-                    name.uppercase(),
-                    style = TextStyle(
-                        color = nameColor,
-                        fontSize = 13.sp,
-                        fontFamily = Libron,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.2.sp,
-                    ),
-                    maxLines = 2,
-                )
-            },
-            rule = { Box(Modifier.height(1.dp).background(rule)) },
-            trail = trail?.let { t -> { Note(t, quiet) } },
-            modifier = Modifier.weight(1f),
-        )
     }
 }
+
+/**
+ * The cut across the page's sheet above a section: what is behind the sheet, shown through from
+ * edge to edge, with the sheet's hairline edge along both sides of it and the upper slip's shadow
+ * falling across its top.
+ */
+@Composable
+private fun SheetCut(sheet: dev.continuum.fx.ui.eidolon.PageSheet) {
+    val p = LocalPalette.current
+    val at = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val hole = remember { androidx.compose.ui.graphics.Path() }
+    Spacer(
+        Modifier
+            .fillMaxWidth()
+            .height(SHEET_CUT)
+            .onGloballyPositioned { at.floatValue = it.positionInRoot().x }
+            .then(
+                Modifier.skyWindow {
+                    val left = sheet.left - at.floatValue
+                    val right = sheet.right - at.floatValue
+                    val shade = 4.dp.toPx()
+                    hole.rewind()
+                    // Wide enough to take in the sheet's edge and its shadow down the right.
+                    hole.addRect(androidx.compose.ui.geometry.Rect(left - 1f, 0f, right + shade + 2f, size.height))
+                    drawBackdrop(hole)
+                    // The upper slip's shadow, falling across the top of the cut.
+                    drawRect(
+                        dev.continuum.fx.ui.eidolon.PasteShadow,
+                        topLeft = Offset(left + shade, 0f),
+                        size = Size(right - left, shade),
+                    )
+                    // The sheet's edge along both sides of the cut.
+                    val edge = p.text.copy(alpha = if (p.dark) 0.3f else 0.34f)
+                    drawLine(edge, Offset(left, 0.5f), Offset(right, 0.5f), 1f)
+                    drawLine(edge, Offset(left, size.height - 0.5f), Offset(right, size.height - 0.5f), 1f)
+                },
+            ),
+    )
+}
+
+/** How tall the cut between two slips is. */
+private val SHEET_CUT = 22.dp
 
 /**
  * A rule's name, its hairline and its trail. On one line while they fit; at large type the trail

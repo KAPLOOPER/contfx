@@ -20,8 +20,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
-import dev.continuum.fx.ui.theme.Libron
-import dev.continuum.fx.ui.theme.Mark
+import dev.continuum.fx.ui.eidolon.Grotesk
+import dev.continuum.fx.ui.eidolon.GroteskWide
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.island.ui.dropsLine
 import androidx.compose.ui.text.drawText
@@ -375,7 +375,7 @@ fun EqGraph(
                 dropsLine(c, Offset(c.x, c.y + (bottomEnd - c.y) * k), ink, gap, dotR)
                 val a = ((k - 0.6f) / 0.4f).coerceIn(0f, 1f)
                 if (a > 0f) {
-                    val tagStyle = TextStyle(color = p.onPrimary, fontSize = 9.5.sp, fontFamily = Mark, letterSpacing = 1.3.sp, fontFeatureSettings = "tnum, case")
+                    val tagStyle = TextStyle(color = p.onPrimary, fontSize = 9.5.sp, fontFamily = GroteskWide, letterSpacing = 1.3.sp, fontFeatureSettings = "tnum, case")
                     val padX = with(density) { 7.dp.toPx() }
                     val tagH = with(density) { 16.dp.toPx() }
                     fun tag(text: String, x: Float, cy: Float, centred: Boolean) {
@@ -397,7 +397,7 @@ fun EqGraph(
                     if (b.type.usesGain) append("   ").append(Fmt.db(b.gainDb))
                     append("   Q ").append(Fmt.q(b.q))
                 }
-                val text = measurer.measure(words, TextStyle(color = p.onPrimary, fontSize = 13.sp, fontFamily = Libron))
+                val text = measurer.measure(words, TextStyle(color = p.onPrimary, fontSize = 13.sp, fontFamily = Grotesk))
                 // Above the dot, unless there's no room: then it hangs below.
                 val room = c.y - with(density) { 80.dp.toPx() }
                 inkBubble(c, up, text, p.primary, insetPx, w - insetPx, below = room < 0f)

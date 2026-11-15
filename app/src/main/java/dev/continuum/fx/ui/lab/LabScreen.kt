@@ -81,7 +81,7 @@ import dev.continuum.fx.ui.components.InkSlider
 import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.ActionRow
 import dev.continuum.fx.ui.components.PillButton
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
@@ -500,7 +500,7 @@ private fun NameField(value: String, onDone: (String) -> Unit) {
         value = text,
         onValueChange = { text = it.take(60); onDone(text) },
         singleLine = true,
-        textStyle = TextStyle(fontFamily = Libron, fontSize = 19.sp, color = p.text),
+        textStyle = TextStyle(fontFamily = Grotesk, fontSize = 19.sp, color = p.text),
         cursorBrush = SolidColor(p.text),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),

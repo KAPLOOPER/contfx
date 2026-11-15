@@ -14,6 +14,35 @@ The ink rule holds across the app too. The drop under the page's title and the d
 
 While you scroll down to read, the page's big title folds out of the way and opens out again near the top. The dock keeps its place below the page, and grows into setup when you need it. Everything else sits on one flat surface: no cards, boxes or borders, just space and small spaced-out labels to group things. Choices are their words, the chosen one held in a pool of ink; buttons are words with an icon; a switch is an empty drop waiting in the open mouth of a fine channel, which it slides into as the ink pours in after it and closes it, ending in a ticked drop. A row that leads somewhere ends in an arrow; a drop in the rail marks what's on, and a word at the far end says its value. Colour means one thing each: white is on or chosen, green is happening now, red needs you. The finer settings of each group wait behind a quiet *More*, and on a tablet or open foldable the page keeps to a comfortable reading width. Controls are ink too. Choosing a chip spreads ink out from your finger, turning the label as it reaches it, and unchoosing drains it back; a switch's empty drop slides along its channel as it fills, a little past and back, before the tick surfaces; the power button floods from its centre; and *Hold to compare* fills from where you're holding for as long as you hold. You feel the ink as well as see it: a light tick when a drop separates (a tab chosen, a card torn free, a neck snapping) or merges back, a detent as a swipe hands over to the next page, and the toggle feel when a switch fills or drains. Ink that moves by itself stays silent. The icons are Continuum's own, drawn in one hand: round 2-wide strokes, soft filled shapes for media, and a drop where ink would gather (a bell's clapper, a notification's badge, a phone's ear and mouth pieces).
 
+## Eidolon (this branch)
+
+On this branch the app's own screens are redrawn in a second design language, **Eidolon**, to try
+it out. The island, the volume panel and the keyboard stay as they are, in Continuum's liquid ink.
+
+- **The masthead is a poster.** A four-point star is cut out of the paper behind its top-right
+  corner, and through it a dithered halftone sky drifts. Read down a page and the star opens until
+  the paper is gone: the sky becomes the night the page sits on, and the titles turn paper-coloured
+  over it. Each page's name is set again in kanji at the end of the markers' line.
+- **Pages are pasted slips.** A page is printed on a sheet of paper over the sky, and every numbered
+  section rule cuts it, so each group of settings is its own slip with the paper (or, once the poster
+  has opened, the night) showing between.
+- **What is on is a window.** A switch's track, the chosen word in a set of choices, the measured
+  length of a slider and the dock's power button are cut through to the sky behind the page. Off is
+  just paper. A row's drop in the margin is a small ultramarine star.
+- **Type:** Google Sans Flex with its roundness off: narrow and tight for titles and the hero line,
+  wide capitals for notes and section names. Shippori Mincho for the kanji.
+- **Colour:** paper, ink and one ultramarine; in dark mode the same plate printed in negative, the
+  sky in greys so only what's on is in colour. Green still means happening now and red needs you.
+  The dock and the island are still pure black ink.
+
+| At rest | Read down: the poster opened | Island | In negative |
+|---|---|---|---|
+| ![](docs/eidolon/sound.jpg) | ![](docs/eidolon/sound-open.jpg) | ![](docs/eidolon/island.jpg) | ![](docs/eidolon/island-negative.jpg) |
+
+The pieces are in `app/src/main/java/dev/continuum/fx/ui/eidolon/` (palette, type, star, grain, the
+sky stage and its windows, the page sheet) and `ui/Poster.kt`; the shared controls in
+`ui/components/` and `ui/bench/` were redrawn on them, so every page follows.
+
 ## Continuum Keyboard
 
 Continuum's own keyboard, written from scratch so every part of it can follow the liquid ink rule. It lives in `keyboard/` and builds as its own app (`./gradlew -p keyboard assembleRelease`). It has no internet access: your typing, learned words and clipboard stay on the phone.

@@ -78,6 +78,21 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.layout.onSizeChanged
+import dev.continuum.fx.ui.eidolon.LocalPageSheet
+import dev.continuum.fx.ui.eidolon.PageSheet
+import dev.continuum.fx.ui.eidolon.SkyStage
+import dev.continuum.fx.ui.eidolon.pageSheet
+import dev.continuum.fx.ui.eidolon.paperGrain
+import dev.continuum.fx.ui.eidolon.skyWindow
 import dev.continuum.fx.R
 import dev.continuum.fx.audio.EngineMode
 import dev.continuum.fx.audio.EngineSettings
@@ -215,8 +230,13 @@ interface AppActions {
 @Composable
 internal fun Gap(height: Dp) = Spacer(Modifier.height(height))
 
+/**
+ * The whole app: the masthead, the page on screen and the dock.
+ *
+ * @param startScrolled how far down each page starts, in pixels; only previews pass it
+ */
 @Composable
-fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
+fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions, startScrolled: Int = 0) {
     val p = LocalPalette.current
     BackHandler(enabled = state.setupOpen) { actions.setSetupOpen(false) }
 
@@ -225,7 +245,7 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
     val pivot = remember { PivotState(state.section.ordinal, sections.size) }
     val scope = rememberCoroutineScope()
     // Each page keeps its own place, as pivot pages do.
-    val scrolls = sections.associateWith { section -> key(section) { rememberScrollState() } }
+    val scrolls = sections.associateWith { section -> key(section) { rememberScrollState(startScrolled) } }
     val pageState = rememberSaveableStateHolder()
 
     // The page on screen, always current: the swipe handler is made once and must not hold on
@@ -303,8 +323,31 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         effectSpots.next(keys, stepPad)?.let { y -> scope.launch { scrolls.getValue(Section.Effects).animateScrollTo(y, Motion.flow()) } }
     }
 
-    CompositionLocalProvider(LocalSeeds provides seeds, LocalEffectSpots provides effectSpots) {
-    Box(Modifier.fillMaxSize().background(p.ground)) {
+    // The poster at the masthead, and how far the page on screen has opened it.
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topInsetPx = with(density) { topInset.toPx() }
+    val opening: () -> Float = { posterOpening(scrolls.getValue(shown).value, density) }
+    val pageSheet = remember { PageSheet() }
+    val stageSize = remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+    val starPath = remember { Path() }
+    val paperPath = remember { Path() }
+    val knockPath = remember { Path() }
+    val onWindow = Color(0xFFF6F6F3)
+
+    CompositionLocalProvider(LocalSeeds provides seeds, LocalEffectSpots provides effectSpots, LocalPageSheet provides pageSheet) {
+    // The sky is fixed behind everything, the paper over it with the poster's star cut out, and
+    // grain over the lot.
+    SkyStage(
+        wake = { 1f },
+        modifier = Modifier
+            .fillMaxSize()
+            .background(p.ground)
+            .onSizeChanged { stageSize.value = androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) }
+            .paperGrain(),
+        dayHeight = 300.dp,
+        dayWeight = { 1f - opening() },
+        mask = { drawPosterPaper(topInsetPx, opening(), p.ground, starPath, paperPath) },
+    ) {
         // The page is a column: the pivot at the top, the page, and the dock's place at the
         // bottom. Nothing is ever drawn over the page but the dock's own ink when you open it.
         Column(Modifier.fillMaxSize()) {
@@ -321,8 +364,23 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         go(slot)
                     }
                 },
-                modifier = Modifier.statusBarsPadding().padding(top = 14.dp),
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(top = 14.dp)
+                    // Where the titles and markers cross the poster's star they're knocked out in
+                    // paper colour, so they read over the sky (and once it has opened, over all of it).
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        val stage = stageSize.value
+                        if (stage.width <= 0f) return@drawWithContent
+                        posterStar(stage.width, stage.height, topInsetPx, opening(), knockPath)
+                        translate(0f, -(topInsetPx + 14.dp.toPx())) {
+                            drawPath(knockPath, onWindow, blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
+                        }
+                    },
                 fold = { fold },
+                marks = PAGE_MARKS,
             )
             Box(
                 Modifier
@@ -393,7 +451,11 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                         // the left edge the header's title starts from.
                         .wrapContentWidth(Alignment.Start)
                         .widthIn(max = CONTENT_MAX + 48.dp)
-                        .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp),
+                        // The page is printed on a sheet of paper pasted over the stage, 8dp in
+                        // from the screen's edges; its words keep the 24dp margin.
+                        .padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 28.dp)
+                        .pageSheet(pageSheet, p.sheet, p.text.copy(alpha = if (p.dark) 0.3f else 0.34f), shadow = !p.dark)
+                        .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
                 ) {
                     UpdateCard(
                         update = state.update,
@@ -418,27 +480,27 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
                 // by the time the first line (10dp down) reaches the edge, so a page too short to
                 // fold the pivot still lets its kicker go by dissolving, never half cut.
                 val reading = scrolls.getValue(state.section)
-                Box(
+                // The fades are made of what's behind the page (the paper, or the night once the
+                // poster has opened), so the page dissolves into its own ground either way.
+                BackdropFade(
+                    Brush.verticalGradient(
+                        0f to Color.Black,
+                        0.35f to Color.Black.copy(alpha = 0.85f),
+                        0.7f to Color.Black.copy(alpha = 0.3f),
+                        1f to Color.Transparent,
+                    ),
                     Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .height(32.dp)
-                        .graphicsLayer { alpha = (reading.value / 10.dp.toPx()).coerceIn(0f, 1f) }
-                        .background(
-                            Brush.verticalGradient(
-                                0f to p.ground,
-                                0.35f to p.ground.copy(alpha = 0.85f),
-                                0.7f to p.ground.copy(alpha = 0.3f),
-                                1f to p.ground.copy(alpha = 0f),
-                            ),
-                        ),
+                        .graphicsLayer { alpha = (reading.value / 10.dp.toPx()).coerceIn(0f, 1f) },
                 )
-                Box(
+                BackdropFade(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black)),
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(18.dp)
-                        .background(Brush.verticalGradient(listOf(p.ground.copy(alpha = 0f), p.ground))),
+                        .height(18.dp),
                 )
                 // With setup open, the page sits back behind the dock's ink.
                 val dim by animateFloatAsState(if (state.setupOpen) 0.72f else 0f, Motion.flow(), label = "pageDim")
@@ -453,7 +515,51 @@ fun AppScreen(state: UiState, store: ProfileStore, actions: AppActions) {
         Dock(state, actions, Modifier.align(Alignment.BottomStart), onStepEffects = stepEffects) { dockRect.value = it }
     }
     }
+    // The status and navigation bar icons sit on whatever is behind them: dark on the paper,
+    // light once the sky has come through.
+    if (!p.dark) SystemBarInk(dark = { opening() < 0.4f })
 }
+
+/** Each page's name in the second voice: sound, effects, island, volume, keyboard. */
+private val PAGE_MARKS = listOf("音響", "効果", "小島", "音量", "鍵盤")
+
+/** A strip of what's behind the page, faded by [brush] (black where it shows, clear where not). */
+@Composable
+private fun BackdropFade(brush: Brush, modifier: Modifier) {
+    val hole = remember { Path() }
+    Box(
+        modifier
+            .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+            .skyWindow {
+                hole.rewind()
+                hole.addRect(androidx.compose.ui.geometry.Rect(Offset.Zero, size))
+                drawBackdrop(hole)
+                drawRect(brush, blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+            },
+    )
+}
+
+@Composable
+private fun SystemBarInk(dark: () -> Boolean) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    val window = remember(view) { view.context.findActivity()?.window } ?: return
+    LaunchedEffect(window) {
+        androidx.compose.runtime.snapshotFlow { dark() }.collect { d ->
+            androidx.core.view.WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = d
+                isAppearanceLightNavigationBars = d
+            }
+        }
+    }
+}
+
+private tailrec fun android.content.Context.findActivity(): android.app.Activity? =
+    when (this) {
+        is android.app.Activity -> this
+        is android.content.ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
 
 /** What a pivot page holds, under the Kit's update card and above its colophon. */
 @Composable

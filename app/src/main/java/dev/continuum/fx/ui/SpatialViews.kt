@@ -76,7 +76,7 @@ import dev.continuum.fx.ui.components.Reveal
 import dev.continuum.fx.ui.components.InkSwitch
 import dev.continuum.fx.ui.components.PillButton
 import dev.continuum.fx.ui.components.Surface
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Txt
 import kotlin.math.abs
@@ -182,7 +182,7 @@ private fun SetupHeader(lib: SpatialLibrary, s: SpatialSetup) {
         value = name,
         onValueChange = { name = it.take(32) },
         singleLine = true,
-        textStyle = TextStyle(fontFamily = Libron, fontSize = 21.sp, color = p.text),
+        textStyle = TextStyle(fontFamily = Grotesk, fontSize = 21.sp, color = p.text),
         cursorBrush = SolidColor(p.text),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = {

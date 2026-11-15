@@ -20,7 +20,11 @@ import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
-import dev.continuum.fx.island.ui.lerpF
+import dev.continuum.fx.ui.eidolon.Star
+import dev.continuum.fx.ui.eidolon.lerpF
+import dev.continuum.fx.ui.eidolon.skyWindow
+import dev.continuum.fx.ui.eidolon.tailedStar
+import dev.continuum.fx.ui.eidolon.windowTextShadow
 import dev.continuum.fx.island.ui.Goo
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
@@ -31,12 +35,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.runtime.rememberCoroutineScope
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import kotlinx.coroutines.delay
 import kotlin.math.min
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.animateColorAsState
 import androidx.annotation.DrawableRes
@@ -155,15 +160,14 @@ internal fun ActionRow(
 }
 
 /**
- * A button is a word with its icon, on the surface it sits on: no shape, no border. The icon is
- * required, so a bare line of words never passes for one: it's what says "press me" with no frame
- * to say it. It presses in like everything else. [primary] sets the word in bold. It's never
- * less than 48dp tall, so it's always easy to hit; the space after it keeps the next one apart.
+ * A button: a word with its icon, in a small ruled box, like a box on a printed form. The icon is
+ * required, so a bare line of words never passes for one. It presses in like everything else.
+ * [primary] prints it solid, in negative: the one thing to do. It's never less than 48dp tall, so
+ * it's always easy to hit; the space after it keeps the next one apart.
  *
- * [enabled] false is for an act that can't happen yet (Volume's Try it before setup): words and
- * icon go [Palette.faint], it takes no touch, and TalkBack hears it as unavailable. Only ever
- * under words that say when it will work, and only on the ground. Anything you can touch is
- * drawn at full strength; this is the one thing that isn't.
+ * [enabled] false is for an act that can't happen yet (Volume's Try it before setup): words, icon
+ * and rule go [Palette.faint], it takes no touch, and TalkBack hears it as unavailable. Only ever
+ * under words that say when it will work, and only on the paper.
  */
 @Composable
 fun PillButton(
@@ -177,34 +181,51 @@ fun PillButton(
 ) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
+    val onInk = on == Surface.Ink
+    val solid = primary && enabled
     val fg by animateColorAsState(
         when {
-            on == Surface.Ink -> p.onInk
+            solid -> if (onInk) p.ink else p.sheet
+            onInk -> p.onInk
             enabled -> p.text
             else -> p.faint
         },
         Motion.flow(),
         label = "button",
     )
-    Row(
+    val rule = when {
+        onInk -> p.onInkSub
+        enabled -> p.text.copy(alpha = 0.5f)
+        else -> p.faint.copy(alpha = 0.6f)
+    }
+    val fill = if (solid) (if (onInk) p.onInk else p.text) else androidx.compose.ui.graphics.Color.Transparent
+    Box(
         modifier
             .squash(source, pill = true)
             .heightIn(min = 48.dp)
             .clickable(enabled = enabled, interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
-            // Air above and below once its words take two lines (large type); at one line the
-            // 48dp is what sets its height.
-            .padding(end = 18.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // The touch target is the full 48dp; the box sits inside it, with air after it.
+            .padding(end = 10.dp, top = 4.dp, bottom = 4.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(fg))
-        // Wraps rather than losing its end at large type (a row of them wraps first; see
-        // [ActionRow]), so a button never says half of what it does.
-        Txt(text, 16.sp, fg, bold = primary, maxLines = 3)
+        Row(
+            Modifier
+                .heightIn(min = 40.dp)
+                .background(fill)
+                .border(1.dp, if (solid) fill else rule)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(18.dp), colorFilter = ColorFilter.tint(fg))
+            // Wraps rather than losing its end at large type (a row of them wraps first; see
+            // [ActionRow]), so a button never says half of what it does.
+            Txt(text, 15.sp, fg, bold = primary, maxLines = 3)
+        }
     }
 }
 
-/** Icon-only button, 48dp: no shape at rest, a flat bubble grows out from behind the icon when pressed. */
+/** Icon-only button, 48dp: no shape at rest; pressed, a square well opens behind the icon. */
 @Composable
 fun IconBubble(
     @DrawableRes icon: Int,
@@ -236,7 +257,7 @@ fun IconBubble(
                     scaleY = s
                     alpha = bubble.coerceIn(0f, 1f)
                 }
-                .clip(CircleShape)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
                 .background(bubbleColor),
         )
         Image(
@@ -362,17 +383,17 @@ private fun ChipWord(label: String, selected: Boolean, onClick: () -> Unit, on: 
 }
 
 /**
- * The power control in the dock: tonal when off; turning it on floods it from the centre, and the
- * drop glints. While it's on but [waiting] (nothing playing yet), a halo of ink floats over it.
+ * The power control in the dock, on its ink: off, a ring with the icon in it; turning it on opens a
+ * window through the ink to the sky, as a star from the centre, the icon left standing in paper
+ * colour, and a glint crosses it. While it's on but [waiting] (nothing playing yet), a halo of ink
+ * floats over it.
  */
 @Composable
 fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: String = "processing", waiting: Boolean = false) {
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
-    val touch = remember { Touch() }
-    // From the centre whatever part of it you pressed: it's a button, not a surface.
-    val spread = rememberSpread(on, touch, feel = false)
     val view = LocalView.current
+    val open by animateFloatAsState(if (on) 1f else 0f, INK_IN, label = "power")
     val glintU = remember { Animatable(1f) }
     val was = remember { booleanArrayOf(on) }
     LaunchedEffect(on) {
@@ -389,6 +410,9 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
             0f, 1f, infiniteRepeatable(tween(3000, easing = LinearEasing)), label = "haloPhase",
         ).value
     } else 0f
+    val iris = remember { Path() }
+    val disc = remember { Path() }
+    val onWindow = androidx.compose.ui.graphics.Color(0xFFF6F6F3)
     Box(Modifier.size(56.dp)) {
         Box(
             Modifier
@@ -396,6 +420,21 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
                 .size(56.dp)
                 .clip(CircleShape)
                 .background(p.inkTonal)
+                .skyWindow {
+                    val window = this
+                    if (open > 0f) {
+                        disc.rewind()
+                        disc.addOval(Rect(Offset.Zero, size))
+                        val reach = size.minDimension * 1.1f * open
+                        clipPath(disc) {
+                            window.drawSky(Star.path(center, reach, reach, pinch = lerpF(Star.SOFT, -0.6f, open), into = iris))
+                        }
+                    }
+                    if (open < 1f) {
+                        drawCircle(p.onInkSub, size.minDimension / 2f - 1.5.dp.toPx(), alpha = 1f - open,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                    }
+                }
                 .toggleable(on, interactionSource = source, indication = null, role = Role.Switch) {
                     InkFeel.toggle(view, !on)
                     onClick()
@@ -403,10 +442,7 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
                 .semantics { contentDescription = if (on) "Turn $what off" else "Turn $what on" },
             contentAlignment = Alignment.Center,
         ) {
-            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.onInk))
-            Box(Modifier.matchParentSize().spreadInk(spread).background(p.onInk), contentAlignment = Alignment.Center) {
-                Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(p.ink))
-            }
+            Image(painterResource(icon), contentDescription = null, modifier = Modifier.size(26.dp), colorFilter = ColorFilter.tint(lerp(p.onInk, onWindow, open)))
         }
         Canvas(Modifier.matchParentSize()) {
             glint(center, 36.dp.toPx(), glintU.value, p.onInk, 0.9f)
@@ -417,18 +453,13 @@ fun PowerButton(on: Boolean, @DrawableRes icon: Int, onClick: () -> Unit, what: 
 }
 
 /**
- * A switch, in ink. Off, it's a hollow drop waiting in the open mouth of an empty channel: the
- * channel's hairline runs round the far end and stops short of the drop, so the drop's own round
- * side is the near end, outside the channel, about to go in. That open mouth is what makes it this
- * app's in a still (an outlined capsule with a circle in it is every platform's toggle) while the
- * silhouette stays a switch's. It's drawn the way the app draws what isn't poured yet (the
- * keyboard's outlined keys, the effect chain's ring nodes), and it's never the ink colour, which
- * is kept for on. Turned on, the drop slides in to the far end, drawn out a little by its speed,
- * and ink pours after it, from a bead at the near end out to the whole channel, closing it; the
- * drop fills with the page's own colour and a tick surfaces in it. Off again, the ink drains back
- * first and the drop follows it home, emptying. The channel keeps 3:1 against the ground (`quiet`:
- * 5.4:1 dark, 4.6:1 light) and the drop more (`sub`), so an off switch is plainly a switch you can
- * touch, not a disabled one. The keyboard's settings draw the same switch.
+ * A switch, cut from the paper. Off, it's an outline on the page with an empty ring waiting at its
+ * near end: plainly a switch you can touch, at full strength (`quiet` for the outline, 3:1 or
+ * better on the paper; `sub` for the ring), not a disabled one. Turned on, the track is cut out of
+ * the paper: the sky behind the page opens into it as a star from where the ring was, and a paper
+ * star crosses to the far end, turning a quarter as it goes. Off again, the star goes home and the
+ * window closes behind it. On the dock's ink ([Surface.Ink]) the same cut shows the same sky.
+ * The keyboard's settings draw Continuum's own switch.
  */
 @Composable
 fun InkSwitch(
@@ -441,23 +472,17 @@ fun InkSwitch(
     val p = LocalPalette.current
     val source = remember { MutableInteractionSource() }
     val view = LocalView.current
-    val pos = remember { Animatable(if (on) 1f else 0f) }
-    val flood = remember { Animatable(if (on) 1f else 0f) }
-    LaunchedEffect(on) {
-        val t = if (on) 1f else 0f
-        if (pos.targetValue == t && flood.targetValue == t) return@LaunchedEffect
-        launch { pos.animateTo(t, SLIDE) }
-        flood.animateTo(t, if (on) POUR else DRAIN)
-    }
+    val progress by animateFloatAsState(if (on) 1f else 0f, SLIDE, label = "switch")
     val pressed by source.collectIsPressedAsState()
     val press by animateFloatAsState(if (pressed) 1f else 0f, Motion.snap(), label = "switchPress")
     val onInk = surface == Surface.Ink
-    val ink = if (onInk) p.onInk else p.primary
-    val paper = if (onInk) p.ink else p.onPrimary
-    // Off is not "unavailable": a full-strength hollow drop in a clear channel. The ink's own
-    // colour is only ever on.
+    val edge = if (onInk) p.onInk else p.text
+    val outline = if (onInk) lerp(p.ink, p.onInkSub, 0.62f) else p.quiet
     val ring = if (onInk) p.onInkSub else p.sub
-    val channel = if (onInk) lerp(p.ink, p.onInkSub, 0.62f) else p.quiet
+    val onWindow = androidx.compose.ui.graphics.Color(0xFFF6F6F3)
+    val iris = remember { Path() }
+    val track = remember { Path() }
+    val thumb = remember { Path() }
     Box(
         modifier
             .size(width = 56.dp, height = 48.dp)
@@ -468,73 +493,57 @@ fun InkSwitch(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(width = 46.dp, height = 26.dp)) {
-            val w = size.width
-            val h = size.height
-            val r = h / 2f
-            val cy = h / 2f
-            val x0 = r
-            val x1 = w - r
-            val hair = 1.6.dp.toPx()
-            // The channel is open at the near end: the drop waits in its mouth, outside it, and
-            // its own round side is the channel's near end. Only the ink closes it.
-            val rr = r - hair / 2f
-            val mouth = x0 + MOUTH.toPx()
-            val rim = Path().apply {
-                moveTo(mouth, hair / 2f)
-                lineTo(x1, hair / 2f)
-                arcTo(Rect(x1 - rr, cy - rr, x1 + rr, cy + rr), -90f, 180f, false)
-                lineTo(mouth, h - hair / 2f)
-            }
-            drawPath(rim, channel, style = androidx.compose.ui.graphics.drawscope.Stroke(hair, cap = StrokeCap.Round))
-            // The ink in the channel: a bead at the near end that swells to fill it as it pours,
-            // from nothing (inside the hollow drop, a bead that started a third grown would appear
-            // in one frame, and on the way off shrink to that and vanish in one).
-            val f = flood.value.coerceIn(0f, 1f)
-            if (f > 0.002f) {
-                val rr = r * min(1f, f * 4.5f)
-                val left = x0 - rr
-                val right = lerpF(x0, x1, f) + rr
-                drawRoundRect(ink, Offset(left, cy - rr), Size(right - left, rr * 2f), CornerRadius(rr))
-            }
-            // The drop, drawn out along its way by its speed, and a touch fuller under a finger.
-            // It starts hollow and fills with paper as it crosses into the ink.
-            val v = pos.value
-            val cx = lerpF(x0, x1, v.coerceIn(0f, 1f))
-            val stretch = (abs(pos.velocity) * 0.035f).coerceAtMost(0.3f)
-            val dr = (r - 3.5.dp.toPx()) * (1f + 0.12f * press)
-            val dropAt = Offset(cx - dr * (1f + stretch), cy - dr * (1f - stretch * 0.45f))
-            val dropSize = Size(dr * 2f * (1f + stretch), dr * 2f * (1f - stretch * 0.45f))
-            val filled = ((v - 0.25f) / 0.6f).coerceIn(0f, 1f)
-            if (filled > 0.01f) drawOval(paper.copy(alpha = paper.alpha * filled), dropAt, dropSize)
-            if (filled < 0.99f) {
-                val line = 1.8.dp.toPx()
-                drawOval(
-                    ring.copy(alpha = ring.alpha * (1f - filled)),
-                    Offset(dropAt.x + line / 2f, dropAt.y + line / 2f),
-                    Size(dropSize.width - line, dropSize.height - line),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(line),
-                )
-            }
-            // Its tick, surfacing as it arrives.
-            val t = ((v - 0.65f) / 0.35f).coerceIn(0f, 1f)
-            if (t > 0.01f) {
-                val k = dr * (0.7f + 0.3f * t)
-                val tick = Path().apply {
-                    moveTo(cx - 0.45f * k, cy + 0.02f * k)
-                    lineTo(cx - 0.12f * k, cy + 0.34f * k)
-                    lineTo(cx + 0.47f * k, cy - 0.3f * k)
-                }
-                drawPath(
-                    tick, ink.copy(alpha = ink.alpha * t),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(
-                        1.9.dp.toPx(), cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round,
-                    ),
-                )
-            }
-        }
+        Spacer(
+            Modifier
+                .size(width = 48.dp, height = 28.dp)
+                .skyWindow {
+                    val window = this
+                    val v = progress.coerceIn(0f, 1f)
+                    val w = size.width
+                    val h = size.height
+                    val r = h / 2f
+                    val centre = Offset(r + (w - h) * progress, r)
+                    track.rewind()
+                    track.addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, w, h, CornerRadius(r)))
+                    // The window opens as a star from the thumb, trimmed to the track.
+                    if (v > 0f) {
+                        val reach = w * 1.25f * v
+                        clipPath(track) {
+                            window.drawSky(Star.path(centre, reach, reach, pinch = lerpF(Star.SOFT, -0.6f, v), into = iris))
+                        }
+                    }
+                    // A hairline round the open window; the empty track's outline round the shut one.
+                    val line = if (v > 0.5f) 1f else 1.6.dp.toPx()
+                    drawRoundRect(
+                        color = lerp(outline, edge, v),
+                        topLeft = Offset(line / 2f, line / 2f),
+                        size = Size(w - line, h - line),
+                        cornerRadius = CornerRadius(r - line / 2f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(line),
+                        alpha = if (v > 0.5f) 0.75f else 1f,
+                    )
+                    // Off: an empty ring, a touch fuller under a finger, thinning as the star
+                    // grows through it.
+                    if (v < 1f) {
+                        drawCircle(
+                            ring, (5.dp.toPx()) * (1f + 0.15f * press), centre,
+                            alpha = 1f - v, style = androidx.compose.ui.graphics.drawscope.Stroke(1.8.dp.toPx()),
+                        )
+                    }
+                    // On: the paper star, edged dark so it stays clear over the brightest cloud.
+                    if (v > 0f) {
+                        val k = (r - 4.dp.toPx()) * (0.35f + 0.65f * v) * (1f + 0.1f * press)
+                        val shape = Star.path(centre, k, pinch = Star.SOFT, rotation = (1f - v) * -90f, into = thumb)
+                        drawPath(shape, ThumbEdge, alpha = v * 0.9f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                        drawPath(shape, onWindow, alpha = v)
+                    }
+                },
+        )
     }
 }
+
+/** The dark edge round a switch's paper star. */
+private val ThumbEdge = androidx.compose.ui.graphics.Color(0xFF03032A)
 
 /**
  * The one switch for a whole page, at the end of the hero line, wearing its name ([label]) under
@@ -557,40 +566,19 @@ fun MasterSwitch(on: Boolean, label: String, onClick: () -> Unit) {
     }
 }
 
-/** How far past the resting drop's centre the switch's channel begins: its open mouth. */
-private val MOUTH = 6.dp
-
-/** The drop crosses quickly and settles with the slightest give. */
+/** The star crosses quickly and settles with the slightest give. */
 private val SLIDE = spring<Float>(dampingRatio = 0.72f, stiffness = 520f)
 
-/** Ink pours in after the drop, a little behind it. */
-private val POUR = spring<Float>(dampingRatio = 1f, stiffness = 230f)
-
-/** And drains back ahead of it. */
-private val DRAIN = spring<Float>(dampingRatio = 1f, stiffness = 760f)
-
-/** The value's bubble rises bouncily and sinks back on Snap. */
+/** The value's tag rises bouncily and sinks back on Snap. */
 private val RISE = spring<Float>(dampingRatio = 0.55f, stiffness = 300f)
 
-/** How far left of a slider its ink can reach: room for the branch from a section's thread. */
-private val BRANCH_ROOM = 56.dp
-
-/** The island's goo, for a slider's line and drop: Android 12 and later. */
-@Composable
-private fun rememberSliderGoo(): RenderEffect? {
-    val density = LocalDensity.current
-    return remember(density) {
-        if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 2.6.dp.toPx() }) else null
-    }
-}
-
 /**
- * The island's seek bar, as every slider: a soft track, and the part up to the value a line of
- * ink ending in a drop that the goo fuses to it. Under your finger the line thickens and the drop
- * swells, and a bubble of ink rises off the drop on a neck with [label] (the value) in it; let go
- * and it all settles back. Inside an [InkSection] a thin branch joins the line to the section's
- * thread, and the slider grows out along it as the ink first reaches it.
- * [value] is 0..1; [muted] draws it in grey.
+ * A slider, set as a measuring rule: a hairline runs the length of it with a scale hanging under,
+ * the distance measured is cut out of the paper as a strip of sky sitting on the rule, and the
+ * reading is a long-tailed star standing on it, its tail dropping through the scale. Under your
+ * finger the star grows and the value rises above it on a tag of paper ([label]); let go and it
+ * settles back. Inside an [InkSection] the rule is drawn out as the section's ink first reaches it.
+ * [value] is 0..1; [muted] draws it in grey with the window shut.
  */
 @Composable
 fun InkSlider(
@@ -603,10 +591,7 @@ fun InkSlider(
     onHeld: ((Boolean) -> Unit)? = null,
 ) {
     val p = LocalPalette.current
-    val ink = if (muted) p.sub else p.primary
-    // Enough to see where the slider runs to (about 2:1), well under the ink of the value.
-    val track = p.sub.copy(alpha = 0.42f)
-    val onInk = p.onPrimary
+    val ink = if (muted) p.sub else p.text
     val thread = LocalInkThread.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -626,32 +611,21 @@ fun InkSlider(
         launch { lift.animateTo(if (held) 1f else 0f, if (held) RISE else Motion.snap()) }
         launch { grab.animateTo(if (held) 1f else 0f, Motion.flow()) }
     }
-    val goo = rememberSliderGoo()
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val measurer = rememberTextMeasurer()
-    val style = TextStyle(color = onInk, fontSize = 14.sp, fontFamily = Libron)
+    val tagStyle = TextStyle(color = p.text, fontSize = 13.sp, fontFamily = dev.continuum.fx.ui.eidolon.GroteskTight, fontFeatureSettings = "tnum")
     val latest = rememberUpdatedState(onChange)
+    val band = remember { Path() }
+    val pointer = remember { Path() }
 
-    // Where the section's thread is, left of this slider (none outside a section), and how far
-    // the ink has reached it.
-    val branch = FloatArray(2)
-    fun measureBranch() {
-        branch[0] = 0f
-        branch[1] = 1f
-        val t = thread ?: return
-        val mine = coords[0] ?: return
-        val sc = t.coords ?: return
-        if (!sc.isAttached || !mine.isAttached) return
+    /** How far the section's ink has reached this slider: 1 outside a section, or once it has. */
+    fun reached(): Float {
+        val t = thread ?: return 1f
+        val mine = coords[0] ?: return 1f
+        val sc = t.coords ?: return 1f
+        if (!sc.isAttached || !mine.isAttached) return 1f
         val at = sc.localPositionOf(mine, Offset.Zero)
-        branch[0] = t.threadX - at.x
-        branch[1] = t.reach(at.y + mine.size.height / 2f)
-    }
-    fun Density.thick() = lerpF(6.dp.toPx(), 9.dp.toPx(), grab.value)
-    fun Density.bulb() = lerpF(5.5.dp.toPx(), 10.dp.toPx(), grab.value)
-    /** The drop's centre across: on the value, kept inside the track's ends. */
-    fun Density.dropX(w: Float, from: Float, reach: Float): Float {
-        val kx = value.coerceIn(0f, 1f) * w
-        return if (reach >= 1f) kx.coerceIn(bulb(), max(bulb(), w - bulb())) else from + (kx - from) * reach
+        return t.reach(at.y + mine.size.height / 2f)
     }
 
     Box(
@@ -685,7 +659,7 @@ fun InkSlider(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
-                        // A moment's hold before the bubble rises, so a scroll passing over
+                        // A moment's hold before the tag rises, so a scroll passing over
                         // doesn't raise it.
                         val rise = scope.launch {
                             delay(90)
@@ -698,55 +672,64 @@ fun InkSlider(
                     onTap = { o -> latest.value((o.x / size.width).coerceIn(0f, 1f)) },
                 )
             }
+            .skyWindow {
+                val window = this
+                val reach = reached()
+                if (reach <= 0f) return@skyWindow
+                val w = size.width * reach
+                val line = size.height * 0.56f
+                val kx = value.coerceIn(0f, 1f) * size.width * reach
+                val thin = 1f.coerceAtLeast(0.5.dp.toPx())
+                // The distance measured, cut out of the paper.
+                val bandH = lerpF(9.dp.toPx(), 11.dp.toPx(), grab.value)
+                if (kx > 0.5f) {
+                    band.rewind()
+                    band.addRect(Rect(0f, line - bandH, kx, line))
+                    if (muted) drawPath(band, p.sub, alpha = 0.35f) else window.drawSky(band)
+                }
+                // The rule, solid where it has been measured, and its scale.
+                drawLine(ink.copy(alpha = 0.45f), Offset(kx, line), Offset(w, line), thin)
+                drawLine(ink, Offset(0f, line), Offset(kx, line), 1.5.dp.toPx())
+                val marks = 20
+                for (i in 0..marks) {
+                    val x = w * i / marks
+                    val major = i % 5 == 0
+                    drawLine(
+                        ink.copy(alpha = if (x <= kx) 0.9f else 0.5f),
+                        Offset(x, line), Offset(x, line + if (major) 6.dp.toPx() else 3.dp.toPx()), thin,
+                    )
+                }
+                // The reading: a four-point star with a long tail, a little larger under a finger.
+                val g = grab.value
+                drawPath(
+                    tailedStar(
+                        Offset(kx, line),
+                        arm = lerpF(7.dp.toPx(), 9.dp.toPx(), g),
+                        crown = lerpF(12.dp.toPx(), 15.dp.toPx(), g),
+                        tail = lerpF(16.dp.toPx(), 19.dp.toPx(), g),
+                        into = pointer,
+                    ),
+                    ink,
+                )
+            }
             .drawWithContent {
                 drawContent()
-                measureBranch()
-                if (branch[1] < 1f) return@drawWithContent
+                // The value, on a tag of paper rising above the star while it's held.
                 val b = lift.value
-                if (b > 0.02f) {
-                    val spill = 16.dp.toPx()
-                    val at = Offset(dropX(size.width, branch[0], 1f), size.height / 2f)
-                    inkBubble(at, b, label?.let { measurer.measure(it, style) }, ink, -spill, size.width + spill)
+                if (b > 0.02f && label != null) {
+                    val text = measurer.measure(label, tagStyle)
+                    val padX = 7.dp.toPx()
+                    val tw = text.size.width + padX * 2f
+                    val th = text.size.height + 4.dp.toPx()
+                    val kx = value.coerceIn(0f, 1f) * size.width
+                    val left = (kx - tw / 2f).coerceIn(-12.dp.toPx(), size.width + 12.dp.toPx() - tw)
+                    val top = size.height * 0.56f - 11.dp.toPx() - 6.dp.toPx() - th - 6.dp.toPx() * (1f - b)
+                    val a = b.coerceIn(0f, 1f)
+                    drawRect(dev.continuum.fx.ui.eidolon.PasteShadow, Offset(left + 2.dp.toPx(), top + 2.dp.toPx()), Size(tw, th), alpha = a)
+                    drawRect(p.sheet, Offset(left, top), Size(tw, th), alpha = a)
+                    drawRect(p.text, Offset(left, top), Size(tw, th), alpha = a * 0.4f, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+                    drawText(text, topLeft = Offset(left + padX, top + 2.dp.toPx()), alpha = a)
                 }
             },
-    ) {
-        // The track, drawn out as the ink reaches it.
-        Canvas(Modifier.fillMaxSize()) {
-            measureBranch()
-            val reach = branch[1]
-            if (reach <= 0f) return@Canvas
-            val th = 6.dp.toPx()
-            drawRoundRect(track, Offset(0f, (size.height - th) / 2f), Size(size.width * reach, th), CornerRadius(th / 2f))
-        }
-        // The line and its drop, fused by the goo; with room to the left for the branch.
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .layout { measurable, constraints ->
-                    val room = BRANCH_ROOM.roundToPx()
-                    val wide = constraints.maxWidth + room
-                    val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
-                    layout(constraints.maxWidth, placeable.height) { placeable.place(-room, 0) }
-                }
-                .graphicsLayer { renderEffect = goo },
-        ) {
-            measureBranch()
-            val from = branch[0]
-            val reach = branch[1]
-            if (reach <= 0f) return@Canvas
-            val room = BRANCH_ROOM.toPx()
-            val w = size.width - room
-            val cy = size.height / 2f
-            val th = thick()
-            val kx = value.coerceIn(0f, 1f) * w
-            val end = from + (kx - from) * reach
-            if (from < 0f && end > from) {
-                drawLine(ink, Offset(room + from, cy), Offset(room + min(end, th / 2f), cy), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-            }
-            if (end > 0f) {
-                drawRoundRect(ink, Offset(room, cy - th / 2f), Size(end, th), CornerRadius(th / 2f))
-            }
-            drawCircle(ink, bulb() * min(1f, reach * 1.3f), Offset(room + dropX(w, from, reach), cy))
-        }
-    }
+    )
 }

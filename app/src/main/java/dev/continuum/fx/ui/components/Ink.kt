@@ -35,6 +35,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import dev.continuum.fx.ui.eidolon.Star
+import dev.continuum.fx.ui.eidolon.skyWindow
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
@@ -249,7 +251,7 @@ fun ChoiceRow(
     content: @Composable () -> Unit,
 ) {
     val p = LocalPalette.current
-    val ink = if (on == Surface.Ink) p.onInk else p.primary
+    val onWindow = Color(0xFFF6F6F3)
     val group = remember { ChoiceGroup() }
     val left = remember { Animatable(0f) }
     val right = remember { Animatable(0f) }
@@ -319,9 +321,18 @@ fun ChoiceRow(
                     group.coords = it
                     group.refresh()
                 }
-                // Its own layer, so the ink can knock the chosen word out of itself.
+                // Its own layer, so the window can go in under the chosen word.
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
+                .skyWindow(drawsContent = true) {
+                    val window = this
+                    // The chosen word is set in paper colour where the window reaches it, and the
+                    // window is cut in under it.
+                    fun cut(shape: Path) {
+                        drawPath(shape, onWindow, blendMode = BlendMode.SrcAtop)
+                        // A thin veil of night between the word and the sky, so the word reads.
+                        drawPath(shape, Color(0xFF03032A), alpha = 0.3f, blendMode = BlendMode.DstOver)
+                        window.drawSky(shape, behind = true)
+                    }
                     drawContent()
                     val s = shown.value
                     val tv = tail.value
@@ -335,9 +346,9 @@ fun ChoiceRow(
                             val box = t.second
                             val h = PILL.toPx()
                             val w = maxOf(box.width, h)
-                            drawRoundRect(ink, Offset(box.center.x - w / 2f, box.center.y - h / 2f), Size(w, h), CornerRadius(h / 2f), blendMode = BlendMode.Xor)
+                            cut(Path().apply { addRoundRect(RoundRect(box.center.x - w / 2f, box.center.y - h / 2f, box.center.x + w / 2f, box.center.y + h / 2f, CornerRadius(CUT_CORNER.toPx()))) })
                         }
-                        return@drawWithContent
+                        return@skyWindow
                     }
                     val cy = mid.value
                     val h = PILL.toPx()
@@ -351,17 +362,18 @@ fun ChoiceRow(
                     val cx = (l + r) / 2f
                     val w = (r - l) * min(1f, s.coerceAtLeast(0f))
                     val hh = h * min(1f, s.coerceAtLeast(0f))
+                    val corner = CornerRadius(min(CUT_CORNER.toPx(), hh / 2f))
                     if (tv <= 0.01f) {
-                        drawRoundRect(ink, Offset(cx - w / 2f, cy - hh / 2f), Size(w, hh), CornerRadius(hh / 2f), blendMode = BlendMode.Xor)
-                        return@drawWithContent
+                        cut(Path().apply { addRoundRect(RoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, corner)) })
+                        return@skyWindow
                     }
-                    var shape = Path().apply { addRoundRect(RoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, CornerRadius(hh / 2f))) }
+                    var shape = Path().apply { addRoundRect(RoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, corner)) }
                     val tr = h * 0.36f * tv
                     val tc = Offset(tailAt[0], tailAt[1])
                     shape = union(shape, Path().apply { addOval(Rect(tc, tr)) })
                     val cap = if (tc.x < cx) Offset(cx - w / 2f + hh / 2f, cy) else Offset(cx + w / 2f - hh / 2f, cy)
                     inkNeck(tc, tr, cap, hh / 2f, reach = 1.5f)?.let { shape = union(shape, it) }
-                    drawPath(shape, ink, blendMode = BlendMode.Xor)
+                    cut(shape)
                 },
             perLine = Int.MAX_VALUE,
             spacing = 2.dp,
@@ -412,8 +424,11 @@ private fun EvenLines(modifier: Modifier, perLine: Int, spacing: androidx.compos
 /** One outline from two (drawn once, so the knock-out works); the first alone should that fail. */
 private fun union(a: Path, b: Path): Path = runCatching { Path.combine(PathOperation.Union, a, b) }.getOrDefault(a)
 
-/** How tall the ink is behind a chosen word. */
+/** How tall the window is behind a chosen word. */
 private val PILL = 40.dp
+
+/** How round a window's corners are: cut, not moulded. */
+private val CUT_CORNER = 3.dp
 
 // --- Opening --------------------------------------------------------------------------------
 
@@ -468,9 +483,9 @@ private val MARGIN = 24.dp
  * It uses the page's side margin, so it belongs at the page's edge (or inside another section).
  *
  * A ledger row ([threadIn] given) keeps its drop in the row's own first column instead, that far
- * in from the content's edge, finer: there the drop is also the row's state, resting beside the
- * label while it's [on] (quiet while [resting]), swelling in as it's switched on and drying away
- * as it's switched off; opening drips the thread from it whether it's on or not. [dropAt] puts
+ * in from the content's edge, finer: there the drop is also the row's state, a small ultramarine
+ * star resting beside the label while it's [on] (quiet while [resting]), swelling in as it's
+ * switched on and fading as it's switched off; opening runs the thread from it whether it's on or not. [dropAt] puts
  * the drop on the label's line (pixels down from the row's top) when a caption sits under it.
  */
 @Composable
@@ -544,12 +559,14 @@ internal fun InkSection(
                 // measured rather than waiting for something else to redraw the row.
                 val y = dropAt?.invoke()?.takeIf { it > 0f && it < thread.headerH } ?: thread.dropY
                 val q = pr.coerceIn(0f, 1f)
-                val line = if (fine) 2.dp.toPx() else 3.dp.toPx()
+                val line = if (fine) 1.5.dp.toPx() else 2.dp.toPx()
                 if (q > 0.001f) {
                     val tip = thread.tip.coerceIn(y, max(y, thread.end))
-                    drawLine(ink, Offset(x, y), Offset(x, tip), strokeWidth = line, cap = StrokeCap.Round)
-                    // The drip at the thread's tip while it runs.
-                    if (q in 0.02f..0.97f) drawCircle(ink, if (fine) 3.dp.toPx() else 4.5.dp.toPx(), Offset(x, tip))
+                    drawLine(ink, Offset(x, y), Offset(x, tip), strokeWidth = line, cap = StrokeCap.Butt)
+                    // A small star travels down at the thread's tip while it runs.
+                    if (q in 0.02f..0.97f) {
+                        drawPath(Star.path(Offset(x, tip), if (fine) 4.dp.toPx() else 6.dp.toPx(), pinch = Star.SOFT), ink)
+                    }
                 }
                 // The drop the thread hangs from: it gathers as the row opens (the chevron says
                 // that it opens), swells a moment as it starts to drip, and is drawn back in with
@@ -559,7 +576,13 @@ internal fun InkSection(
                 val h = held.value
                 val state = if (fine && h > 0.001f) base * h else 0f
                 val r = max(opening, state)
-                if (r > 0.2f) drawCircle(if (opening >= state) ink else heldColor, r, Offset(x, y))
+                // Drawn as a four-point star: what's on is a lit star in the margin.
+                if (r > 0.2f) {
+                    drawPath(
+                        Star.path(Offset(x, y), r * 1.5f, pinch = Star.SOFT, rotation = (1f - min(1f, h)) * 45f),
+                        if (opening >= state) ink else heldColor,
+                    )
+                }
             },
     ) { measurables, constraints ->
         val margin = MARGIN.roundToPx()

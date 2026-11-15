@@ -36,29 +36,38 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
+import dev.continuum.fx.ui.eidolon.Grotesk
+import dev.continuum.fx.ui.eidolon.GroteskWide
+import dev.continuum.fx.ui.eidolon.LocalEidolonColors
+import dev.continuum.fx.ui.eidolon.PaperColors
+import dev.continuum.fx.ui.eidolon.VoidColors
 
 /**
- * The Continuum palette. Ink is always pure black; the ground changes with the system theme.
+ * The Continuum palette, printed in Eidolon's inks: a sheet of grey paper, one ink and one
+ * ultramarine, over a halftone sky that shows through wherever something is switched on (see
+ * ui/eidolon). The dock and the island are still Continuum's pure black ink.
  *
  * Colour means one thing each, and nothing is coloured for decoration:
- *  - [text] / [primary] (white on dark): on, or chosen.
+ *  - [primary] (ultramarine): on, or chosen, where a control cannot cut a window to the sky.
  *  - [live] (green): happening right now (charging, a call, a boost in use).
  *  - [danger] (red): needs you (an error, something that stopped).
- * Everything else is the ground, the ink and greys.
+ * Everything else is the paper, the ink and greys.
  */
 data class Palette(
+    /** The paper the masthead is printed on, and the ground under everything before the sky. */
     val ground: Color,
+    /** A recess in the paper: an instrument's well, a pressed bubble. */
     val surface: Color,
     val text: Color,
     val sub: Color,
     /**
-     * Quieter than [sub]: counts and the numbers in the margin. Still 4.5:1 on the ground, so it
-     * reads; what sets it apart from [sub] is the small capitals it's set in, not fading.
+     * Quieter than [sub]: counts and the numbers in the margin. Still 4.5:1 on the paper, so it
+     * reads; what sets it apart from [sub] is the wide capitals it's set in, not fading.
      */
     val quiet: Color,
     /**
      * Below [quiet], on purpose: the words of a control that can't be used yet (a button before
-     * setup), and nothing else. 3:1 on the ground, so it still reads, and plainly fainter than
+     * setup), and nothing else. 3:1 on the paper, so it still reads, and plainly fainter than
      * every word you can touch.
      */
     val faint: Color,
@@ -72,50 +81,54 @@ data class Palette(
     val onPrimary: Color,
     val danger: Color,
     val live: Color,
-    /** Green for words on the ground, dark enough to stay readable in the light theme. */
+    /** Green for words on the paper, dark enough to stay readable in the light theme. */
     val liveText: Color,
     val onLive: Color,
     val edge: Color,
     val dark: Boolean,
+    /** The sheet a page is printed on, pasted over the ground. */
+    val sheet: Color,
 )
 
 val LightPalette = Palette(
-    ground = Color(0xFFEEEEEB),
-    surface = Color(0xFFE0E0DC),
-    text = Color(0xFF121211),
-    sub = Color(0xFF5C5C58),
-    quiet = Color(0xFF6B6B66),
-    faint = Color(0xFF868682),
-    line = Color(0xFFCFCFCA),
+    ground = Color(0xFFE8E8E4),
+    surface = Color(0xFFDDDDD8),
+    text = Color(0xFF0B0B10),
+    sub = Color(0xFF55555B),
+    quiet = Color(0xFF606066),
+    faint = Color(0xFF86868B),
+    line = Color(0xFFD3D3CF),
     ink = Color(0xFF000000),
-    onInk = Color(0xFFF4F4F1),
+    onInk = Color(0xFFF2F2EF),
     onInkSub = Color(0xFFA3A39E),
     inkTonal = Color(0xFF242423),
     inkRaised = Color(0xFF1C1C1B),
-    primary = Color(0xFF000000),
-    onPrimary = Color(0xFFF4F4F1),
-    danger = Color(0xFFA32D2D),
+    primary = Color(0xFF1512D9),
+    onPrimary = Color(0xFFF6F6F3),
+    danger = Color(0xFFB3121A),
     live = Color(0xFF97C459),
     liveText = Color(0xFF456B1F),
     onLive = Color(0xFF173404),
     edge = Color.Transparent,
     dark = false,
+    sheet = Color(0xFFF2F2EF),
 )
 
 val DarkPalette = LightPalette.copy(
-    ground = Color(0xFF161615),
-    surface = Color(0xFF262624),
-    text = Color(0xFFEDEDEA),
-    sub = Color(0xFFA3A39E),
-    quiet = Color(0xFF8C8C87),
-    faint = Color(0xFF666662),
-    line = Color(0xFF3A3A37),
-    primary = Color(0xFFEDEDEA),
-    onPrimary = Color(0xFF121211),
-    danger = Color(0xFFF09595),
+    ground = Color(0xFF07070A),
+    surface = Color(0xFF1D1D24),
+    text = Color(0xFFECECE8),
+    sub = Color(0xFFA4A4A8),
+    quiet = Color(0xFF8C8C92),
+    faint = Color(0xFF66666C),
+    line = Color(0xFF2A2A31),
+    primary = Color(0xFFA3ACFF),
+    onPrimary = Color(0xFF05053A),
+    danger = Color(0xFFFF6B70),
     liveText = LightPalette.live,
-    edge = Color(0xFF2C2C2A),
+    edge = Color(0xFF2C2C32),
     dark = true,
+    sheet = Color(0xFF101014),
 )
 
 val LocalPalette = staticCompositionLocalOf { LightPalette }
@@ -126,8 +139,8 @@ val Libron = FontFamily(
 )
 
 /**
- * The small, exact face of the notes along the top of the app (Inter), set against Libron's
- * warmth: tiny capitals, figures all one width.
+ * Inter, the small exact face Continuum set its notes in. The app's notes are now set in
+ * [GroteskWide]; the island and the volume panel still use this, with [Libron].
  */
 val Mark = FontFamily(Font(R.font.inter_medium, FontWeight.Medium))
 
@@ -137,14 +150,14 @@ val Mark = FontFamily(Font(R.font.inter_medium, FontWeight.Medium))
  * their column at larger type.
  */
 @Composable
-fun Note(text: String, color: Color, modifier: Modifier = Modifier, tracking: TextUnit = 0.9.sp) {
+fun Note(text: String, color: Color, modifier: Modifier = Modifier, tracking: TextUnit = 0.85.sp) {
     val caps = text.uppercase()
     val style = TextStyle(
         color = color,
-        fontSize = 11.5.sp,
+        fontSize = 10.5.sp,
         lineHeight = 15.sp,
-        fontFamily = Mark,
-        fontWeight = FontWeight.Medium,
+        fontFamily = GroteskWide,
+        fontWeight = FontWeight.SemiBold,
         letterSpacing = tracking,
         fontFeatureSettings = "tnum, case",
     )
@@ -287,8 +300,13 @@ object Motion {
 
 @Composable
 fun ContinuumTheme(content: @Composable () -> Unit) {
-    val palette = if (isSystemInDarkTheme()) DarkPalette else LightPalette
-    CompositionLocalProvider(LocalPalette provides palette, content = content)
+    val dark = isSystemInDarkTheme()
+    val palette = if (dark) DarkPalette else LightPalette
+    CompositionLocalProvider(
+        LocalPalette provides palette,
+        LocalEidolonColors provides if (dark) VoidColors else PaperColors,
+        content = content,
+    )
 }
 
 @Composable
@@ -305,10 +323,10 @@ fun Txt(
     val style = TextStyle(
         color = color,
         fontSize = size,
-        // Room between lines: Libron's descenders and ascenders crowd at its natural spacing.
-        lineHeight = size * 1.38f,
-        fontFamily = if (mono) FontFamily.Monospace else Libron,
-        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        lineHeight = size * 1.34f,
+        letterSpacing = if (mono) TextUnit.Unspecified else (-0.01 * size.value).sp,
+        fontFamily = if (mono) FontFamily.Monospace else Grotesk,
+        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
         textAlign = align,
     )
     HeldText(text, if (maxLines > 1 && !mono) keepLastTwo(text) else text, modifier) { shown, onLayout, m ->

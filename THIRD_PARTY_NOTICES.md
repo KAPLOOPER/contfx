@@ -40,6 +40,18 @@ York, licensed under the Apache License 2.0 (`app/src/main/assets/heads/SADIE-II
 They were changed by `tools/hrir/convert.py`: diffuse-field equalised, made minimum phase
 with each ear's delay kept apart, shortened and put on a regular grid of directions.
 
+## Google Sans Flex
+
+[Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex), Copyright 2015 Google LLC,
+under the SIL Open Font License 1.1. See `fonts/GOOGLE-SANS-FLEX-OFL.txt`. The app's screens are
+set in it; the island, the volume panel and the keyboard keep Libron.
+
+## Shippori Mincho
+
+A subset of [Shippori Mincho](https://github.com/fontdasu/ShipporiMincho), Copyright 2021 The
+Shippori Mincho Project Authors, under the SIL Open Font License 1.1, for the kanji in the
+masthead. See `fonts/SHIPPORI-MINCHO-OFL.txt`.
+
 ## Libron
 
 [Libron](https://github.com/nicoverbruggen/libron) by Nico Verbruggen, under the SIL Open

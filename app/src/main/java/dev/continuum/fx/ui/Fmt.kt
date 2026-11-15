@@ -1,5 +1,7 @@
 package dev.continuum.fx.ui
 
+import dev.continuum.fx.ui.eidolon.Grotesk
+
 import dev.continuum.fx.dsp.EqLimits
 import java.util.Locale
 import kotlin.math.abs
@@ -12,7 +14,7 @@ object Fmt {
 
     /**
      * Frequencies to the precision they're set to, always with the same number of figures in each
-     * range, so a value being dragged doesn't jump about. (Libron's digits are all one width.)
+     * range, so a value being dragged doesn't jump about. (Grotesk's digits are all one width.)
      */
     fun freq(f: Double): String = when {
         f >= 10000 -> String.format(Locale.US, "%.1f kHz", f / 1000)

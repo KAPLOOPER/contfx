@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -63,9 +64,8 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.continuum.fx.island.ui.Goo
 import dev.continuum.fx.island.ui.InkFeel
-import dev.continuum.fx.ui.theme.Libron
+import dev.continuum.fx.ui.eidolon.Grotesk
 import dev.continuum.fx.ui.theme.LocalPalette
 import kotlin.math.abs
 import kotlin.math.floor
@@ -109,13 +109,12 @@ internal object PivotMath {
 }
 
 /**
- * The page titles as a pivot, after Windows Phone: big lowercase titles in a row, the current one
- * against the left margin and the rest running off the edge, wrapping round. Swiping the page
- * slides them along. Continuum's part is the ink: under the title, one small drop for each page,
- * the current page's drawn out into the ink pill. As you swipe, the pill stretches out to reach
- * the next drop on a neck that thins, its tail letting go of the one it's leaving, then gathers
- * itself there; from the last page round to the first it drains out of the end and gathers again
- * at the start. Tap a drop to go to its page.
+ * The page titles as a pivot, after Windows Phone: big lowercase titles in a row, set narrow and
+ * tight like a poster's, the current one against the left margin and the rest running off the
+ * edge, wrapping round. Swiping the page slides them along. Under the title, a small ring for each
+ * page, and on the current page's ring an ultramarine star; as you swipe, the star runs to the
+ * next ring, drawn out along the way. The page's name in kanji sits at the far end of the line.
+ * Tap a ring to go to its page.
  *
  * Read down a page and the pivot folds ([fold], 0 to 1): the titles and drops shrink towards the
  * margin to a header the size of a hero line and give the page their room, so only one thing is
@@ -128,15 +127,23 @@ internal fun PivotHeader(
     onSelect: (slot: Int) -> Unit,
     modifier: Modifier = Modifier,
     fold: () -> Float = { 0f },
+    /** Each page's name in the second voice, set at the far end of the markers' line. */
+    marks: List<String> = emptyList(),
 ) {
     val p = LocalPalette.current
     val density = LocalDensity.current
     val view = LocalView.current
     val measurer = rememberTextMeasurer()
-    val style = remember { TextStyle(fontFamily = Libron, fontSize = 42.sp, fontWeight = FontWeight.Normal) }
+    val style = remember {
+        TextStyle(
+            fontFamily = dev.continuum.fx.ui.eidolon.GroteskTight,
+            fontSize = 44.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = (-1.8).sp,
+        )
+    }
     val widths = remember(titles, density) { titles.map { measurer.measure(it, style).size.width.toFloat() } }
     val textH = remember(density) { measurer.measure("kd", style).size.height.toFloat() }
-    val goo = remember(density) { if (Build.VERSION.SDK_INT >= 31) Goo.effect(with(density) { 3.5.dp.toPx() }) else null }
     fun px(dp: Float) = dp * density.density
     val gap = px(22f)
     val x0 = px(24f)
@@ -227,34 +234,50 @@ internal fun PivotHeader(
                 }
             }
 
-            // A drop for every page, quiet.
+            // A ring for every page, quiet.
             Canvas(Modifier.matchParentSize()) {
-                for (i in titles.indices) drawCircle(p.quiet, px(3f), Offset(dropX(i), dropY + pillH / 2f))
+                for (i in titles.indices) {
+                    drawCircle(p.quiet, px(2.6f), Offset(dropX(i), dropY + pillH / 2f), style = androidx.compose.ui.graphics.drawscope.Stroke(px(1.1f)))
+                }
             }
-            // The pill, on the current page's drop. Mid-swipe it reaches both ways at once: its
-            // tail clinging to the drop it's leaving, its head to the one arriving, the middle
-            // pinching as it stretches. Round from the last page to the first, it drains out of
-            // the end and gathers at the start.
-            Canvas(Modifier.matchParentSize().graphicsLayer { renderEffect = goo }) {
+            // The current page's star, standing on its ring. Mid-swipe it runs to the next one,
+            // drawn out along the way; round from the last page to the first it shrinks out of
+            // the end and grows again at the start.
+            val starPath = remember { androidx.compose.ui.graphics.Path() }
+            Canvas(Modifier.matchParentSize()) {
                 val bi = pivot.indexOf(base)
                 val ni = pivot.indexOf(base + 1)
-                if (ni == bi + 1) {
-                    val head = (f * 1.6f).coerceIn(0f, 1f)
-                    val tail = ((f - 0.375f) * 1.6f).coerceIn(0f, 1f)
-                    val span = dropX(ni) - dropX(bi)
-                    val left = dropX(bi) - pillW / 2f + span * tail
-                    val rightEdge = dropX(bi) + pillW / 2f + span * head
-                    drawDrop(p.text, left, rightEdge - left, dropY, pillW, pillH)
-                } else {
-                    fun part(i: Int, a: Float) {
-                        if (a < 0.02f) return
-                        val w = pillW * a
-                        val hh = pillH * minOf(1f, 0.4f + a)
-                        drawRoundRect(p.text, Offset(dropX(i) - w / 2f, dropY + (pillH - hh) / 2f), Size(w, hh), CornerRadius(hh / 2f))
-                    }
-                    part(bi, 1f - f)
-                    part(ni, f)
+                val cy = dropY + pillH / 2f
+                fun star(x: Float, k: Float, stretch: Float) {
+                    if (k < 0.02f) return
+                    drawPath(
+                        dev.continuum.fx.ui.eidolon.Star.path(
+                            Offset(x, cy), px(7f) * k * (1f + 1.2f * stretch), px(7f) * k * (1f - 0.25f * stretch),
+                            pinch = dev.continuum.fx.ui.eidolon.Star.SOFT, into = starPath,
+                        ),
+                        p.primary,
+                    )
                 }
+                if (ni == bi + 1) {
+                    val e = f * f * (3f - 2f * f)
+                    star(dropX(bi) + (dropX(ni) - dropX(bi)) * e, 1f, kotlin.math.sin(f * Math.PI.toFloat()))
+                } else {
+                    star(dropX(bi), 1f - f, 0f)
+                    star(dropX(ni), f, 0f)
+                }
+            }
+            // The page's name in the second voice, at the far end of the markers' line.
+            val mark = marks.getOrNull(pivot.indexOf(pivot.contentSlot))
+            if (mark != null) {
+                BasicText(
+                    mark,
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset { IntOffset(-px(24f).roundToInt(), (dropY + pillH / 2f - px(12f)).roundToInt()) }
+                        .clearAndSetSemantics { },
+                    style = TextStyle(fontFamily = dev.continuum.fx.ui.eidolon.Mincho, fontSize = 17.sp, color = p.text, letterSpacing = 2.sp),
+                    maxLines = 1,
+                )
             }
             Canvas(Modifier.matchParentSize()) {
                 val cur = pivot.indexOf(pivot.contentSlot)
@@ -294,20 +317,6 @@ internal fun PivotHeader(
             }
         }
     }
-}
-
-/** A drop [len] long from [left], full-bodied at both ends with a neck that thins between. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDrop(color: Color, left: Float, len: Float, y: Float, dw: Float, h: Float) {
-    if (len <= dw * 1.05f) {
-        drawRoundRect(color, Offset(left, y), Size(len, h), CornerRadius(h / 2f))
-        return
-    }
-    // The ends keep their body; what's between is what's left of a drop dw long, spread thin.
-    val end = minOf(dw * 0.75f, len * 0.42f)
-    val neck = (h * (dw / len).pow(0.55f)).coerceAtLeast(h * 0.3f)
-    drawRoundRect(color, Offset(left, y), Size(end, h), CornerRadius(h / 2f))
-    drawRoundRect(color, Offset(left + len - end, y), Size(end, h), CornerRadius(h / 2f))
-    drawRect(color, Offset(left + end * 0.5f, y + (h - neck) / 2f), Size(len - end, neck))
 }
 
 /** How much the pivot gives up, folded: 42sp titles come down to 26sp, a hero line's size. */

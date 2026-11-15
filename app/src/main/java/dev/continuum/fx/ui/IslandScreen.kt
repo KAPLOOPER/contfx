@@ -139,8 +139,9 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         // What it is, under the drawing: one look now, so a line says how it behaves.
         Gap(18.dp)
         Txt(
-            "A black star on the camera, the battery traced round it in a fine sliver. What's live rides out " +
-                "beside it on a slim band; news turns the star; anything with more to say hangs from it on two threads.",
+            "The poster's star window, set on the camera: an eye whose pupil is the lens, the battery a sliver " +
+                "printed round it. What's live runs out beside it on a tape of paper; it blinks at news; anything " +
+                "with more to say hangs from it as a small poster.",
             13.5.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL),
         )
         Gap(30.dp)
@@ -220,10 +221,10 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         val eventsOn = prefs.events && state.privileges.calendar
         fun lit(vararg v: Boolean): String? = v.count { it }.let { if (it == 0 || !on) null else "$it on" }
         BenchSection(3, "Shows", trail = lit(prefs.media, prefs.calls, prefs.timers, prefs.notifications, prefs.codes, prefs.alarms, eventsOn, prefs.live, prefs.pull))
-        IslandRow("Music and video", "Its art in a turning star; tap it for controls", prefs.media) {
+        IslandRow("Music and video", "Its art through the halftone; tap it for the poster", prefs.media) {
             actions.updateIsland { it.copy(media = !it.media) }
         }
-        IslandRow("Calls", "Hangs with Answer and Decline, then counts", prefs.calls) {
+        IslandRow("Calls", "A black sheet with Answer and Decline, then counts", prefs.calls) {
             actions.updateIsland { it.copy(calls = !it.calls) }
         }
         IslandRow("Timers", "Countdowns and stopwatches", prefs.timers) {
@@ -260,7 +261,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         IslandRow("Downloads and live updates", "Progress, directions, deliveries, rides", prefs.live) {
             actions.updateIsland { it.copy(live = !it.live) }
         }
-        IslandRow("Pull the thread", "Drag the star down for recent ones", prefs.pull) {
+        IslandRow("Pull the red star", "Drag the eye down for recent ones", prefs.pull) {
             actions.updateIsland { it.copy(pull = !it.pull) }
         }
 
@@ -290,7 +291,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
         IslandRow(
             "Battery",
-            "A sliver round the star as far as it's charged; green and running while it charges",
+            "A sliver round the eye as far as it's charged; lit while it fills, red when low",
             prefs.alwaysBattery,
         ) { actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) } }
 
@@ -332,14 +333,16 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
 
         Gap(8.dp)
-        MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the star moves") { Txt(
-            "The star sits on the camera and grows out of it when the island starts. The sliver round it is the battery, read " +
-                "clockwise from the top tip like a clock face: green while it charges, with a spark running along it, and red when " +
-                "it's low. Whatever starts (a song, a call, a timer) rides out beside the star on a slim band, and a moment's news " +
-                "runs along the same band with the star between its halves. Each piece of news turns the star a quarter. Anything " +
-                "with more to say hangs from the star on two threads and swings as it lands: tap it for its card, push it up to put " +
-                "it away, slide it aside to clear it. Drag the star down and a thread runs out with it; let go past the mark for " +
-                "your recent notifications.",
+        MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the eye behaves") { Txt(
+            "The app opens on a poster: a star-shaped window cut in paper. The island is that window, set on your camera, and the " +
+                "camera is its pupil. It opens when the island starts, and stays shut while it has no notification access, because then " +
+                "it can't see. It blinks at each piece of news, the light on it moves toward whatever it's looking at, its iris turns " +
+                "like a record while something plays, and it floods red while a call rings. A fleck of red by the pupil means something " +
+                "is waiting. The sliver printed round it is the battery, read clockwise from the top tip. Whatever is live runs out " +
+                "beside it on a tape of paper, and anything with more to say hangs from it on a fan of threads as a small poster: on " +
+                "paper when it's calm, on black under the red star when it needs you now. Tap a poster for more, push it up to put it " +
+                "away, slide it aside to clear it. Drag the eye down and the red star comes out on its long tail; let go past the mark " +
+                "for your recent notifications.",
             15.sp, p.sub,
         ) }
     }
@@ -458,14 +461,14 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
         }
         BenchField(
             "Camera size", cText,
-            note = "Grow or shrink this until the star sits snug on your lens.",
+            note = "Grow or shrink this until the pupil sits exactly on your lens.",
         ) {
             InkSlider(value = frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX), label = cText, onChange = { t ->
                 place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) }
             })
         }
         val sText = pct(prefs.scale)
-        BenchField("Size", sText, note = "Size scales the star, the band and the cards together.") {
+        BenchField("Size", sText, note = "Size scales the eye, the tapes and the posters together.") {
             InkSlider(value = frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX), label = sText, onChange = { t ->
                 place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
             })

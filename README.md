@@ -6,7 +6,7 @@ The utilities I actually use, in one place, all in the Continuum design language
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ or fits one from your own measurement and target, an EQ of its own for any app, and backup of everything.
 - **Effects:** spatial audio with speakers you place, analog bass, punch, speaker bass, tube warmth, an exciter, hi-res detail, stage, crossfeed, dynamics, loudness and Bluetooth care, on top of the EQ.
-- **Island:** a **dynamic island** built on a four-point star over your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
+- **Island:** a **dynamic island** printed like a poster: a star-shaped eye over your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
@@ -16,7 +16,7 @@ While you scroll down to read, the page's big title folds out of the way and ope
 
 ## Eidolon
 
-The app's own screens, the island and the volume panel are drawn in a second design language,
+The app's own screens, the island and the volume panel are printed in a second design language,
 **Eidolon**. The keyboard is still in Continuum's liquid ink.
 
 - **The masthead is a poster.** A four-point star is cut out of the paper behind its top-right
@@ -61,7 +61,7 @@ Continuum's own keyboard, written from scratch so every part of it can follow th
 
 ## Volume
 
-Press a volume key and a slim square-cut sliver comes out of the screen edge beside the buttons, ruled to the level. Press it and it comes off the edge as a column hung from the edge on two threads, a gauge you drag: a flat print of paper-white for the level, the stream's steps ruled up both sides, a lit star riding the surface (it flares when you reach the top), and the number on a tag tied beside it. A star comes off each end: the ringer (ring, vibrate, silent) above, and below, the way into everything else. Tap that and the column spreads into a slip: where sound is going (tap it for Android 14's output picker), the ringer, Do not disturb and Past 100%, then media, calls, ring, notifications and alarms, and a slider for each app that's playing, each a rule with a star riding it. Drag the column itself to set the level, with a tick on every step.
+Press a volume key and a strip of the paper comes out of the screen edge beside the buttons, a thread of sky up it to the level. Press it and it comes off the edge as a tall sheet hung on a fan of threads. The level is a window in it: the sky from the foot of the sheet up to where the volume is, its head drawn to a point like a star's arm. The number is set large and turned down the sheet, as the poster sets its hour, in ink on the paper and in white where the window has risen behind it, and the stream's steps are ruled up one side. A tab of paper comes off each end: the ringer (ring, vibrate, silent) above, and below, the way into everything else. Tap that and the sheet spreads into a poster: where sound is going (tap it for Android 14's output picker), the ringer, Do not disturb and Past 100% as boxes (the chosen one a window), then media, calls, ring, notifications and alarms, and a slider for each app that's playing, each a rule whose measured length is cut through to the sky. Drag the sheet itself to set the level, with a tick on every step. Past 100% prints in the one red above the window, a star for each step.
 
 - **Each app's own volume** (with Shizuku): turn one app down without touching the rest. The level is kept while the app is open, re-applied whenever it opens a new player, and remembered for next time; back to full forgets it.
 - **Play alongside** (with Shizuku): switch an app on and it neither pauses others when it starts nor gets paused when they do; calls and alarms still pause it, and directions still lower it. While any app is on, the helper looks after audio focus for the phone (as an audio focus policy, run the way Android runs it), because simply refusing an app focus, the usual trick, stops most music and video apps from playing at all.
@@ -74,19 +74,24 @@ It needs one accessibility switch (*Continuum volume*), which listens to the two
 
 ## The island
 
-The island is a black four-point star set on your front camera, printed in Eidolon. It grows out of the lens when the island starts, and it never moves without a reason.
+The app opens on a poster: a star-shaped window cut in grainy paper. The island is that window, set on your front camera, and the camera is its pupil.
 
-- **The battery is a sliver round the star,** read clockwise from the top tip like a clock face, on a black track of its own so it reads on any wallpaper. Green while it charges, with a spark running along it, and red (blinking under 10%) when it's low. Plugging in sweeps it up from empty to your charge. Tap the star with nothing else on for the battery card: the star drawn large with its sliver, the percentage and the time to full.
-- **What's live rides out on a band.** A slim square-cut band runs out from the star on either side: what you're listening to or talking on to one side (the artwork in a small star that turns slowly while it plays, three bars of its colour; a call's green timer), and what's counting down or coming up to the other (timers, downloads, directions, your next event or alarm). Tap a wing for its card.
-- **Time** can sit on a tag at the end of the bar, on the band right by the star, or either side of it, with the hours on one wing, the minutes on the other and the star as the colon. Tap it for the date.
-- **News turns the star.** A moment's news (a song starting, ring, vibrate or silent, headphones or the car connecting, charging, the date) runs out along the band with the star between its halves like a full stop, and every piece of news turns the star a quarter. As it turns it closes like a shutter, so its tips clear the sliver, and opens again.
-- **Anything with more to say hangs from the star** on two threads, as a black slip cut square at its corners, and swings as it lands. A notification hangs as a short ticket: tap it for its card with all of its text and its own buttons (Reply included), push it up to put it away, slide it aside to clear it. A ringing call hangs with Decline and Answer while the star pulses; a ringing alarm or finished timer with the clock's Snooze and Stop.
-- **Cards:** music (the art in a star-shaped window, a seek rule with a star riding it, and a paper-white star to play and pause), calls, timers, the battery, your next alarm, calendar events with **Join**, and downloads and live updates with their progress and buttons.
-- **One-time codes** (`482913 is your verification code`, `G-482913`, `123 456`, in several languages) hang large with **Copy**, and stay a little longer.
-- **Pull the thread:** drag the star down and a thread runs out with a star for its weight; let go past the mark (you'll feel it) and your recent notifications hang there. Tap one to open it, slide it aside to clear it, or clear them all.
-- **Placement:** the island starts fitted to the camera. Move it, fit the star to your lens with *Camera size*, and scale everything with *Size*. While you adjust it, register marks show where the lens is, and *Reset* puts it back.
+- **The eye.** An ultramarine iris is streaked out from the lens, in a star cut through a small mount of paper. It behaves as an eye does: it opens when the island starts, and stays shut while it has no notification access, because then it can't see. It blinks at each piece of news. The light on it moves toward whatever it's looking at. Its iris turns like a record while something plays, and floods red while a call rings. A fleck of red by the pupil means something is waiting for you.
+- **The battery is a sliver printed on the mount,** round the window, read clockwise from the top tip like a clock face: ink, the lit ultramarine while it fills (a small gilt star runs along it, and plugging in sweeps it up from empty), and the one red, blinking under 10%, when it's low.
+- **What's live runs out on a tape of the same paper,** cut to a swallowtail: what you're listening to or talking on to one side (its art through the halftone in a small turning star, three bars; a call's timer), and what's counting down or coming up to the other (timers, downloads, directions, your next event or alarm). The time sits on a tag at the end of the bar, on the tape by the eye, or either side of it with the eye as the colon. A moment's news (a song starting, the sound mode, headphones, charging, the date) runs out along the same tape.
+- **Anything with more to say hangs from the eye as a small poster,** on a fan of threads, and swings as it lands. The calm ones are printed on paper, as the app's poster is: a star-shaped window bleeding off the sheet with the sky behind it, the number that matters set huge and turned down the page's edge, a mark in kanji, a record sleeve's barcode for anything that has a length, and a camera screen's small bracketed readouts. Album art and photos go through the same five inks and dot screen as the sky, so they belong to the print.
+- **What needs you now is printed on black:** a ringing call or alarm hangs as a black sheet with a pale figure out of the dark (the caller's photo as a halftone ghost, or a star of light), a title in wide capitals, and the one red star with its long tail coming down onto it. Decline is the red; Answer is solid white.
+- **Posters:** music (the elapsed time down the edge, the art in the window, three tabs of paper for the transport, and the barcode to seek along, the red star's tail marking where you are), calls, timers, the battery (the eye drawn large with its sliver), your next alarm, calendar events with **Join**, downloads and live updates, and notifications with what they say set as typed, their own buttons, Reply, and one-time codes large with **Copy**.
+- **Pull the red star:** drag the eye down and the red star comes out of it on its long tail; let go past the mark (you'll feel it) and your recent notifications hang there, set like a sleeve's track list. Tap one to open it, slide it aside to clear it, or clear them all.
+- **Gestures:** tap a poster for more, push it up to put it away, slide it aside to clear it. Tap the eye or a tape for what's on it.
+- **By day and by night:** like the app, the island prints on paper in light mode and in the negative in dark mode; the windows stay ultramarine in both.
+- **Placement:** the island starts fitted to the camera. Move it, fit the pupil to your lens with *Camera size*, and scale everything with *Size*. While you adjust it, red register marks show where the lens is, and *Reset* puts it back.
 
-Nothing on the island animates unless it has a reason to (music playing, charging, a call ringing, an indeterminate download), so a still island isn't redrawn at all. The star, the band and the threads are pure black, so on an AMOLED screen they're pixels switched off.
+Nothing on the island animates unless it has a reason to (music playing, charging, a call ringing, a poster open with its sky drifting), so a still island isn't redrawn at all.
+
+| Music | A call ringing | Battery | Volume |
+|---|---|---|---|
+| ![](docs/eidolon/island-music.jpg) | ![](docs/eidolon/island-call.jpg) | ![](docs/eidolon/island-battery.jpg) | ![](docs/eidolon/volume.jpg) |
 
 ### Setting up the island
 
@@ -212,6 +217,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] Island: alarms, calendar, downloads and directions, charging, sound mode, headphones
 - [x] Island: placement and camera fitting, battery ring
 - [x] Island: rebuilt on the Eidolon star, with the battery as a sliver round it
+- [x] Island and volume panel: reprinted from the poster (the eye, paper tapes, hanging posters, the sky-window gauge)
 - [x] In-app updates that install over the top
 - [x] The Continuum keyboard
 - [ ] Liquid-ink transitions for the remaining sheets

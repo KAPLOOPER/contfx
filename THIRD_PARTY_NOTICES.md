@@ -50,7 +50,7 @@ set in it; the island, the volume panel and the keyboard keep Libron.
 
 A subset of [Shippori Mincho](https://github.com/fontdasu/ShipporiMincho), Copyright 2021 The
 Shippori Mincho Project Authors, under the SIL Open Font License 1.1, for the kanji in the
-masthead. See `fonts/SHIPPORI-MINCHO-OFL.txt`.
+masthead, the island's posters and the volume panel. See `fonts/SHIPPORI-MINCHO-OFL.txt`.
 
 ## Libron
 

@@ -2,7 +2,6 @@ package dev.continuum.fx.volume.ui
 
 import android.graphics.Rect as AndroidRect
 import android.media.AudioManager
-import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -19,25 +18,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
@@ -52,10 +48,25 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import dev.continuum.fx.R
-import dev.continuum.fx.island.ui.Isle
+import dev.continuum.fx.island.ui.LocalPlateSky
+import dev.continuum.fx.island.ui.UsesSky
+import dev.continuum.fx.island.ui.drawPlateSky
+import dev.continuum.fx.island.ui.grainOver
+import dev.continuum.fx.island.ui.rememberPlateSky
+import dev.continuum.fx.ui.eidolon.Eidolon
+import dev.continuum.fx.ui.eidolon.LocalEidolonColors
+import dev.continuum.fx.ui.eidolon.Mincho
+import dev.continuum.fx.ui.eidolon.PaperColors
+import dev.continuum.fx.ui.eidolon.PasteShadow
+import dev.continuum.fx.ui.eidolon.VoidColors
+import dev.continuum.fx.ui.theme.EidolonFaces
+import dev.continuum.fx.ui.theme.LocalFaces
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.drawscope.rotate
 import dev.continuum.fx.ui.eidolon.GroteskTight
 import dev.continuum.fx.ui.eidolon.Star
-import androidx.compose.ui.graphics.drawscope.Stroke
 import dev.continuum.fx.island.ui.lerpF
 import dev.continuum.fx.ui.theme.Motion
 import dev.continuum.fx.volume.AppVolumes
@@ -67,20 +78,19 @@ import dev.continuum.fx.volume.VolumeModel
 import dev.continuum.fx.volume.VolumeSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
- * The volume panel, printed in Eidolon beside the volume buttons. A key press brings out just a
- * sliver against the edge, ruled to the level. Press it and it comes off the edge as a square-cut
- * column hung from the edge on two threads, a gauge you drag: a flat print of paper-white for the
- * level, the stream's steps ruled up its sides, a lit star riding the surface, and the number on a
- * tag tied beside it. A star comes off each end: the ringer above, and below, the way into
- * everything. Opened out, the column spreads into a slip; folding away, it all goes back into the
- * edge it came from.
+ * The volume panel, printed as the app's poster is, beside the volume buttons. A key press brings
+ * out just a strip of the paper against the edge, a thread of sky up it to the level. Press it and
+ * it comes off the edge as a tall sheet hung on a fan of threads. The level is a window in it: the
+ * sky from the foot of the sheet up to where the volume is, its head drawn to a point like a
+ * star's arm. The number is set large and turned down the sheet, as the poster sets its hour, in
+ * ink on the paper and in white where the window has risen behind it, and the stream's steps are
+ * ruled up one side. A tab of paper comes off each end: the ringer above, and below, the way into
+ * everything. Opened out, the sheet spreads into a poster of every stream; folding away, it all
+ * goes back into the edge it came from.
  */
 /** True only in previews: the panel drawn already at rest, with nothing left to animate in. */
 internal val LocalPanelStill = staticCompositionLocalOf { false }
@@ -92,6 +102,26 @@ fun VolumePanel(
     onSettled: (Boolean) -> Unit,
     openApp: () -> Unit,
 ) {
+    // Printed as the app is: on paper by day, in the negative when the phone is dark.
+    CompositionLocalProvider(
+        LocalFaces provides EidolonFaces,
+        LocalEidolonColors provides if (isSystemInDarkTheme()) VoidColors else PaperColors,
+    ) {
+        CompositionLocalProvider(LocalPlateSky provides rememberPlateSky()) {
+            PrintedPanel(ui, onBounds, onSettled, openApp)
+        }
+    }
+}
+
+@Composable
+private fun PrintedPanel(
+    ui: PanelUi,
+    onBounds: (AndroidRect?) -> Unit,
+    onSettled: (Boolean) -> Unit,
+    openApp: () -> Unit,
+) {
+    val colors = Eidolon.colors
+    val sky = LocalPlateSky.current
     val density = LocalDensity.current
     val view = LocalView.current
     fun px(dp: Float) = dp * density.density
@@ -238,8 +268,8 @@ fun VolumePanel(
     val cardW = min(stripW - margin * 2f, px(360f))
     val cardH = min(
         screenH - px(112f),
-        px(12f + 18f + 6f + 44f + 12f + 42f + 6f + 42f + 15f) + VolStream.entries.size * px(54f) +
-            (if (apps.isNotEmpty()) px(28f) + apps.size * px(54f) else 0f) + px(22f),
+        px(12f + 62f + 10f + 42f + 8f + 42f + 8f) + VolStream.entries.size * px(54f) +
+            (if (apps.isNotEmpty()) px(22f) + apps.size * px(54f) else 0f) + px(18f),
     )
     val cardTop = (cy - cardH / 2f).coerceIn(px(56f), (screenH - px(56f) - cardH).coerceAtLeast(px(56f)))
     val card = side(margin, cardW, cardTop, cardTop + cardH)
@@ -262,11 +292,20 @@ fun VolumePanel(
         boostSteps > 0 && stream == VolStream.Media -> "${BoostPolicy.percent(boostSteps)}%"
         else -> "${((dragFraction ?: level.fraction) * 100f).roundToInt()}"
     }
-    val labelStyle = TextStyle(color = Isle.on, fontSize = 14.sp, fontFamily = GroteskTight, fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum")
+    val labelStyle = TextStyle(color = colors.ink, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
     val labelLayout = remember(label) { measurer.measure(label, labelStyle) }
     val tellW = labelLayout.size.width + px(22f)
     val tellH = px(30f)
-    val t = tell.value.coerceIn(0f, 1.1f) * (1f - e) * o.coerceIn(0f, 1f) * wc
+    val plain = !(armed && stream == VolStream.Media) && !(boostSteps > 0 && stream == VolStream.Media)
+    val t = if (plain) 0f else tell.value.coerceIn(0f, 1.1f) * (1f - e) * o.coerceIn(0f, 1f) * wc
+    // The level itself, set large and turned down the column as the poster sets its hour.
+    val bigStyle = TextStyle(
+        fontSize = 56.sp, fontFamily = GroteskTight, fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-1.7).sp, fontFeatureSettings = "tnum",
+    )
+    val bigText = "${((dragFraction ?: level.fraction) * 100f).roundToInt()}"
+    val bigLayout = remember(bigText) { measurer.measure(bigText, bigStyle) }
+    val markLayout = remember { measurer.measure("音", TextStyle(fontSize = 15.sp, fontFamily = Mincho, fontWeight = FontWeight.Medium)) }
     // The liquid sits inside: a thread of it in the sliver, a column in the capsule.
     val ins = lerpF(px(2.2f), px(5f), wc)
     val innerTop = capsule.top + ins
@@ -295,66 +334,82 @@ fun VolumePanel(
     val edgeX = if (left) 0f else stripW
     if (o <= 0.001f && !visible) return
 
-    // What sits on the ink: the level, the icons and the number.
     val streamPainter = painterResource(streamIcon(stream, level.index == level.min, snap.ringer))
     val ringerPainter = painterResource(ringerIcon(snap.ringer))
     val morePainter = painterResource(R.drawable.ic_tune)
-    val liquid = if (stream == VolStream.Call) Isle.charge else Isle.on
+    val dark = colors.isDark
     val bodyPath = remember { Path() }
+    val windowPath = remember { Path() }
     val starPath = remember { Path() }
+    // A window is open on the sky whenever the column or the sheet is out.
+    if (visible && opened) UsesSky()
+
+    /** The level's window: sky from the foot of [inner] up to [y], its head drawn up to a point like a star's arm. */
+    fun levelWindow(inner: Rect, y: Float, into: Path): Path {
+        val rise = inner.width * 0.34f
+        val shoulder = (y + rise * 0.5f).coerceAtMost(inner.bottom)
+        val peak = (y - rise * 0.5f).coerceAtLeast(inner.top)
+        val k = 1f - Star.KEEN
+        into.rewind()
+        into.moveTo(inner.left, inner.bottom)
+        into.lineTo(inner.left, shoulder)
+        into.cubicTo(inner.left + inner.width / 2f * (1f - k), shoulder, inner.center.x, peak + (shoulder - peak) * k, inner.center.x, peak)
+        into.cubicTo(inner.center.x, peak + (shoulder - peak) * k, inner.right - inner.width / 2f * (1f - k), shoulder, inner.right, shoulder)
+        into.lineTo(inner.right, inner.bottom)
+        into.close()
+        return into
+    }
 
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
+            fun paper(r: Rect, fill: Color = colors.slip) {
+                bodyPath.rewind()
+                bodyPath.addRect(r)
+                translate(px(2f), px(3f)) { drawPath(bodyPath, PasteShadow.copy(alpha = if (dark) 0.6f else 0.34f)) }
+                drawPath(bodyPath, fill)
+                grainOver(bodyPath, dark)
+            }
             if (crisp) {
-                // The sliver: a square-cut strip flush with the edge, a thread of the level inside it.
+                // The sliver: a strip of the paper flush with the edge, a thread of sky up it to the level.
                 val r = crispRect
                 val visibleW = r.width - sliverW
                 if (visibleW > 0.5f) {
                     val strip = side(0f, visibleW, r.top, r.bottom)
-                    cutRect(strip, min(px(2.5f), visibleW / 2f), bodyPath)
-                    drawPath(bodyPath, Isle.ink)
-                    drawPath(bodyPath, Isle.rule, style = Stroke(px(1f)))
-                    val lineW = min(px(2f), visibleW * 0.4f)
-                    val x = if (left) strip.right - visibleW / 2f else strip.left + visibleW / 2f
-                    val inTop = strip.top + px(4f)
-                    val inBottom = strip.bottom - px(4f)
+                    paper(strip)
+                    val lineW = min(px(3f), visibleW * 0.5f)
+                    val x = strip.center.x
+                    val inTop = strip.top + px(5f)
+                    val inBottom = strip.bottom - px(5f)
                     val y = lerpF(inBottom, inTop, fill.value.coerceIn(0f, 1f))
-                    drawLine(Isle.rule, Offset(x, inTop), Offset(x, inBottom), lineW)
-                    drawLine(liquid, Offset(x, y), Offset(x, inBottom), lineW)
+                    drawLine(colors.ink.copy(alpha = 0.2f), Offset(x, inTop), Offset(x, inBottom), px(1f))
+                    drawLine(if (stream == VolStream.Call) colors.signal else colors.ultramarine, Offset(x, y), Offset(x, inBottom), lineW)
                 }
                 return@Canvas
             }
-            val cut = lerpF(px(5f), px(8f), e.coerceIn(0f, 1f))
             val budA = ((1f - e) * wc).coerceIn(0f, 1f)
-            // It hangs off the screen's edge on two threads, as the island's slips hang from the star.
+            val threadInk = if (dark) colors.inkSoft else colors.ink
+            // It hangs off the screen's edge on threads, as the island's posters hang from the eye.
             if (budA > 0.02f) {
                 val nearX = if (left) body.left else body.right
-                listOf(body.top + px(22f), body.bottom - px(22f)).forEach { y ->
-                    drawLine(Isle.ink.copy(alpha = budA), Offset(edgeX, y), Offset(nearX, y), px(2.2f))
-                    drawLine(Color.White.copy(alpha = 0.26f * budA), Offset(edgeX, y), Offset(nearX, y), px(0.7f))
+                for (i in 0 until 5) {
+                    val y = body.top + body.height * (0.14f + 0.18f * i)
+                    drawLine(threadInk.copy(alpha = 0.9f * budA), Offset(edgeX, body.center.y), Offset(nearX, y), px(0.9f))
                 }
             }
-            cutRect(body, cut, bodyPath)
-            drawPath(bodyPath, Isle.slip)
-            drawPath(bodyPath, Isle.rule, style = Stroke(px(1f)))
-            // The ringer and the way into everything, a star each off the column's ends.
+            paper(body)
+            // The ringer and the way into everything: a tab of paper off each end.
             if (budK > 0.02f && e < 0.98f) {
                 listOf(ringerBud, moreBud).forEach { bud ->
-                    val rr = budR * 1.22f
-                    Star.path(bud.center, rr, rr, Star.SOFT, rotation = (1f - budK.coerceIn(0f, 1f)) * 45f, into = starPath)
-                    drawPath(starPath, Isle.ink)
-                    drawPath(starPath, Isle.rule, style = Stroke(px(1f)))
+                    val half = budR * 0.92f
+                    paper(Rect(bud.center.x - half, bud.center.y - half, bud.center.x + half, bud.center.y + half), colors.slipRaised)
                 }
             }
-            // The number, on a tag beside the level, tied to it by a hair.
+            // Anything more than the number (going past 100%) is typed on a tag tied beside the level.
             if (t > 0.02f) {
-                val a = t.coerceIn(0f, 1f)
                 val fromX = if (left) capsule.right else capsule.left
                 val toX = if (left) tellRect.left else tellRect.right
-                drawLine(Isle.ruleStrong.copy(alpha = a * 0.6f), Offset(fromX, tellRect.center.y), Offset(toX, tellRect.center.y), px(1f))
-                cutRect(tellRect, px(4f), bodyPath)
-                drawPath(bodyPath, Isle.ink.copy(alpha = a))
-                drawPath(bodyPath, Isle.rule.copy(alpha = Isle.rule.alpha * a), style = Stroke(px(1f)))
+                drawLine(threadInk.copy(alpha = t.coerceIn(0f, 1f)), Offset(fromX, tellRect.center.y), Offset(toX, tellRect.center.y), px(0.9f))
+                paper(tellRect, colors.slipRaised)
             }
         }
 
@@ -363,63 +418,69 @@ fun VolumePanel(
             val box = capsule
             val inner = Rect(box.left + ins, innerTop, box.right - ins, innerBottom)
             if (inner.width <= 1f || inner.height <= 1f) return@Canvas
-            cutRect(inner, px(3f), bodyPath)
-            clipPath(bodyPath) {
-                // The level: a flat print of paper-white from the foot up, the boost in charge green above 100%.
-                drawRect(liquid, Offset(inner.left, liquidY), Size(inner.width, inner.bottom - liquidY))
-                if (extraH > 0.5f) {
-                    drawRect(Isle.charge, Offset(inner.left, innerTop), Size(inner.width, (fullY - innerTop + px(2f)).coerceAtLeast(0f)))
-                    val steps = if (stream == VolStream.Media) boostSteps else 0
-                    if (steps > 0 && wc > 0.5f) {
-                        val each = (fullY - innerTop) / steps
-                        val r = min(px(4f), each * 0.32f)
-                        for (i in 0 until steps) {
-                            drawPath(Star.path(Offset(inner.center.x, fullY - each * (i + 0.5f)), r, r, Star.SOFT, into = starPath), Isle.onCharge.copy(alpha = 0.7f))
+            val shownY = if (extraH > 0.5f) fullY else liquidY
+            levelWindow(inner, shownY, windowPath)
+            // The level is a window: the sky from the foot of the column up to it.
+            if (sky != null) drawPlateSky(sky, windowPath, Offset(inner.left - sky.size.width * 0.3f, inner.bottom - sky.size.height * 0.8f)) else drawPath(windowPath, colors.ultramarine)
+            if (stream == VolStream.Call) drawPath(windowPath, colors.signal.copy(alpha = 0.28f))
+            // Past 100%, the one red prints above the window, a star for each step.
+            if (extraH > 0.5f) {
+                drawRect(colors.signal, Offset(inner.left, innerTop), Size(inner.width, (fullY - inner.width * 0.17f - innerTop).coerceAtLeast(0f)))
+                val steps = if (stream == VolStream.Media) boostSteps else 0
+                if (steps > 0 && wc > 0.5f) {
+                    val span = fullY - inner.width * 0.17f - innerTop
+                    val each = span / steps
+                    val r = min(px(4.5f), each * 0.36f)
+                    for (i in 0 until steps) {
+                        drawPath(Star.path(Offset(inner.center.x, innerTop + span - each * (i + 0.5f)), r, r, Star.KEEN, into = starPath), Color.White)
+                    }
+                }
+            }
+            val a = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
+            if (a > 0f) {
+                /** Draws [draw] in ink on the paper and in the window's own white where the sky is behind it. */
+                fun knockedOut(draw: DrawScope.(Color) -> Unit) {
+                    clipPath(windowPath, clipOp = androidx.compose.ui.graphics.ClipOp.Difference) { draw(colors.ink.copy(alpha = a)) }
+                    clipPath(windowPath) { draw(colors.onWindow.copy(alpha = a)) }
+                }
+                // The stream's own steps, ruled up one side like a gauge.
+                val steps = level.steps.coerceIn(1, 40)
+                knockedOut { c ->
+                    for (i in 0..steps) {
+                        val y = lerpF(rBottom - ins, fullY, i / steps.toFloat())
+                        val long = i % 5 == 0
+                        drawLine(c.copy(alpha = c.alpha * (if (long) 0.8f else 0.45f)), Offset(inner.left, y), Offset(inner.left + px(if (long) 7f else 4f), y), px(1f))
+                    }
+                }
+                // The number, down the column.
+                if (extraH <= 0.5f) {
+                    val pivot = Offset(inner.center.x + px(4f), (fullY + innerBottom) / 2f - px(4f))
+                    knockedOut { c ->
+                        rotate(90f, pivot) {
+                            drawText(bigLayout, color = c, topLeft = Offset(pivot.x - bigLayout.size.width / 2f, pivot.y - bigLayout.size.height / 2f))
                         }
                     }
                 }
-                // The stream's own steps, ruled up both sides like a gauge.
-                val steps = level.steps.coerceIn(1, 40)
-                if (wc > 0.5f) {
-                    val tickA = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
-                    val tick = px(4f)
-                    for (i in 1 until steps) {
-                        val y = lerpF(rBottom - ins, fullY, i / steps.toFloat())
-                        val over = y > liquidY
-                        val c = (if (over) Isle.ink else Color.White).copy(alpha = 0.28f * tickA)
-                        drawLine(c, Offset(inner.left, y), Offset(inner.left + tick, y), px(1f))
-                        drawLine(c, Offset(inner.right - tick, y), Offset(inner.right, y), px(1f))
-                    }
+                // What it is: sound, in one character, at the head; its own mark at the foot.
+                knockedOut { c ->
+                    drawText(markLayout, color = c, topLeft = Offset(inner.right - markLayout.size.width - px(4f), fullY + px(2f)))
                 }
-            }
-            // A lit star rides the level's surface, and flares when it reaches the top.
-            if (wc > 0.3f && extraH <= 0.5f) {
-                val a = ((wc - 0.3f) / 0.7f).coerceIn(0f, 1f)
-                val flare = 1f + 0.5f * sin(PI.toFloat() * fullGlint.value)
-                val sx = inner.width * 0.36f * flare
-                Star.path(Offset(inner.center.x, liquidY), sx, sx * 0.42f, Star.KEEN, into = starPath)
-                drawPath(starPath, Isle.lit.copy(alpha = a))
-            }
-            // The stream's icon, light on the ink and dark where the level covers it.
-            val iconSize = px(22f)
-            val iconTop = innerBottom - px(14f) - iconSize
-            val iconLeft = capsule.center.x - iconSize / 2f
-            if (wc > 0.5f) {
-                val a = ((wc - 0.5f) / 0.5f).coerceIn(0f, 1f)
-                clipRect(top = 0f, bottom = liquidY) { icon(streamPainter, iconLeft, iconTop, iconSize, Isle.on.copy(alpha = a)) }
-                clipRect(top = liquidY, bottom = size.height) { icon(streamPainter, iconLeft, iconTop, iconSize, Isle.ink.copy(alpha = a)) }
+                val iconSize = px(20f)
+                val iconTop = innerBottom - px(10f) - iconSize
+                val iconLeft = inner.right - iconSize - px(4f)
+                knockedOut { c -> icon(streamPainter, iconLeft, iconTop, iconSize, c) }
             }
             if (budK > 0.3f) {
-                val a = ((budK - 0.3f) / 0.6f).coerceIn(0f, 1f)
+                val ba = ((budK - 0.3f) / 0.6f).coerceIn(0f, 1f)
                 val sz = px(18f)
-                icon(ringerPainter, ringerBud.center.x - sz / 2f, ringerBud.center.y - sz / 2f, sz, Isle.on.copy(alpha = a))
-                icon(morePainter, moreBud.center.x - sz / 2f, moreBud.center.y - sz / 2f, sz, Isle.on.copy(alpha = a))
+                icon(ringerPainter, ringerBud.center.x - sz / 2f, ringerBud.center.y - sz / 2f, sz, (if (snap.ringer == AudioManager.RINGER_MODE_SILENT) colors.signal else colors.ink).copy(alpha = ba))
+                icon(morePainter, moreBud.center.x - sz / 2f, moreBud.center.y - sz / 2f, sz, colors.ink.copy(alpha = ba))
             }
             if (t > 0.6f) {
-                val a = ((t - 0.6f) / 0.4f).coerceIn(0f, 1f)
+                val ta = ((t - 0.6f) / 0.4f).coerceIn(0f, 1f)
                 drawText(
                     labelLayout,
-                    color = (if (boostSteps > 0 && stream == VolStream.Media) Isle.charge else Isle.on).copy(alpha = a),
+                    color = (if (boostSteps > 0 && stream == VolStream.Media) colors.signal else colors.ink).copy(alpha = ta),
                     topLeft = Offset(tellRect.center.x - labelLayout.size.width / 2f, tellRect.center.y - labelLayout.size.height / 2f),
                 )
             }
@@ -571,22 +632,6 @@ internal fun nextRinger(mode: Int): Int = when (mode) {
     AudioManager.RINGER_MODE_NORMAL -> AudioManager.RINGER_MODE_VIBRATE
     AudioManager.RINGER_MODE_VIBRATE -> AudioManager.RINGER_MODE_SILENT
     else -> AudioManager.RINGER_MODE_NORMAL
-}
-
-/** [r] cut square at its corners by [cut], written into [into]: the Eidolon tag. */
-private fun cutRect(r: Rect, cut: Float, into: Path): Path {
-    val c = cut.coerceAtMost(min(r.width, r.height) / 2f).coerceAtLeast(0f)
-    into.rewind()
-    into.moveTo(r.left + c, r.top)
-    into.lineTo(r.right - c, r.top)
-    into.lineTo(r.right, r.top + c)
-    into.lineTo(r.right, r.bottom - c)
-    into.lineTo(r.right - c, r.bottom)
-    into.lineTo(r.left + c, r.bottom)
-    into.lineTo(r.left, r.bottom - c)
-    into.lineTo(r.left, r.top + c)
-    into.close()
-    return into
 }
 
 private fun lerpRect(a: Rect, b: Rect, t: Float): Rect = Rect(

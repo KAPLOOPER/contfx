@@ -1,25 +1,27 @@
 /*
  * The Continuum island, printed in Eidolon.
  *
- * Its base is a black four-point star set on the camera, and a sliver traced round the star is the
- * battery: clockwise from the top tip as far as it is charged, green while it fills (a spark runs
- * along it), red when it runs low. The star is never still for no reason and never moves without
- * one: it grows out of the lens when the island starts, breathes while music plays, pulses while a
- * call rings, and turns a quarter (closing like a shutter as it goes, so its tips clear the sliver)
- * whenever there's news.
+ * The poster the app opens on is a star-shaped window cut in grainy paper, with an eye behind it.
+ * The island is that window, come loose and set on the camera, and the camera is its pupil: an
+ * ultramarine iris streaked out from the lens, in a star cut through a small mount of paper. The
+ * battery is a sliver printed on the mount round the window, clockwise from the top tip as far as
+ * it is charged: ink, the lit ultramarine while it fills (a small gilt star runs along it), the one
+ * red when it's low.
  *
- * Whatever is live rides out from the star along a slim square-cut band, its wings: what you're
- * listening to or talking on to one side, what's counting down or coming up to the other, and the
- * time wherever you keep it (at the far end of the bar, on the band, or split either side of the
- * star with the star as its colon). A moment's news (a song starting, the sound mode, headphones,
- * the battery, the date) runs out along the same band, the star between its two halves like a
- * full stop.
+ * It behaves as an eye does. It opens when the island starts, and stays shut while it has no
+ * notification access, because then it can't see. It blinks at each piece of news. The light on it
+ * moves toward whatever it's looking at: the band beside it, or what hangs below. Its iris turns
+ * like a record while something plays, and floods red while a call rings. A fleck of red by the
+ * pupil means something is waiting for you.
  *
- * Anything with more to say hangs from the star on two threads as a black slip, and swings as it
- * lands: a notification as a short ticket, a ringing call with its two answers, and whatever you
- * tap as its full card. Pull the star down and a thread runs out with it; let go past the mark and
- * your recent notifications hang there. Push a slip up to put it away, or slide it aside to clear
- * it.
+ * Whatever is live runs out from under the mount on a tape of the same paper, cut to a swallowtail:
+ * what you're listening to or talking on to one side, what's counting or coming up to the other,
+ * and the time wherever you keep it. A moment's news runs out along the same tape.
+ *
+ * Anything with more to say hangs from the eye on a fan of threads, as a small poster, and swings
+ * as it lands (the posters themselves are in Posters.kt). Pull the eye down and the red star comes
+ * out of it on its long tail; let go past the mark and your recent notifications hang there. Push
+ * a poster up to put it away, or slide it aside to clear it.
  */
 
 package dev.continuum.fx.island.ui
@@ -32,6 +34,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
@@ -40,8 +43,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -63,14 +65,14 @@ import androidx.compose.runtime.IntState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -85,7 +87,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
@@ -121,7 +123,11 @@ import dev.continuum.fx.island.MediaInfo
 import dev.continuum.fx.island.NoteInfo
 import dev.continuum.fx.island.TimerInfo
 import dev.continuum.fx.island.Upcoming
+import dev.continuum.fx.ui.eidolon.Eidolon
+import dev.continuum.fx.ui.eidolon.EidolonColors
 import dev.continuum.fx.ui.eidolon.GroteskTight
+import dev.continuum.fx.ui.eidolon.PaperColors
+import dev.continuum.fx.ui.eidolon.PasteShadow
 import dev.continuum.fx.ui.eidolon.LocalEidolonColors
 import dev.continuum.fx.ui.eidolon.Star
 import dev.continuum.fx.ui.eidolon.VoidColors
@@ -246,12 +252,15 @@ fun IslandSurface(
     }
     val placedState = rememberUpdatedState(placed)
     val scaled = remember(base, prefs.scale) { Density(base.density * prefs.scale, base.fontScale) }
+    // Printed as the app is: on paper by day, in the negative when the phone is dark.
     CompositionLocalProvider(
         LocalDensity provides scaled,
         LocalFaces provides EidolonFaces,
-        LocalEidolonColors provides VoidColors,
+        LocalEidolonColors provides if (isSystemInDarkTheme()) VoidColors else PaperColors,
     ) {
-        StarIsland(placedState, outsideTaps, onBounds)
+        CompositionLocalProvider(LocalPlateSky provides rememberPlateSky()) {
+            StarIsland(placedState, outsideTaps, onBounds)
+        }
     }
 }
 
@@ -263,6 +272,7 @@ private fun StarIsland(
 ) {
     val spot = spotState.value ?: return
     val still = LocalIslandStill.current
+    val colors = Eidolon.colors
     val density = LocalDensity.current
     val dp = density.density
     fun px(v: Float) = v * dp
@@ -530,16 +540,16 @@ private fun StarIsland(
 
     // ---- What runs out along the band, and what hangs from the star ----
 
-    val words: Words? = outputShowing?.let { Words("output:" + it.key, outputLabel(it.name), "connected", Isle.charge, R.drawable.ic_headphones) }
+    val words: Words? = outputShowing?.let { Words("output:" + it.key, outputLabel(it.name), "connected", colors.ultramarine, R.drawable.ic_headphones) }
         ?: soundRaw?.takeIf { soundShowing }?.let {
-            Words("sound:" + it.at, "Sound", soundLabel(it.mode), if (it.mode == 0) Isle.signal else Isle.on, soundIcon(it.mode))
+            Words("sound:" + it.at, "Sound", soundLabel(it.mode), if (it.mode == 0) colors.signal else colors.ink, soundIcon(it.mode))
         }
         ?: batteryData?.takeIf { battery != null && batteryShowing }?.let { b ->
-            Words("battery:$batteryFlash", "${b.level}%", batteryWord(b), sliverColor(b), if (b.charging) R.drawable.ic_bolt else null, Kind.Battery)
+            Words("battery:$batteryFlash", "${b.level}%", batteryWord(b), sliverColor(b, colors), if (b.charging) R.drawable.ic_bolt else null, Kind.Battery)
         }
-        ?: (if (dateShowing) Words("date", weekday(clockAt), dayMonth(clockAt), Isle.soft) else null)
+        ?: (if (dateShowing) Words("date", weekday(clockAt), dayMonth(clockAt), colors.inkSoft) else null)
         ?: media?.takeIf { songShowing && leftKind == Kind.Media && open != Kind.Media }?.let {
-            Words("song:" + it.title, it.title, it.artist, Isle.soft, null, Kind.Media)
+            Words("song:" + it.title, it.title, it.artist, colors.inkSoft, null, Kind.Media)
         }
     val lastWords = rememberLast(words)
 
@@ -558,15 +568,16 @@ private fun StarIsland(
     val cy = spot.cy
     val camR = spot.radius
     val barH = max(max(spot.bar, cy + camR + px(4f)), px(24f))
-    // The sliver keeps a hair's gap from the star, on a black track of its own so it reads on any wallpaper.
-    val gap = px(1.3f)
-    val trackW = px(3.4f)
-    val sliverW = px(1.8f)
-    val haloReach = gap + trackW
-    // As large as covers the lens well, within the bar, the sliver still on the screen where it can be.
-    val ry = max(min((camR * 2.25f).coerceIn(px(8.5f), px(14f)), cy - px(0.5f) - haloReach), camR * 1.85f)
-    val rx = ry * 1.16f
-    val coreR = camR + px(0.8f)
+    // The window sits in a mount of paper, and the battery's sliver is printed on the mount
+    // between the window's edge and the paper's.
+    val rim = px(5.2f)
+    val sliverAt = px(2.7f)
+    val sliverW = px(1.5f)
+    val haloReach = rim
+    // An eye's shape: wider than it is tall, so the iris shows either side of the lens, and low
+    // enough that the mount stays on the screen where it can.
+    val ry = max(min((camR * 1.75f).coerceIn(px(8f), px(13f)), cy - haloReach), camR * 1.45f)
+    val rx = ry * 1.7f
     val bandH = min(
         (ry * 1.6f).coerceIn(px(15f), px(19f)),
         min((barH - cy) * 2f - px(1f), cy * 2f - px(1f)),
@@ -578,7 +589,7 @@ private fun StarIsland(
     val pivot = Offset(cx, cy + ry * 0.55f)
 
     val haloP by animateFloatAsState(if (showBattery) 1f else 0f, Motion.flow(), label = "haloP")
-    val inner = rx + haloReach * haloP.coerceIn(0f, 1f) + px(5f)
+    val inner = rx + haloReach + px(5f)
 
     // ---- Time ----
 
@@ -609,21 +620,46 @@ private fun StarIsland(
         delay(120)
         bloom.animateTo(1f, spring(dampingRatio = 0.48f, stiffness = 110f))
     }
-    // A quarter turn for each piece of news.
-    var turnsWanted by remember { mutableIntStateOf(0) }
-    val turns = remember { Animatable(0f) }
-    LaunchedEffect(turnsWanted) { turns.animateTo(turnsWanted * 90f, spring(dampingRatio = 0.62f, stiffness = 150f)) }
-    LaunchedEffect(words?.key) { if (words != null) turnsWanted += 1 }
+    // It blinks at each piece of news: the star closes top to bottom like a lid, and opens again.
+    val lid = remember { Animatable(if (still != null && listening) 1f else 0f) }
+    var blinks by remember { mutableIntStateOf(0) }
+    LaunchedEffect(words?.key) { if (words != null) blinks += 1 }
     val newsKey = (slip as? Slip.Peek)?.key ?: (slip as? Slip.Ring)?.key ?: (slip as? Slip.Alarm)?.key
-    LaunchedEffect(newsKey) { if (newsKey != null) turnsWanted += 1 }
+    LaunchedEffect(newsKey) { if (newsKey != null) blinks += 1 }
+    // Without notification access it can't see: the eye stays shut until it can.
+    LaunchedEffect(blinks, listening) {
+        if (still != null) {
+            lid.snapTo(if (listening) 1f else 0f)
+            return@LaunchedEffect
+        }
+        if (!listening) {
+            lid.animateTo(0f, tween(260))
+            return@LaunchedEffect
+        }
+        if (blinks > 0 && lid.value > 0.5f) lid.animateTo(0.04f, tween(70))
+        if (blinks == 0) delay(260)
+        lid.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 300f))
+    }
 
     val playing = media?.playing == true && leftKind == Kind.Media
-    val breathAmp by animateFloatAsState(if (playing && slip == null) 1f else 0f, Motion.settle(), label = "breath")
-    val breath by loopPhase(playing || breathAmp > 0.01f, 3_600, "starBreath")
+    // The iris turns like a record while something plays.
+    val irisTurn by rememberTurn(playing, 26f)
     val ringingNow = ringing != null || alarmRinging != null
     val pulseAmp by animateFloatAsState(if (ringingNow) 1f else 0f, Motion.settle(), label = "pulse")
     val pulse by loopPhase(ringingNow || pulseAmp > 0.01f, 1_050, "starPulse")
-    val lift by animateFloatAsState(if (slip?.opened == true) 1.08f else 1f, Motion.flow(), label = "lift")
+    val lift by animateFloatAsState(if (slip?.opened == true) 1.06f else 1f, Motion.flow(), label = "lift")
+    // It looks at whatever has its attention: what hangs below it, or the news on its band.
+    val gaze by animateOffsetAsState(
+        when {
+            slip != null -> Offset(0f, 1f)
+            words != null -> Offset(0.9f, 0.1f)
+            leftKind != null -> Offset(if (flip) 0.9f else -0.9f, 0.1f)
+            rightKind != null -> Offset(0.9f, 0.1f)
+            else -> Offset.Zero
+        },
+        Motion.flow(), label = "gaze",
+    )
+    val waitingFleck = recent.isNotEmpty() && slip == null && prefs.notifications
 
     // The battery: drawn to its level, swept up from empty when you plug in.
     val levelNow = (lastBattery?.level ?: 0) / 100f
@@ -641,9 +677,8 @@ private fun StarIsland(
         }
     }
     val sparkRunning = charging && batteryData?.full != true && showBattery
-    val spark by loopPhase(sparkRunning, 1_900, "spark")
+    val spark by loopPhase(sparkRunning, 2_300, "spark")
     val lowBlink by loopPhase(showBattery && (batteryData?.level ?: 100) <= 10 && !charging, 1_600, "lowBlink")
-    val waiting by loopPhase(!listening, 9_000, "waiting")
     val placeP by animateFloatAsState(if (placing) 1f else 0f, Motion.flow(), label = "placeP")
 
     // The pull: a thread out of the star, with a star for its weight.
@@ -814,7 +849,10 @@ private fun StarIsland(
 
     // ---- Drawing ----
 
-    val halo = remember(rx, ry, gap, trackW) { StarHalo(rx, ry, Star.SOFT, gap + trackW / 2f) }
+    val halo = remember(rx, ry, sliverAt) { StarHalo(rx, ry, Star.SOFT, sliverAt) }
+    val mount = remember(rx, ry, rim) { StarHalo(rx, ry, Star.SOFT, rim) }
+    val dark = colors.isDark
+    val threadInk = if (dark) colors.inkSoft else colors.ink
     val starPath = remember { Path() }
     val tracePath = remember { Path() }
     val weightPath = remember { Path() }
@@ -840,17 +878,17 @@ private fun StarIsland(
                     .padding(end = (sw - (cx - inner)).coerceAtLeast(0f).toDp())
                     .widthIn(max = leftMax.toDp())
                     .height(bandH.toDp())
-                    .drawBehind { wingBand(leftPresence, inner, px(8f), px(4f), toLeft = true) }
+                    .drawBehind { wingTape(leftPresence, inner, px(5f), colors, toLeft = true) }
                     .onGloballyPositioned { c -> leftRect.value = if (leftPresence > 0.5f) c.boundsInRoot().inflate(px(4f)) else null }
                     .clickable(interactionSource = wingTap, indication = null, role = Role.Button) { tapWing(right = false) }
-                    .padding(start = (px(8f) * leftPresence).toDp()),
+                    .padding(start = (px(11f) * leftPresence).toDp()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Piece(wordsOn, fromEnd = true) {
                     lastWords?.let { w ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            w.icon?.let { Glyph(it, w.rightColor.takeIf { c -> c != Isle.soft } ?: Isle.on, 12.dp); Spacer(Modifier.width(5.dp)) }
-                            IsleText(w.left, 12.5.sp, Isle.on, weight = FontWeight.SemiBold)
+                            w.icon?.let { Glyph(it, colors.ink, 12.dp); Spacer(Modifier.width(5.dp)) }
+                            IsleText(w.left, 13.sp, colors.ink, weight = FontWeight.SemiBold, face = GroteskTight)
                         }
                     }
                 }
@@ -871,16 +909,16 @@ private fun StarIsland(
                     .padding(start = (cx + inner).toDp())
                     .widthIn(max = rightMax.toDp())
                     .height(bandH.toDp())
-                    .drawBehind { wingBand(rightPresence, inner, px(8f), px(4f), toLeft = false) }
+                    .drawBehind { wingTape(rightPresence, inner, px(5f), colors, toLeft = false) }
                     .onGloballyPositioned { c -> rightRect.value = if (rightPresence > 0.5f) c.boundsInRoot().inflate(px(4f)) else null }
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button) { tapWing(right = true) }
-                    .padding(end = (px(8f) * rightPresence).toDp()),
+                    .padding(end = (px(11f) * rightPresence).toDp()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Piece(splitTime, fromEnd = false) { TimePiece(minutesText(clockAt)) }
                 if (flip) Piece(insideTime, fromEnd = false) { TimePiece(timeLabel) }
                 Piece(wordsOn, fromEnd = false) {
-                    lastWords?.let { IsleText(it.right, 12.5.sp, it.rightColor, weight = FontWeight.Medium) }
+                    lastWords?.let { IsleText(it.right, 13.sp, it.rightColor, weight = FontWeight.Medium, face = GroteskTight) }
                 }
                 Piece(!wordsOn && rightKind == Kind.Timer, fromEnd = false) { lastTimer?.let { TimerPiece(it, now) } }
                 Piece(!wordsOn && rightKind == Kind.Live, fromEnd = false) { lastLive?.let { LivePiece(it) } }
@@ -906,7 +944,7 @@ private fun StarIsland(
                         .height(bandH.toDp())
                         .onSizeChanged { timeTagW = it.width }
                         .onGloballyPositioned { c -> timeRect.value = c.boundsInRoot().inflate(px(4f)) }
-                        .background(Isle.ink, TagShape)
+                        .sheet(colors.slip, shadow = 1.5.dp)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button) {
                             dateShowing = true
                             touch()
@@ -918,106 +956,88 @@ private fun StarIsland(
             LaunchedEffect(outsideTime) { if (!outsideTime) timeRect.value = null }
         }
 
-        // The star, its sliver, and every thread.
+        // The eye in its star, the sliver on its mount, and every thread.
         Canvas(Modifier.fillMaxSize()) {
             val b = bloom.value
-            val breathe = 1f + 0.035f * breathAmp * sin(2f * PI.toFloat() * breath)
-            val beat = 1f + 0.085f * pulseAmp * sin(PI.toFloat() * pulse).let { it * it }
-            val grow = b * breathe * beat * lift
-            val turn = turns.value
-            val frac = ((turn % 90f) + 90f) % 90f / 90f
-            // Turning, the star closes like a shutter so its tips clear the sliver, and opens again.
-            val wink = 1f - 0.44f * sin(PI.toFloat() * frac)
+            val beat = 1f + 0.07f * pulseAmp * sin(PI.toFloat() * pulse).let { it * it }
+            val grow = b * beat * lift
             val pull = pullShown(pullRaw.value)
             val pullK = (pull / maxPull).coerceIn(0f, 1f)
             val center = Offset(cx, cy)
 
-            // The pull's thread and weight, from under the star.
-            if (pull > 0.5f) {
-                val end = Offset(cx, cy + ry + pull)
-                thread(Offset(cx, cy + ry * 0.4f), end)
-                val wr = px(6f) + px(2.5f) * pullK
-                drawPath(Star.path(end + Offset(0f, wr * 0.6f), wr, wr * 1.25f, Star.KEEN, rotation = pullK * 180f, into = weightPath), Isle.ink)
-                if (armed) drawCircle(Isle.lit, px(1.8f), end + Offset(0f, wr * 0.6f))
-            }
-
-            // The slip's threads, to its top corners as it hangs and swings.
+            // What hangs from it hangs on a fan of threads, strung to its top edge.
             if (slipVisible && slipSize.width > 0) {
                 val w = slipSize.width.toFloat()
                 val sx = slipX(slipSize.width)
                 val d = drop.value
                 val s = 0.08f + 0.92f * d
                 val theta = swing.value * (PI.toFloat() / 180f)
-                fun hung(p: Offset): Offset {
-                    val vx = (p.x - pivot.x) * s
-                    val vy = (p.y - pivot.y) * s
-                    return Offset(
+                val alpha = (d * 2.2f).coerceIn(0f, 1f)
+                for (i in 0 until THREADS) {
+                    val f = 0.12f + 0.76f * i / (THREADS - 1)
+                    val px0 = sx + w * f
+                    val vx = (px0 - pivot.x) * s
+                    val vy = (slipTop + px(1f) - pivot.y) * s
+                    val end = Offset(
                         pivot.x + vx * cos(theta) - vy * sin(theta) + dragX.value,
                         pivot.y + vx * sin(theta) + vy * cos(theta) + dragY.value,
                     )
+                    drawLine(threadInk.copy(alpha = 0.92f * alpha), pivot, end, px(0.9f))
                 }
-                val a = hung(Offset(sx + w * 0.2f, slipTop + px(1f)))
-                val c = hung(Offset(sx + w * 0.8f, slipTop + px(1f)))
-                val alpha = (d * 2.2f).coerceIn(0f, 1f)
-                thread(pivot, a, alpha)
-                thread(pivot, c, alpha)
             }
 
-            // The lens's own black, then the star over it.
-            drawCircle(Isle.ink, coreR * min(1f, b * 1.6f), center)
-            rotate(turn - 90f * (1f - b), pivot = center) {
-                drawPath(Star.path(center, rx * grow * wink, ry * grow * wink * (1f + pullK * 0.16f), Star.SOFT, into = starPath), Isle.ink)
+            // Pulled, the red star comes down out of the eye on its long tail.
+            if (pull > 0.5f) {
+                val head = Offset(cx, cy + ry * 0.6f + pull)
+                val arm = px(7f) + px(3f) * pullK + (if (armed) px(2f) else 0f)
+                drawLine(colors.signal, Offset(cx, cy + ry * 0.5f), head, px(1.4f))
+                drawPath(Star.path(head, arm, arm * 1.2f, Star.KEEN, rotation = if (armed) 45f else 0f, into = weightPath), colors.signal)
             }
 
-            // The battery, traced round the star.
-            if (haloP > 0.01f) {
-                val p = haloP.coerceIn(0f, 1f)
-                scale(b * breathe * beat * lift, pivot = center) {
-                    drawPath(halo.trace(0f, 1f, cx, cy, tracePath), Isle.ink.copy(alpha = p), style = Stroke(trackW, join = StrokeJoin.Round))
-                    drawPath(halo.trace(0f, 1f, cx, cy, tracePath), Color.White.copy(alpha = 0.13f * p), style = Stroke(px(0.8f), join = StrokeJoin.Round))
+            // The mount: a star of paper, pasted down, the sliver printed on it.
+            scale(grow, pivot = center) {
+                translate(px(0.8f), px(1.3f)) { drawPath(mount.trace(0f, 1f, cx, cy, tracePath), PasteShadow.copy(alpha = 0.3f * b.coerceIn(0f, 1f))) }
+                drawPath(mount.trace(0f, 1f, cx, cy, tracePath), colors.slipRaised)
+                grainOver(tracePath, dark)
+                if (haloP > 0.01f) {
+                    val p = haloP.coerceIn(0f, 1f)
+                    drawPath(halo.trace(0f, 1f, cx, cy, tracePath), colors.ink.copy(alpha = 0.2f * p), style = Stroke(px(0.8f), join = StrokeJoin.Round))
                     val lv = level.value.coerceIn(0f, 1f) * p
                     if (lv > 0.001f) {
-                        val blink = if (lowBlink > 0f) 0.55f + 0.45f * cos(2f * PI.toFloat() * lowBlink) else 1f
+                        val blink = if (lowBlink > 0f) 0.5f + 0.5f * cos(2f * PI.toFloat() * lowBlink) else 1f
                         drawPath(
-                            halo.trace(0f, lv, cx, cy, tracePath), sliverColor(batteryData).copy(alpha = blink),
+                            halo.trace(0f, lv, cx, cy, tracePath), sliverColor(batteryData, colors).copy(alpha = blink),
                             style = Stroke(sliverW, cap = StrokeCap.Round, join = StrokeJoin.Round),
                         )
                     }
+                    // Charging, a small gilt star runs the sliver from the top to where it has filled.
                     if (sparkRunning && lv > 0.03f) {
-                        val head = lv * spark
-                        drawPath(
-                            halo.trace((head - 0.07f).coerceAtLeast(0f), head, cx, cy, tracePath), Color.White.copy(alpha = 0.92f),
-                            style = Stroke(sliverW, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                        )
-                        drawCircle(Color.White, sliverW * 0.75f, center + halo.point(head))
+                        val at = halo.point(lv * spark)
+                        drawPath(Star.path(Offset(cx + at.x, cy + at.y), px(2.6f), pinch = Star.KEEN, rotation = spark * 180f, into = weightPath), colors.gilt)
                     }
                 }
             }
 
-            // Waiting for notification access: a broken ring turns slowly round it all.
-            if (!listening && !slipVisible) {
-                val r = ry * 1.08f + haloReach + px(3.5f)
-                rotate(waiting * 360f, pivot = center) {
-                    for (i in 0 until 12) {
-                        drawArc(
-                            Isle.ink, i * 30f, 14f, false, Offset(cx - r, cy - r), androidx.compose.ui.geometry.Size(r * 2f, r * 2f),
-                            style = Stroke(px(2.2f), cap = StrokeCap.Round),
-                        )
-                    }
-                }
+            // The eye: the window cut in the mount, its pupil the camera.
+            scale(grow, pivot = center) {
+                starEye(
+                    center, rx, ry * (1f + pullK * 0.14f), camR, colors,
+                    EyeLook(lid = lid.value * b.coerceIn(0f, 1f), turn = irisTurn, gaze = gaze, fleck = waitingFleck, alarm = pulseAmp * (0.55f + 0.45f * sin(2f * PI.toFloat() * pulse))),
+                    starPath,
+                )
             }
 
-            // Placing it: register marks on the camera, so the star can be lined up on the lens.
+            // Placing it: register marks on the camera, so the pupil can be lined up on the lens.
             if (placeP > 0.01f) {
                 val a = placeP.coerceIn(0f, 1f)
                 val reach = rx + haloReach + px(14f)
                 val near = rx + haloReach + px(4f)
                 val hair = px(1f)
                 listOf(-1f, 1f).forEach { sgn ->
-                    drawLine(Isle.lit.copy(alpha = a), Offset(cx + sgn * near, cy), Offset(cx + sgn * reach, cy), hair)
-                    drawLine(Isle.lit.copy(alpha = a), Offset(cx, cy + sgn * (ry + haloReach + px(3f))), Offset(cx, cy + sgn * (ry + haloReach + px(10f))), hair)
+                    drawLine(colors.signal.copy(alpha = a), Offset(cx + sgn * near, cy), Offset(cx + sgn * reach, cy), hair)
+                    drawLine(colors.signal.copy(alpha = a), Offset(cx, cy + sgn * (ry + haloReach + px(3f))), Offset(cx, cy + sgn * (ry + haloReach + px(10f))), hair)
                 }
-                drawCircle(Isle.lit.copy(alpha = a), camR, center, style = Stroke(hair))
+                drawCircle(colors.signal.copy(alpha = a), camR, center, style = Stroke(hair))
             }
         }
 
@@ -1108,8 +1128,6 @@ private fun StarIsland(
                         translationX = dragX.value
                         translationY = dragY.value
                     }
-                    .background(Isle.slip, SlipShape)
-                    .border(1.dp, Isle.rule, SlipShape)
                     .pointerInput(Unit) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -1216,48 +1234,46 @@ private fun StarIsland(
 
 // ---- The band ----
 
+/** How many threads a slip hangs on. */
+private const val THREADS = 7
+
 /**
- * One wing's half of the band: from the star's centre out to the wing's far end, cut square at
- * that end. [presence] draws it back into the star as the wing empties.
+ * One wing: a tape of the print's paper run out from under the mount to the wing's far end, that
+ * end cut to a swallowtail as a banner's is. [presence] draws it back under the mount as the wing
+ * empties.
  */
-private fun DrawScope.wingBand(presence: Float, inner: Float, pad: Float, cut: Float, toLeft: Boolean) {
-    val p = presence.coerceIn(0f, 1.2f)
+private fun DrawScope.wingTape(presence: Float, inner: Float, notch: Float, colors: EidolonColors, toLeft: Boolean) {
+    val p = presence.coerceIn(0f, 1.15f)
     if (p < 0.005f) return
     val h = size.height
     val path = Path()
     if (toLeft) {
         val r = size.width + inner
-        val l = lerpF(r, 0f, p) - pad * (p - 1f).coerceAtLeast(0f)
-        val c = min(cut, (r - l) / 2f)
-        path.moveTo(l + c, 0f)
+        val l = lerpF(r, 0f, p)
+        val n = min(notch, (r - l) / 2f)
+        path.moveTo(l, 0f)
         path.lineTo(r, 0f)
         path.lineTo(r, h)
-        path.lineTo(l + c, h)
-        path.lineTo(l, h - c)
-        path.lineTo(l, c)
+        path.lineTo(l, h)
+        path.lineTo(l + n, h / 2f)
         path.close()
     } else {
         val l = -inner
-        val r = lerpF(l, size.width, p) + pad * (p - 1f).coerceAtLeast(0f)
-        val c = min(cut, (r - l) / 2f)
+        val r = lerpF(l, size.width, p)
+        val n = min(notch, (r - l) / 2f)
         path.moveTo(l, 0f)
-        path.lineTo(r - c, 0f)
-        path.lineTo(r, c)
-        path.lineTo(r, h - c)
-        path.lineTo(r - c, h)
+        path.lineTo(r, 0f)
+        path.lineTo(r - n, h / 2f)
+        path.lineTo(r, h)
         path.lineTo(l, h)
         path.close()
     }
-    drawPath(path, Isle.ink)
+    translate(1.dp.toPx(), 1.5.dp.toPx()) { drawPath(path, PasteShadow.copy(alpha = if (colors.isDark) 0.5f else 0.28f)) }
+    drawPath(path, colors.slip)
+    grainOver(path, colors.isDark)
 }
 
-/** A thread: black, with a lit hair down its middle so it shows on black too. */
-private fun DrawScope.thread(from: Offset, to: Offset, alpha: Float = 1f) {
-    drawLine(Isle.ink.copy(alpha = alpha), from, to, 2.2.dp.toPx(), cap = StrokeCap.Round)
-    drawLine(Color.White.copy(alpha = 0.26f * alpha), from, to, 0.7.dp.toPx(), cap = StrokeCap.Round)
-}
-
-/** A piece of a wing, growing out from the star's side as it arrives and drawn back as it goes. */
+/** A piece of a wing, growing out from the eye's side as it arrives and drawn back as it goes. */
 @Composable
 private fun Piece(visible: Boolean, fromEnd: Boolean, content: @Composable () -> Unit) {
     AnimatedVisibility(
@@ -1275,19 +1291,20 @@ private fun Piece(visible: Boolean, fromEnd: Boolean, content: @Composable () ->
     }
 }
 
+/** The hour, as the poster sets it: tight and heavy. */
 @Composable
 private fun TimePiece(text: String) {
-    IsleText(text, 13.5.sp, Isle.on, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+    Numerals(text, 15.sp, Eidolon.colors.ink)
 }
 
-/** What's playing: its art in a small turning star, and three bars of its colour. */
+/** What's playing: its art through the plate in a small turning star, and three bars. */
 @Composable
 private fun MediaPiece(m: MediaInfo) {
     val turn by rememberTurn(m.playing, 24f)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        StarWindow(m.art, 16.dp, turn = turn, seed = m.title.hashCode())
+        StarWindow(m.art, 16.dp, turn = turn, pinch = Star.CIRCULAR)
         Spacer(Modifier.width(6.dp))
-        PlayingBars(Color(lifted(m.accent)), m.playing)
+        PlayingBars(Eidolon.colors.ink, m.playing)
     }
 }
 
@@ -1308,77 +1325,74 @@ private fun PlayingBars(color: Color, playing: Boolean) {
 
 @Composable
 private fun CallPiece(c: CallInfo, now: Long) {
+    val colors = Eidolon.colors
     val beat by loopPhase(true, 1_600, "callBeat")
     Row(verticalAlignment = Alignment.CenterVertically) {
-        PrintedStar(8.dp, Isle.charge, rotation = beat * 90f)
+        PrintedStar(9.dp, colors.ultramarine, rotation = beat * 90f)
         Spacer(Modifier.width(5.dp))
-        IsleText(callText(c, now), 12.5.sp, Isle.charge, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+        Numerals(callText(c, now), 14.sp, colors.ink)
     }
 }
 
 @Composable
 private fun TimerPiece(t: TimerInfo, now: Long) {
+    val colors = Eidolon.colors
     val over = t.countDown && t.base - now < 0
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Glyph(R.drawable.ic_timer, if (over) Isle.signal else Isle.lit, 12.dp)
+        Glyph(R.drawable.ic_timer, if (over) colors.signal else colors.ink, 12.dp)
         Spacer(Modifier.width(4.dp))
-        IsleText(timerText(t, now), 12.5.sp, if (over) Isle.signal else Isle.lit, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+        Numerals(timerText(t, now), 14.sp, if (over) colors.signal else colors.ink)
     }
 }
 
 @Composable
 private fun LivePiece(l: LiveInfo) {
+    val colors = Eidolon.colors
     Row(verticalAlignment = Alignment.CenterVertically) {
         val p = l.progress
-        if (p != null) MiniRing(p) else AppGlyph(l.smallIcon, Isle.on, 12.dp)
+        if (p != null) MiniRing(p) else AppGlyph(l.smallIcon, colors.ink, 12.dp)
         liveShort(l)?.let {
             Spacer(Modifier.width(5.dp))
-            IsleText(it, 12.5.sp, Isle.on, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+            Numerals(it, 14.sp, colors.ink)
         }
     }
 }
 
-/** Progress as a fine ring, a star at its head; a short arc running round while the app can't say. */
+/** Progress as a fine ring; a short arc running round while the app can't say. */
 @Composable
 private fun MiniRing(progress: Float) {
+    val colors = Eidolon.colors
     val shown by animateFloatAsState(progress.coerceIn(0f, 1f), Motion.flow(), label = "miniRing")
     val spin by loopPhase(progress < 0f, 1_100, "miniSpin")
     Canvas(Modifier.size(12.dp)) {
-        val w = 1.6.dp.toPx()
+        val w = 1.7.dp.toPx()
         val inset = w / 2f
         val arc = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
-        drawArc(Color.White.copy(alpha = 0.2f), 0f, 360f, false, Offset(inset, inset), arc, style = Stroke(w))
+        drawArc(colors.ink.copy(alpha = 0.2f), 0f, 360f, false, Offset(inset, inset), arc, style = Stroke(w))
         if (progress < 0f) {
-            drawArc(Isle.lit, spin * 360f - 90f, 90f, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
+            drawArc(colors.ultramarine, spin * 360f - 90f, 90f, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
         } else {
-            drawArc(Isle.lit, -90f, 360f * shown, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
+            drawArc(colors.ultramarine, -90f, 360f * shown, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
         }
     }
 }
 
 @Composable
 private fun EventPiece(label: String) {
-    val color = if (label == "Now") Isle.charge else Isle.lit
+    val colors = Eidolon.colors
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Glyph(R.drawable.ic_event, color, 12.dp)
+        Glyph(R.drawable.ic_event, if (label == "Now") colors.ultramarine else colors.ink, 12.dp)
         Spacer(Modifier.width(4.dp))
-        IsleText(label, 12.5.sp, color, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+        IsleText(label.lowercase(), 13.sp, colors.ink, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
     }
 }
 
 @Composable
 private fun AlarmPiece(at: String) {
+    val colors = Eidolon.colors
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Glyph(R.drawable.ic_alarm, Isle.soft, 12.dp)
+        Glyph(R.drawable.ic_alarm, colors.inkSoft, 12.dp)
         Spacer(Modifier.width(4.dp))
-        IsleText(at, 12.5.sp, Isle.soft, weight = FontWeight.SemiBold, face = GroteskTight, figures = true)
+        Numerals(at, 14.sp, colors.inkSoft)
     }
-}
-
-/** An artwork's colour, lifted enough to read on black. */
-private fun lifted(color: Int): Int {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(color, hsv)
-    hsv[2] = maxOf(hsv[2], 0.78f)
-    return android.graphics.Color.HSVToColor(hsv)
 }

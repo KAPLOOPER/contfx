@@ -22,6 +22,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import android.view.WindowManager
+import dev.continuum.fx.island.CameraLocator
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -43,20 +46,24 @@ import kotlin.math.max
 @Composable
 internal fun IslandPreview(modifier: Modifier = Modifier) {
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val camera = remember(context, density) {
+        runCatching { CameraLocator.locate(context, context.getSystemService(WindowManager::class.java)) }.getOrNull()
+    }
     val taps = remember { mutableIntStateOf(0) }
     var lowest by remember { mutableFloatStateOf(0f) }
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val w = constraints.maxWidth
-        val bar = with(density) { 28.dp.toPx() }
-        val lens = with(density) { 5.dp.toPx() }
-        val spot = remember(w, density) {
+        val bar = camera?.bar ?: with(density) { 28.dp.toPx() }
+        val lens = camera?.radius ?: with(density) { 5.dp.toPx() }
+        val spot = remember(w, density, camera) {
             CameraSpot(
-                cx = w / 2f,
-                cy = bar * 0.48f,
+                cx = camera?.let { it.cx / it.screenWidth * w } ?: (w / 2f),
+                cy = camera?.cy ?: (bar * 0.48f),
                 radius = lens,
                 screenWidth = w,
                 screenHeight = with(density) { 640.dp.roundToPx() },
-                detected = true,
+                detected = camera?.detected == true,
                 landscape = false,
                 bar = bar,
             )

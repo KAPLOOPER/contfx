@@ -91,7 +91,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -564,13 +564,16 @@ private fun StarIsland(
     val sliverW = px(1.8f)
     val haloReach = gap + trackW
     // As large as covers the lens well, within the bar, the sliver still on the screen where it can be.
-    val ry = max(min((camR * 2.25f).coerceIn(px(8.5f), px(14f)), cy - px(0.5f) - haloReach), camR * 1.85f)
-    val rx = ry * 1.16f
+    val baseRy = max(min((camR * 2.25f).coerceIn(px(8.5f), px(14f)), cy - px(0.5f) - haloReach), camR * 1.85f)
+    val ry = baseRy * prefs.starHeight
+    val rx = baseRy * 1.16f * prefs.starWidth
     val coreR = camR + px(0.8f)
-    val bandH = min(
-        (ry * 1.6f).coerceIn(px(15f), px(19f)),
+    val baseBandH = min(
+        (baseRy * 1.6f).coerceIn(px(15f), px(19f)),
         min((barH - cy) * 2f - px(1f), cy * 2f - px(1f)),
     ).coerceAtLeast(px(12f))
+    val bandH = (baseBandH + px(prefs.barHeight)).coerceAtLeast(px(12f))
+    val bandPad = px(8f + prefs.barWidth)
     val margin = px(12f)
     // A camera at the left of the screen has no room beside it there: its usual left wing goes right.
     val flip = cx < sw * 0.32f
@@ -590,6 +593,10 @@ private fun StarIsland(
 
     // ---- Touch and bounds, gathered without recomposing ----
 
+    val islandCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    fun localBounds(child: LayoutCoordinates): Rect =
+        islandCoordinates[0]?.takeIf { it.isAttached }?.localBoundingBoxOf(child, clipBounds = false)
+            ?: Rect.Zero
     val timeRect = remember { mutableStateOf<Rect?>(null) }
     val leftRect = remember { mutableStateOf<Rect?>(null) }
     val rightRect = remember { mutableStateOf<Rect?>(null) }
@@ -819,7 +826,7 @@ private fun StarIsland(
     val tracePath = remember { Path() }
     val weightPath = remember { Path() }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { islandCoordinates[0] = it }) {
         // The wings, under the star, each running out from it.
         val bandTop = (cy - bandH / 2f).roundToInt()
         val leftPresence by animateFloatAsState(
@@ -841,9 +848,9 @@ private fun StarIsland(
                     .widthIn(max = leftMax.toDp())
                     .height(bandH.toDp())
                     .drawBehind { wingBand(leftPresence, inner, px(8f), px(4f), toLeft = true) }
-                    .onGloballyPositioned { c -> leftRect.value = if (leftPresence > 0.5f) c.boundsInRoot().inflate(px(4f)) else null }
+                    .onGloballyPositioned { c -> leftRect.value = if (leftPresence > 0.5f) localBounds(c).inflate(px(4f)) else null }
                     .clickable(interactionSource = wingTap, indication = null, role = Role.Button) { tapWing(right = false) }
-                    .padding(start = (px(8f) * leftPresence).toDp()),
+                    .padding(start = wingPadding(bandPad, leftPresence).toDp()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Piece(wordsOn, fromEnd = true) {
@@ -872,9 +879,9 @@ private fun StarIsland(
                     .widthIn(max = rightMax.toDp())
                     .height(bandH.toDp())
                     .drawBehind { wingBand(rightPresence, inner, px(8f), px(4f), toLeft = false) }
-                    .onGloballyPositioned { c -> rightRect.value = if (rightPresence > 0.5f) c.boundsInRoot().inflate(px(4f)) else null }
+                    .onGloballyPositioned { c -> rightRect.value = if (rightPresence > 0.5f) localBounds(c).inflate(px(4f)) else null }
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button) { tapWing(right = true) }
-                    .padding(end = (px(8f) * rightPresence).toDp()),
+                    .padding(end = wingPadding(bandPad, rightPresence).toDp()),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Piece(splitTime, fromEnd = false) { TimePiece(minutesText(clockAt)) }
@@ -905,7 +912,7 @@ private fun StarIsland(
                     Modifier
                         .height(bandH.toDp())
                         .onSizeChanged { timeTagW = it.width }
-                        .onGloballyPositioned { c -> timeRect.value = c.boundsInRoot().inflate(px(4f)) }
+                        .onGloballyPositioned { c -> timeRect.value = localBounds(c).inflate(px(4f)) }
                         .background(Isle.ink, TagShape)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button) {
                             dateShowing = true
@@ -1090,7 +1097,7 @@ private fun StarIsland(
                     .width(slipW)
                     .onSizeChanged { slipSize = it }
                     .onGloballyPositioned { c ->
-                        val r = c.boundsInRoot()
+                        val r = localBounds(c)
                         // Room for the swing, and for the threads above it.
                         slipRect.value = Rect(r.left - px(14f), barH, r.right + px(14f), r.bottom + px(14f))
                     }

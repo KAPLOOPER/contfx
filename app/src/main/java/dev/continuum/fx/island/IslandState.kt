@@ -540,11 +540,11 @@ data class IslandPrefs(
     val timers: Boolean = true,
     val notifications: Boolean = true,
     val battery: Boolean = true,
-    /** Drag the island down to pull a drop of recent notifications out of it. */
+    /** Drag the star down to pull your recent notifications out of it on a thread. */
     val pull: Boolean = true,
-    /** The time, a drop at the left of the status bar. */
+    /** The time, in the status bar beside the star (where, [timeSpot] says). */
     val alwaysTime: Boolean = true,
-    /** The battery, a drop at the right of the status bar as full as it is. */
+    /** The battery, a sliver traced round the star as far as it is charged. */
     val alwaysBattery: Boolean = true,
     /** Where the always-on time sits: [TIME_OUTSIDE], [TIME_INSIDE] or [TIME_SPLIT]. */
     val timeSpot: String = TIME_OUTSIDE,
@@ -562,17 +562,10 @@ data class IslandPrefs(
     val sound: Boolean = true,
     /** Headphones, a speaker or the car connecting, for a moment. */
     val headphones: Boolean = true,
-    /** The battery as a ring around the camera, rather than an ink battery in the pill. */
-    val batteryRing: Boolean = true,
     /** One-time codes: shown large with Copy, and offered to Continuum Keyboard. */
     val codes: Boolean = true,
     /** Android's own clock, battery and icons step aside while the island shows the time and battery. */
     val hideStatusIcons: Boolean = true,
-    /**
-     * How the island looks: [STYLE_DROPS], hanging from a bar of ink; [STYLE_BEADS], strung on a
-     * thread; or [STYLE_PIP], one small pip of ink round the camera.
-     */
-    val style: String = STYLE_DROPS,
 
     // ---- Placement: fitting the island to the camera, or moving it ----
 
@@ -580,34 +573,17 @@ data class IslandPrefs(
     val offsetX: Float = 0f,
     /** Up (-) or down (+) from the camera, in dp. */
     val offsetY: Float = 0f,
-    /** Added to the camera's detected radius, in dp, so the ink and the ring hug the lens. */
+    /** Added to the camera's detected radius, in dp, so the star sits snug on the lens. */
     val cameraSize: Float = 0f,
     /** Everything in the island, larger or smaller together. */
     val scale: Float = 1f,
-    /** How tall the pill is, against its usual height. */
-    val height: Float = 1f,
-    /** Extra room on each side of the camera, in dp. */
-    val width: Float = 0f,
-
-    // ---- Where each drop hangs along the bar, as a fraction of the screen's width; -1 is its own place ----
-
-    val timeAt: Float = -1f,
-    val batteryAt: Float = -1f,
-    /** What's playing or on a call. */
-    val playingAt: Float = -1f,
-    /** A timer, or what's coming up. */
-    val countingAt: Float = -1f,
 ) {
     /** Whether the island has been moved or resized from where it fits the camera. */
     val placed: Boolean
-        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f || height != 1f || width != 0f ||
-            timeAt >= 0f || batteryAt >= 0f || playingAt >= 0f || countingAt >= 0f
+        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f
 
     /** These settings with the placement put back. */
-    fun unplaced() = copy(
-        offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f, height = 1f, width = 0f,
-        timeAt = -1f, batteryAt = -1f, playingAt = -1f, countingAt = -1f,
-    )
+    fun unplaced() = copy(offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f)
 
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
@@ -616,19 +592,12 @@ data class IslandPrefs(
     val wantsStatusIconsHidden: Boolean get() = enabled && hideStatusIcons && (alwaysTime || alwaysBattery)
 
     companion object {
-        /** Left of the artwork, at the far end of the island. */
+        /** On a tag of its own at the far end of the status bar, as Android's clock is. */
         const val TIME_OUTSIDE = "outside"
-        /** Right of the artwork, beside the camera. */
+        /** On the star's own band, right beside it. */
         const val TIME_INSIDE = "inside"
-        /** Around the camera: hours on one side, minutes on the other, the camera as the colon. */
+        /** Either side of the star: hours on one wing, minutes on the other, the star as the colon. */
         const val TIME_SPLIT = "split"
-
-        /** A bar of ink along the top edge, everything hanging from it as drops. */
-        const val STYLE_DROPS = "drops"
-        /** No bar: a thread of ink along the edge, everything strung on it as beads. */
-        const val STYLE_BEADS = "beads"
-        /** As little as possible: one pip of ink round the camera, the time beside it, the battery a ring. */
-        const val STYLE_PIP = "pip"
     }
 }
 
@@ -664,20 +633,12 @@ object IslandSettings {
             live = p.getBoolean("live", true),
             sound = p.getBoolean("sound", true),
             headphones = p.getBoolean("headphones", true),
-            batteryRing = p.getBoolean("batteryRing", true),
             codes = p.getBoolean("codes", true),
             hideStatusIcons = p.getBoolean("hideStatusIcons", true),
-            style = p.getString("style", null)?.takeIf { it == IslandPrefs.STYLE_BEADS || it == IslandPrefs.STYLE_PIP } ?: IslandPrefs.STYLE_DROPS,
             offsetX = p.getFloat("offsetX", 0f).coerceIn(PLACE_X_MIN, PLACE_X_MAX),
             offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
             cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),
             scale = p.getFloat("scale", 1f).coerceIn(SCALE_MIN, SCALE_MAX),
-            height = p.getFloat("height", 1f).coerceIn(HEIGHT_MIN, HEIGHT_MAX),
-            width = p.getFloat("width", 0f).coerceIn(WIDTH_MIN, WIDTH_MAX),
-            timeAt = p.getFloat("timeAt", -1f).coerceIn(-1f, 1f),
-            batteryAt = p.getFloat("batteryAt", -1f).coerceIn(-1f, 1f),
-            playingAt = p.getFloat("playingAt", -1f).coerceIn(-1f, 1f),
-            countingAt = p.getFloat("countingAt", -1f).coerceIn(-1f, 1f),
         )
     }
 
@@ -689,10 +650,6 @@ object IslandSettings {
     const val CAMERA_MAX = 8f
     const val SCALE_MIN = 0.85f
     const val SCALE_MAX = 1.25f
-    const val HEIGHT_MIN = 0.8f
-    const val HEIGHT_MAX = 1.4f
-    const val WIDTH_MIN = 0f
-    const val WIDTH_MAX = 40f
 
     fun update(transform: (IslandPrefs) -> IslandPrefs) {
         val next = transform(_state.value)
@@ -715,20 +672,12 @@ object IslandSettings {
             ?.putBoolean("live", next.live)
             ?.putBoolean("sound", next.sound)
             ?.putBoolean("headphones", next.headphones)
-            ?.putBoolean("batteryRing", next.batteryRing)
             ?.putBoolean("codes", next.codes)
             ?.putBoolean("hideStatusIcons", next.hideStatusIcons)
-            ?.putString("style", next.style)
             ?.putFloat("offsetX", next.offsetX)
             ?.putFloat("offsetY", next.offsetY)
             ?.putFloat("cameraSize", next.cameraSize)
             ?.putFloat("scale", next.scale)
-            ?.putFloat("height", next.height)
-            ?.putFloat("width", next.width)
-            ?.putFloat("timeAt", next.timeAt)
-            ?.putFloat("batteryAt", next.batteryAt)
-            ?.putFloat("playingAt", next.playingAt)
-            ?.putFloat("countingAt", next.countingAt)
             ?.apply()
     }
 }

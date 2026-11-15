@@ -31,13 +31,13 @@ import dev.continuum.fx.ui.theme.Motion
 import kotlin.math.max
 
 /**
- * The island itself, drawn in the page: the real drops hanging from a strip of black along the top
+ * The island itself, drawn in the page: the real star on a strip of black along the top
  * of a small screen, the camera in the middle, 64dp of rest height. The page draws the screen it
- * sits on (the top of a phone, fading out below), so the ink has a screen to hang over, as it does
+ * sits on (the top of a phone, fading out below), so the slips have a screen to hang over, as they do
  * on the phone. It's the same
  * island the overlay draws, with your settings, so samples from Try it play into it before Android
  * has given the overlay its permissions, and opening something here opens it the same way. The
- * screen grows to fit whatever falls out of the bar, and a tap on it away from the ink folds it
+ * screen grows to fit whatever hangs from the star, and a tap on it away from the island folds it
  * back up.
  */
 @Composable

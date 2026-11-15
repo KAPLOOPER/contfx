@@ -6,7 +6,7 @@ The utilities I actually use, in one place, all in the Continuum design language
 
 - **Sound:** a rootless, system-wide **parametric EQ** that imports EQ files from [squig.link](https://squig.link) and AutoEQ or fits one from your own measurement and target, an EQ of its own for any app, and backup of everything.
 - **Effects:** spatial audio with speakers you place, analog bass, punch, speaker bass, tube warmth, an exciter, hi-res detail, stage, crossfeed, dynamics, loudness and Bluetooth care, on top of the EQ.
-- **Island:** a **liquid ink dynamic island** around your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
+- **Island:** a **dynamic island** built on a four-point star over your front camera, for music, calls, timers, notifications, alarms, your calendar and more.
 - **Volume:** Continuum's own **volume panel**, in liquid ink, with each app's own volume, play-alongside and a boost past 100%.
 - **Keyboard:** **Continuum Keyboard**, Continuum's own keyboard, as a separate app. Install it, switch it on and open its settings from the Keyboard tab.
 
@@ -14,10 +14,10 @@ The ink rule holds across the app too. The drop under the page's title and the d
 
 While you scroll down to read, the page's big title folds out of the way and opens out again near the top. The dock keeps its place below the page, and grows into setup when you need it. Everything else sits on one flat surface: no cards, boxes or borders, just space and small spaced-out labels to group things. Choices are their words, the chosen one held in a pool of ink; buttons are words with an icon; a switch is an empty drop waiting in the open mouth of a fine channel, which it slides into as the ink pours in after it and closes it, ending in a ticked drop. A row that leads somewhere ends in an arrow; a drop in the rail marks what's on, and a word at the far end says its value. Colour means one thing each: white is on or chosen, green is happening now, red needs you. The finer settings of each group wait behind a quiet *More*, and on a tablet or open foldable the page keeps to a comfortable reading width. Controls are ink too. Choosing a chip spreads ink out from your finger, turning the label as it reaches it, and unchoosing drains it back; a switch's empty drop slides along its channel as it fills, a little past and back, before the tick surfaces; the power button floods from its centre; and *Hold to compare* fills from where you're holding for as long as you hold. You feel the ink as well as see it: a light tick when a drop separates (a tab chosen, a card torn free, a neck snapping) or merges back, a detent as a swipe hands over to the next page, and the toggle feel when a switch fills or drains. Ink that moves by itself stays silent. The icons are Continuum's own, drawn in one hand: round 2-wide strokes, soft filled shapes for media, and a drop where ink would gather (a bell's clapper, a notification's badge, a phone's ear and mouth pieces).
 
-## Eidolon (this branch)
+## Eidolon
 
-On this branch the app's own screens are redrawn in a second design language, **Eidolon**, to try
-it out. The island, the volume panel and the keyboard stay as they are, in Continuum's liquid ink.
+The app's own screens and the island are drawn in a second design language, **Eidolon**. The
+volume panel and the keyboard are still in Continuum's liquid ink.
 
 - **The masthead is a poster.** A four-point star is cut out of the paper behind its top-right
   corner, and through it a dithered halftone sky drifts. Read down a page and the star opens until
@@ -33,7 +33,7 @@ it out. The island, the volume panel and the keyboard stay as they are, in Conti
   wide capitals for notes and section names. Shippori Mincho for the kanji.
 - **Colour:** paper, ink and one ultramarine; in dark mode the same plate printed in negative, the
   sky in greys so only what's on is in colour. Green still means happening now and red needs you.
-  The dock and the island are still pure black ink.
+  The dock and the island are pure black.
 
 | At rest | Read down: the poster opened | Island | In negative |
 |---|---|---|---|
@@ -74,24 +74,19 @@ It needs one accessibility switch (*Continuum volume*), which listens to the two
 
 ## The island
 
-The island is one piece of ink that starts as your camera. It follows the Continuum liquid rule: ink never appears or vanishes, it only separates from, or merges with, ink already on screen.
+The island is a black four-point star set on your front camera, printed in Eidolon. It grows out of the lens when the island starts, and it never moves without a reason.
 
-- **Music and video** stretch the camera into a pill: artwork on one side, and three drops of the track's colour on the other that bob and fuse like liquid while it plays, settling into one calm drop when paused. Tap to open the player: the seek bar is a line of liquid ending in a drop that glides as the song plays and swells under your finger, play and pause melt into each other, and skip presses the triangle into the bar.
-- **Calls** drip down from the camera when they ring, with Decline and Answer. During a call the pill keeps a green timer; tap it to end the call.
-- **Timers** from your clock app count down in the pill, or in a second bubble that pinches off the side when music is playing too.
-- **Notifications** drip down for a few seconds with their own buttons, Reply included. Tap to open, swipe sideways to clear, up to tuck away. *Only the island* switches Android's own pop-ups off while the island shows them.
-- **Alarms:** your next alarm sits in the island for the 12 hours before it (or whenever one is set). Alarms and finished timers drip down as they ring, with the clock's Snooze and Stop.
-- **Calendar:** your next event from 15 minutes before it starts, counting down by the minute and turning green at *Now*. Open it for the time and place, and **Join** when it has a Meet, Zoom, Teams or similar link. Off until you switch it on and allow calendar access; it's read on the phone only.
-- **Downloads and live updates:** progress rings for downloads, plus directions, deliveries and rides while they're happening.
-- **Sound mode and headphones** speak up for a moment: ring, vibrate or silent as you switch, and headphones, speakers or the car as they connect.
-- **Pull a drop:** hold the island (or the bare camera) and drag down. A drop stretches out on a neck; let go early and it springs back in, pull past the snap and it tears free as a card of your recent notifications. Swipe it sideways for the next one, tap to open, swipe up to send it back.
-- **Always on:** switch on *Time* and *Battery* to keep them in the island all the time, beside whatever else is live. The time can sit left of the artwork, right of it, or around the camera, with the hours on one side, the minutes on the other and the camera as the colon. The battery is a ring round the camera that fills with your charge (green while charging, with a glint running along it; red when low), so it takes no room in the island at all; with nothing else on, the ink is just big enough to hold it. Prefer the ink capsule on the far right? It's still there. With nothing playing, the island rests as a slim pill of the time and date.
-- **Charging and battery:** plugging in, by cable or wireless, sweeps the ring up from empty to your charge, with the percentage beside the camera (or shows it in a liquid battery that ripples as it fills). It also speaks up at 20% and 10%, and when you're fully charged. Tap it for the time to full.
+- **The battery is a sliver round the star,** read clockwise from the top tip like a clock face, on a black track of its own so it reads on any wallpaper. Green while it charges, with a spark running along it, and red (blinking under 10%) when it's low. Plugging in sweeps it up from empty to your charge. Tap the star with nothing else on for the battery card: the star drawn large with its sliver, the percentage and the time to full.
+- **What's live rides out on a band.** A slim square-cut band runs out from the star on either side: what you're listening to or talking on to one side (the artwork in a small star that turns slowly while it plays, three bars of its colour; a call's green timer), and what's counting down or coming up to the other (timers, downloads, directions, your next event or alarm). Tap a wing for its card.
+- **Time** can sit on a tag at the end of the bar, on the band right by the star, or either side of it, with the hours on one wing, the minutes on the other and the star as the colon. Tap it for the date.
+- **News turns the star.** A moment's news (a song starting, ring, vibrate or silent, headphones or the car connecting, charging, the date) runs out along the band with the star between its halves like a full stop, and every piece of news turns the star a quarter. As it turns it closes like a shutter, so its tips clear the sliver, and opens again.
+- **Anything with more to say hangs from the star** on two threads, as a black slip cut square at its corners, and swings as it lands. A notification hangs as a short ticket: tap it for its card with all of its text and its own buttons (Reply included), push it up to put it away, slide it aside to clear it. A ringing call hangs with Decline and Answer while the star pulses; a ringing alarm or finished timer with the clock's Snooze and Stop.
+- **Cards:** music (the art in a star-shaped window, a seek rule with a star riding it, and a paper-white star to play and pause), calls, timers, the battery, your next alarm, calendar events with **Join**, and downloads and live updates with their progress and buttons.
+- **One-time codes** (`482913 is your verification code`, `G-482913`, `123 456`, in several languages) hang large with **Copy**, and stay a little longer.
+- **Pull the thread:** drag the star down and a thread runs out with a star for its weight; let go past the mark (you'll feel it) and your recent notifications hang there. Tap one to open it, slide it aside to clear it, or clear them all.
+- **Placement:** the island starts fitted to the camera. Move it, fit the star to your lens with *Camera size*, and scale everything with *Size*. While you adjust it, register marks show where the lens is, and *Reset* puts it back.
 
-- **One-time codes:** a sign-in code in a message or email (`482913 is your verification code`, `G-482913`, `123 456`, in several languages) drips down large, with **Copy**, and stays a little longer than other notifications. Continuum Keyboard offers the same code in its strip, so it's one tap into the field. Codes are kept for five minutes, in memory only; a copied code is marked sensitive so clipboard previews and histories leave it out. Promo and gift codes, amounts, years and phone numbers are passed over.
-- **Placement:** the island starts fitted to the camera. Move it up, down, left or right, fit it to your lens with *Camera size* (so the ink and the ring hug it), scale everything with *Size*, and shape the pill with *Height* and *Width*. It shows itself while you adjust it, and *Reset* puts it back on the camera.
-
-On Android 12 and later the ink is rendered as a true liquid (blur and threshold) while it changes shape, so pieces fuse and necks thin before they snap; at rest it's drawn as plain shapes, with no blur running. Older versions draw the necks without the blur. Nothing on the island animates unless it has a reason to (music playing, charging, an indeterminate download), so a still island isn't redrawn at all, and with the screen off it rests completely. The ink itself is pure black, so on an AMOLED screen it's pixels switched off.
+Nothing on the island animates unless it has a reason to (music playing, charging, a call ringing, an indeterminate download), so a still island isn't redrawn at all. The star, the band and the threads are pure black, so on an AMOLED screen they're pixels switched off.
 
 ### Setting up the island
 
@@ -216,6 +211,7 @@ Releases are signed with `keystore/continuum.p12`. The keystore is locked with a
 - [x] Liquid ink island: music, calls, timers and notifications
 - [x] Island: alarms, calendar, downloads and directions, charging, sound mode, headphones
 - [x] Island: placement and camera fitting, battery ring
+- [x] Island: rebuilt on the Eidolon star, with the battery as a sliver round it
 - [x] In-app updates that install over the top
 - [x] The Continuum keyboard
 - [ ] Liquid-ink transitions for the remaining sheets

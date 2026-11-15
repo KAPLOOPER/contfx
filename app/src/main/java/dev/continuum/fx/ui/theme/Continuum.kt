@@ -133,6 +133,18 @@ val DarkPalette = LightPalette.copy(
 
 val LocalPalette = staticCompositionLocalOf { LightPalette }
 
+/** The two faces words are set in: running text, and the small capitals of notes. */
+data class Faces(val body: FontFamily, val note: FontFamily)
+
+/** The app's screens: Eidolon's grotesque, in its running and its wide cuts. */
+val EidolonFaces = Faces(Grotesk, GroteskWide)
+
+/** Continuum's own: Libron, with Inter for the notes. The island and the volume panel keep these. */
+val ContinuumFaces by lazy { Faces(Libron, Mark) }
+
+/** Which faces [Txt] and [Note] set their words in here. */
+val LocalFaces = staticCompositionLocalOf { EidolonFaces }
+
 val Libron = FontFamily(
     Font(R.font.libron_regular, FontWeight.Normal),
     Font(R.font.libron_bold, FontWeight.Bold),
@@ -151,13 +163,14 @@ val Mark = FontFamily(Font(R.font.inter_medium, FontWeight.Medium))
  */
 @Composable
 fun Note(text: String, color: Color, modifier: Modifier = Modifier, tracking: TextUnit = 0.85.sp) {
+    val faces = LocalFaces.current
     val caps = text.uppercase()
     val style = TextStyle(
         color = color,
         fontSize = 10.5.sp,
         lineHeight = 15.sp,
-        fontFamily = GroteskWide,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = faces.note,
+        fontWeight = if (faces.note == GroteskWide) FontWeight.SemiBold else FontWeight.Medium,
         letterSpacing = tracking,
         fontFeatureSettings = "tnum, case",
     )
@@ -320,13 +333,16 @@ fun Txt(
     align: TextAlign = TextAlign.Start,
     mono: Boolean = false,
 ) {
+    val faces = LocalFaces.current
+    val eidolon = faces.body == Grotesk
     val style = TextStyle(
         color = color,
         fontSize = size,
-        lineHeight = size * 1.34f,
-        letterSpacing = if (mono) TextUnit.Unspecified else (-0.01 * size.value).sp,
-        fontFamily = if (mono) FontFamily.Monospace else Grotesk,
-        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
+        // Libron's descenders and ascenders crowd at its natural spacing, so it gets more room.
+        lineHeight = size * if (eidolon) 1.34f else 1.38f,
+        letterSpacing = if (mono || !eidolon) TextUnit.Unspecified else (-0.01 * size.value).sp,
+        fontFamily = if (mono) FontFamily.Monospace else faces.body,
+        fontWeight = if (bold) (if (eidolon) FontWeight.SemiBold else FontWeight.Bold) else FontWeight.Normal,
         textAlign = align,
     )
     HeldText(text, if (maxLines > 1 && !mono) keepLastTwo(text) else text, modifier) { shown, onLayout, m ->

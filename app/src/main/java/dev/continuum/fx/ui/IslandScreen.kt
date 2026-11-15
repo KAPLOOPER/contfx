@@ -116,7 +116,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         // The island itself, in the page, drawn on the top of a phone's screen: lit where a screen
         // is, rounded at its top corners as a display is, and running on down out of the drawing
         // (it fades into the ground) rather than ending in an edge, so it reads as the phone and not
-        // as a box on the page. The real drops draw themselves into it, and samples from Try it
+        // as a box on the page. The real island draws itself into it, and samples from Try it
         // play into it even before setup.
         BenchHero {
             Box(
@@ -136,22 +136,12 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
                     .padding(bottom = 10.dp),
             ) { IslandPreview() }
         }
-        // Its style: the preview above changes as you choose.
-        Gap(24.dp)
-        Note("Style", p.sub, Modifier.padding(start = INK_RAIL))
-        val style = prefs.style
-        ChoiceRow(Modifier.padding(start = INK_RAIL, top = 6.dp), fill = false) {
-            Chip("Drops", style == IslandPrefs.STYLE_DROPS, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_DROPS) } })
-            Chip("Beads", style == IslandPrefs.STYLE_BEADS, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_BEADS) } })
-            Chip("Pip", style == IslandPrefs.STYLE_PIP, onClick = { actions.updateIsland { it.copy(style = IslandPrefs.STYLE_PIP) } })
-        }
+        // What it is, under the drawing: one look now, so a line says how it behaves.
+        Gap(18.dp)
         Txt(
-            when (style) {
-                IslandPrefs.STYLE_BEADS -> "No bar: a thread along the top, everything strung on it as beads. Android's notification icons can show beside the thread."
-                IslandPrefs.STYLE_PIP -> "As little as possible: one small pip round the camera with the time beside it, the battery a ring round the lens and what's playing on the other side. News opens it into a thin line for a moment. Android's notification icons can show beside it."
-                else -> "A bar of ink along the top, everything hanging from it as drops."
-            },
-            13.5.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 4.dp),
+            "A black star on the camera, the battery traced round it in a fine sliver. What's live rides out " +
+                "beside it on a slim band; news turns the star; anything with more to say hangs from it on two threads.",
+            13.5.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL),
         )
         Gap(30.dp)
         var moreDemos by rememberSaveable { mutableStateOf(false) }
@@ -223,23 +213,23 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         PlacementSection(prefs, actions)
 
         // What the island does, in the groups it falls into: what it shows, what it speaks up
-        // for, the drops it keeps in the bar, and what it steps aside for. Plain rows, the ink
+        // for, what it keeps in the bar, and what it steps aside for. Plain rows, the ink
         // in the margin carrying the state, and each rule saying how many of its group are on:
         // while the island is, as Effects' rules count only while the effects are on. Off, the
         // rows still show what's chosen; a count over them would say "on" of nothing showing.
         val eventsOn = prefs.events && state.privileges.calendar
         fun lit(vararg v: Boolean): String? = v.count { it }.let { if (it == 0 || !on) null else "$it on" }
         BenchSection(3, "Shows", trail = lit(prefs.media, prefs.calls, prefs.timers, prefs.notifications, prefs.codes, prefs.alarms, eventsOn, prefs.live, prefs.pull))
-        IslandRow("Music and video", "Artwork and bars; tap it for controls", prefs.media) {
+        IslandRow("Music and video", "Its art in a turning star; tap it for controls", prefs.media) {
             actions.updateIsland { it.copy(media = !it.media) }
         }
-        IslandRow("Calls", "Drip down to answer, then a timer", prefs.calls) {
+        IslandRow("Calls", "Hangs with Answer and Decline, then counts", prefs.calls) {
             actions.updateIsland { it.copy(calls = !it.calls) }
         }
         IslandRow("Timers", "Countdowns and stopwatches", prefs.timers) {
             actions.updateIsland { it.copy(timers = !it.timers) }
         }
-        IslandRow("Notifications", "Drip down with their buttons, Reply too", prefs.notifications) {
+        IslandRow("Notifications", "Hang as a ticket; tap for their buttons and Reply", prefs.notifications) {
             actions.updateIsland { it.copy(notifications = !it.notifications) }
         }
         IslandRow("One-time codes", "Large, with Copy, and in the keyboard", prefs.codes) {
@@ -270,7 +260,7 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         IslandRow("Downloads and live updates", "Progress, directions, deliveries, rides", prefs.live) {
             actions.updateIsland { it.copy(live = !it.live) }
         }
-        IslandRow("Pull a drop", "Hold and drag down for recent ones", prefs.pull) {
+        IslandRow("Pull the thread", "Drag the star down for recent ones", prefs.pull) {
             actions.updateIsland { it.copy(pull = !it.pull) }
         }
 
@@ -286,20 +276,23 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
             actions.updateIsland { it.copy(battery = !it.battery) }
         }
 
-        // The drops the island holds in the bar itself.
+        // What the island keeps in the bar itself.
         BenchSection(5, "In the bar", trail = lit(prefs.alwaysTime, prefs.alwaysBattery))
-        IslandRow("Time", "A drop at the left of the status bar; tap it for the date", prefs.alwaysTime) {
+        IslandRow("Time", "Tap it for the date", prefs.alwaysTime) {
             actions.updateIsland { it.copy(alwaysTime = !it.alwaysTime) }
+        }
+        Reveal(prefs.alwaysTime) {
+            ChoiceRow(Modifier.padding(start = INK_RAIL, bottom = 10.dp)) {
+                Chip("At the end", prefs.timeSpot == IslandPrefs.TIME_OUTSIDE, onClick = { actions.updateIsland { it.copy(timeSpot = IslandPrefs.TIME_OUTSIDE) } })
+                Chip("By the star", prefs.timeSpot == IslandPrefs.TIME_INSIDE, onClick = { actions.updateIsland { it.copy(timeSpot = IslandPrefs.TIME_INSIDE) } })
+                Chip("Either side", prefs.timeSpot == IslandPrefs.TIME_SPLIT, onClick = { actions.updateIsland { it.copy(timeSpot = IslandPrefs.TIME_SPLIT) } })
+            }
         }
         IslandRow(
             "Battery",
-            "A drop at the right, as full as the battery; ink runs into it while charging",
+            "A sliver round the star as far as it's charged; green and running while it charges",
             prefs.alwaysBattery,
         ) { actions.updateIsland { it.copy(alwaysBattery = !it.alwaysBattery) } }
-        Txt(
-            "Hold any drop in the bar and slide it along to move it. Reset, under Placement, puts them all back.",
-            14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL, top = 6.dp),
-        )
 
         // And what the island steps aside for: Android's own pieces, silenced one by one.
         BenchSection(6, "Steps aside", trail = lit(prefs.hidePopups, prefs.hideStatusIcons))
@@ -339,12 +332,14 @@ internal fun IslandContent(state: UiState, actions: AppActions) {
         }
 
         Gap(8.dp)
-        MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the ink moves") { Txt(
-            "The island is the status bar, and the top edge of the screen is where its ink comes from. The time, the camera and the " +
-                "battery hang from it as drops, and whatever starts (a song, a call, a timer) hangs as its own drop beside the camera. " +
-                "News spreads the camera's drop along the edge into one line: who, the camera, then what. Nothing hangs below the bar " +
-                "unless you ask: tap a drop and it falls and lands as its card; push it up and it's drawn back into the edge. Hold the " +
-                "camera and drag down to pull out your recent notifications. Ink never appears or vanishes: it leaves the edge and returns to it.",
+        MoreSection(aboutInk, { aboutInk = !aboutInk }, label = "How the star moves") { Txt(
+            "The star sits on the camera and grows out of it when the island starts. The sliver round it is the battery, read " +
+                "clockwise from the top tip like a clock face: green while it charges, with a spark running along it, and red when " +
+                "it's low. Whatever starts (a song, a call, a timer) rides out beside the star on a slim band, and a moment's news " +
+                "runs along the same band with the star between its halves. Each piece of news turns the star a quarter. Anything " +
+                "with more to say hangs from the star on two threads and swings as it lands: tap it for its card, push it up to put " +
+                "it away, slide it aside to clear it. Drag the star down and a thread runs out with it; let go past the mark for " +
+                "your recent notifications.",
             15.sp, p.sub,
         ) }
     }
@@ -463,14 +458,14 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
         }
         BenchField(
             "Camera size", cText,
-            note = "Grow or shrink this until the camera's drop hugs your lens.",
+            note = "Grow or shrink this until the star sits snug on your lens.",
         ) {
             InkSlider(value = frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX), label = cText, onChange = { t ->
                 place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) }
             })
         }
         val sText = pct(prefs.scale)
-        BenchField("Size", sText, note = "Size scales every drop together.") {
+        BenchField("Size", sText, note = "Size scales the star, the band and the cards together.") {
             InkSlider(value = frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX), label = sText, onChange = { t ->
                 place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
             })

@@ -577,13 +577,24 @@ data class IslandPrefs(
     val cameraSize: Float = 0f,
     /** Everything in the island, larger or smaller together. */
     val scale: Float = 1f,
+    /** Star proportions only; the lens cover, bar text and cards keep their size. */
+    val starWidth: Float = 1f,
+    val starHeight: Float = 1f,
+    /** Extra space at each outer end of the bar, in dp. */
+    val barWidth: Float = 0f,
+    /** Added to the bar's automatic height, in dp. */
+    val barHeight: Float = 0f,
 ) {
     /** Whether the island has been moved or resized from where it fits the camera. */
     val placed: Boolean
-        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f
+        get() = offsetX != 0f || offsetY != 0f || cameraSize != 0f || scale != 1f ||
+            starWidth != 1f || starHeight != 1f || barWidth != 0f || barHeight != 0f
 
     /** These settings with the placement put back. */
-    fun unplaced() = copy(offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f)
+    fun unplaced() = copy(
+        offsetX = 0f, offsetY = 0f, cameraSize = 0f, scale = 1f,
+        starWidth = 1f, starHeight = 1f, barWidth = 0f, barHeight = 0f,
+    )
 
     /** Whether Android's pop-ups should be off right now (with the island running). */
     val wantsPopupsHidden: Boolean get() = enabled && notifications && hidePopups
@@ -639,6 +650,10 @@ object IslandSettings {
             offsetY = p.getFloat("offsetY", 0f).coerceIn(PLACE_Y_MIN, PLACE_Y_MAX),
             cameraSize = p.getFloat("cameraSize", 0f).coerceIn(CAMERA_MIN, CAMERA_MAX),
             scale = p.getFloat("scale", 1f).coerceIn(SCALE_MIN, SCALE_MAX),
+            starWidth = p.getFloat("starWidth", 1f).coerceIn(STAR_MIN, STAR_MAX),
+            starHeight = p.getFloat("starHeight", 1f).coerceIn(STAR_MIN, STAR_MAX),
+            barWidth = p.getFloat("barWidth", 0f).coerceIn(BAR_WIDTH_MIN, BAR_WIDTH_MAX),
+            barHeight = p.getFloat("barHeight", 0f).coerceIn(BAR_HEIGHT_MIN, BAR_HEIGHT_MAX),
         )
     }
 
@@ -646,10 +661,16 @@ object IslandSettings {
     const val PLACE_X_MAX = 60f
     const val PLACE_Y_MIN = -12f
     const val PLACE_Y_MAX = 30f
-    const val CAMERA_MIN = -6f
-    const val CAMERA_MAX = 8f
+    const val CAMERA_MIN = -12f
+    const val CAMERA_MAX = 16f
     const val SCALE_MIN = 0.85f
     const val SCALE_MAX = 1.25f
+    const val STAR_MIN = 0.4f
+    const val STAR_MAX = 1.6f
+    const val BAR_WIDTH_MIN = -8f
+    const val BAR_WIDTH_MAX = 64f
+    const val BAR_HEIGHT_MIN = -6f
+    const val BAR_HEIGHT_MAX = 20f
 
     fun update(transform: (IslandPrefs) -> IslandPrefs) {
         val next = transform(_state.value)
@@ -678,6 +699,10 @@ object IslandSettings {
             ?.putFloat("offsetY", next.offsetY)
             ?.putFloat("cameraSize", next.cameraSize)
             ?.putFloat("scale", next.scale)
+            ?.putFloat("starWidth", next.starWidth)
+            ?.putFloat("starHeight", next.starHeight)
+            ?.putFloat("barWidth", next.barWidth)
+            ?.putFloat("barHeight", next.barHeight)
             ?.apply()
     }
 }

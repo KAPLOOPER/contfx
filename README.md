@@ -85,7 +85,7 @@ The app opens on a poster: a star-shaped window cut in grainy paper. The island 
 - **Pull the red star:** drag the eye down and the red star comes out of it on its long tail; let go past the mark (you'll feel it) and your recent notifications hang there, set like a sleeve's track list. Tap one to open it, slide it aside to clear it, or clear them all.
 - **Gestures:** tap a poster for more, push it up to put it away, slide it aside to clear it. Tap the eye or a tape for what's on it.
 - **By day and by night:** like the app, the island prints on paper in light mode and in the negative in dark mode; the windows stay ultramarine in both.
-- **Placement:** the island starts fitted to the camera. Move it, fit the pupil to your lens with *Camera size*, and scale everything with *Size*. While you adjust it, red register marks show where the lens is, and *Reset* puts it back.
+- **Placement:** fit the pupil to your lens with *Camera size*, then adjust *Star width* and *Star height* independently of *Bar width* and *Bar height*. The bar width adds or removes space at each end of a tape while leaving room for its content. Sliders and minus/plus buttons give 0.25 dp placement and bar adjustments, and 1% star sizing steps. *Overall size* scales the text, spacing and posters. The preview uses your phone's camera dimensions, red register marks help alignment, and *Reset* restores all placement settings without changing your sources.
 
 Nothing on the island animates unless it has a reason to (music playing, charging, a call ringing, a poster open with its sky drifting), so a still island isn't redrawn at all.
 

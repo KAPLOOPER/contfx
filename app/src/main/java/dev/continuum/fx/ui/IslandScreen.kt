@@ -60,7 +60,7 @@ import dev.continuum.fx.ui.components.Surface
 import dev.continuum.fx.ui.theme.LocalPalette
 import dev.continuum.fx.ui.theme.Note
 import dev.continuum.fx.ui.theme.Txt
-import kotlin.math.abs
+import dev.continuum.fx.island.placementStep
 
 internal fun islandOn(state: UiState) = state.island.enabled && state.privileges.islandReady
 
@@ -412,18 +412,11 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
         actions.updateIsland(transform)
         IslandRepository.placing.value = System.currentTimeMillis()
     }
-    /** A slider's 0..1 into [lo]..[hi], in [step]s, catching on [rest] when close to it. */
-    fun value(t: Float, lo: Float, hi: Float, step: Float, rest: Float): Float {
-        val v = lo + t * (hi - lo)
-        if (abs(v - rest) < (hi - lo) * 0.025f) return rest
-        return (Math.round(v / step) * step).coerceIn(lo, hi)
-    }
-    fun frac(v: Float, lo: Float, hi: Float) = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
     fun dpText(v: Float) = if (v % 1f == 0f) "${v.toInt()} dp" else "$v dp"
     fun pct(v: Float) = "${Math.round(v * 100)}%"
+    fun adjustment(v: Float) = if (v == 0f) "Automatic" else "${if (v > 0f) "+" else ""}${dpText(v)}"
 
     BenchSection(2, "Placement")
-    // Said only when it isn't simply fitted to the camera.
     if (!detected) {
         Txt("No camera cutout was found, so the island sits at the top centre. Move it over your camera here.", 14.sp, p.sub, modifier = Modifier.padding(start = INK_RAIL))
     }
@@ -431,52 +424,59 @@ private fun PlacementSection(prefs: IslandPrefs, actions: AppActions) {
         Modifier.fillMaxWidth().padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        val y = prefs.offsetY
-        val yText = when {
-            y == 0f -> "On the camera"
-            y > 0f -> "${dpText(y)} lower"
-            else -> "${dpText(-y)} higher"
-        }
-        BenchField("Up and down", yText) {
-            InkSlider(value = frac(y, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX), label = yText, onChange = { t ->
-                place { it.copy(offsetY = value(t, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX, 0.5f, 0f)) }
-            })
-        }
-        val x = prefs.offsetX
-        val xText = when {
-            x == 0f -> "On the camera"
-            x > 0f -> "${dpText(x)} right"
-            else -> "${dpText(-x)} left"
-        }
-        BenchField("Left and right", xText) {
-            InkSlider(value = frac(x, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX), label = xText, onChange = { t ->
-                place { it.copy(offsetX = value(t, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX, 0.5f, 0f)) }
-            })
-        }
-        val c = prefs.cameraSize
-        val cText = when {
-            c == 0f -> "As found"
-            c > 0f -> "+${dpText(c)}"
-            else -> "−${dpText(-c)}"
-        }
-        BenchField(
-            "Camera size", cText,
-            note = "Grow or shrink this until the pupil sits exactly on your lens.",
-        ) {
-            InkSlider(value = frac(c, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX), label = cText, onChange = { t ->
-                place { it.copy(cameraSize = value(t, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX, 0.25f, 0f)) }
-            })
-        }
-        val sText = pct(prefs.scale)
-        BenchField("Size", sText, note = "Size scales the eye, the tapes and the posters together.") {
-            InkSlider(value = frac(prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX), label = sText, onChange = { t ->
-                place { it.copy(scale = value(t, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX, 0.01f, 1f)) }
-            })
-        }
+        PlacementControl("Up and down", prefs.offsetY, IslandSettings.PLACE_Y_MIN, IslandSettings.PLACE_Y_MAX,
+            0.25f, dpText(prefs.offsetY), "Negative moves up; positive moves down.") { v -> place { it.copy(offsetY = v) } }
+        PlacementControl("Left and right", prefs.offsetX, IslandSettings.PLACE_X_MIN, IslandSettings.PLACE_X_MAX,
+            0.25f, dpText(prefs.offsetX), "Negative moves left; positive moves right.") { v -> place { it.copy(offsetX = v) } }
+        PlacementControl("Camera size", prefs.cameraSize, IslandSettings.CAMERA_MIN, IslandSettings.CAMERA_MAX,
+            0.25f, adjustment(prefs.cameraSize), "Fit the pupil to your lens, then adjust the star's points below.") { v -> place { it.copy(cameraSize = v) } }
+        PlacementControl("Star width", prefs.starWidth, IslandSettings.STAR_MIN, IslandSettings.STAR_MAX,
+            0.01f, pct(prefs.starWidth), "Move the side points without resizing the tapes or their text.") { v -> place { it.copy(starWidth = v) } }
+        PlacementControl("Star height", prefs.starHeight, IslandSettings.STAR_MIN, IslandSettings.STAR_MAX,
+            0.01f, pct(prefs.starHeight), "Shorten the top and bottom points to fit the screen edge.") { v -> place { it.copy(starHeight = v) } }
+        PlacementControl("Bar width", prefs.barWidth, IslandSettings.BAR_WIDTH_MIN, IslandSettings.BAR_WIDTH_MAX,
+            0.25f, adjustment(prefs.barWidth), "Extra space at each end of a tape. It still grows to fit its content.") { v -> place { it.copy(barWidth = v) } }
+        PlacementControl("Bar height", prefs.barHeight, IslandSettings.BAR_HEIGHT_MIN, IslandSettings.BAR_HEIGHT_MAX,
+            0.25f, adjustment(prefs.barHeight), "Change the tapes' thickness without resizing the star.") { v -> place { it.copy(barHeight = v) } }
+        PlacementControl("Overall size", prefs.scale, IslandSettings.SCALE_MIN, IslandSettings.SCALE_MAX,
+            0.01f, pct(prefs.scale), "Scale the island's text, spacing and posters together.") { v -> place { it.copy(scale = v) } }
     }
     Reveal(prefs.placed) {
         Gap(4.dp)
         PillButton("Reset", { place { it.unplaced() } }, icon = R.drawable.ic_undo, modifier = Modifier.padding(start = INK_RAIL))
+    }
+}
+
+/** A wide slider for coarse movement, with exact steps that do not snap back to the default. */
+@Composable
+private fun PlacementControl(
+    title: String,
+    value: Float,
+    min: Float,
+    max: Float,
+    step: Float,
+    label: String,
+    note: String,
+    onChange: (Float) -> Unit,
+) {
+    BenchField(
+        title, label, note = note,
+        leading = {
+            IconBubble(R.drawable.ic_minus, "Decrease $title", {
+                onChange(placementStep(value - step, min, max, step))
+            })
+        },
+        trailing = {
+            IconBubble(R.drawable.ic_plus, "Increase $title", {
+                onChange(placementStep(value + step, min, max, step))
+            })
+        },
+    ) {
+        InkSlider(
+            value = ((value - min) / (max - min)).coerceIn(0f, 1f),
+            label = "$title: $label",
+            onChange = { onChange(placementStep(min + it * (max - min), min, max, step)) },
+        )
     }
 }
 

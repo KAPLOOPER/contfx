@@ -93,7 +93,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     // ---- What the keyboard shows, set by the input method. ----
 
     var palette: KeyPalette = KeyPalette.Ink
-        set(value) { field = value; invalidate() }
+        set(value) { field = value; applyPrint(); invalidate() }
 
     var heightScale = 1f
         set(value) { if (field != value) { field = value; requestLayout() } }
@@ -150,8 +150,22 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
 
     // ---- Paint. ----
 
-    private val regular: Typeface = ResourcesCompat.getFont(context, R.font.libron_regular) ?: Typeface.DEFAULT
-    private val bold: Typeface = ResourcesCompat.getFont(context, R.font.libron_bold) ?: Typeface.DEFAULT_BOLD
+    private val libronRegular: Typeface = ResourcesCompat.getFont(context, R.font.libron_regular) ?: Typeface.DEFAULT
+    private val libronBold: Typeface = ResourcesCompat.getFont(context, R.font.libron_bold) ?: Typeface.DEFAULT_BOLD
+    private var regular: Typeface = libronRegular
+    private var bold: Typeface = libronBold
+
+    /** Wide small capitals: space, send and the sheet keys, in the print. */
+    private var wide: Typeface = libronRegular
+
+    // ---- The print: paper, and windows to a halftone sky (see Print.kt). ----
+
+    private var printType: PrintType? = null
+    private var sky: PrintSky? = null
+    private val window = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val grain = Paint()
+    private val slipPath = Path()
+    private val dropPath = Path()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = regular }
     private val icon = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -464,6 +478,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        sky?.size(w, h)
         computeGeometry(w)
         relayout()
         listener.onGeometry()
@@ -475,8 +490,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         postInvalidateOnAnimation()
     }
 
+    /** What the motion is timed by: the system's clock, or a stepped one for drawings of the keyboard. */
+    internal var clock: () -> Long = { SystemClock.uptimeMillis() }
+
     private fun stepAll(): Boolean {
-        val now = SystemClock.uptimeMillis()
+        val now = clock()
         val dt = if (lastFrame == 0L) 0.016f else ((now - lastFrame) / 1000f).coerceIn(0f, 0.034f)
         lastFrame = now
         var moving = false
@@ -578,12 +596,18 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val h = height.toFloat()
         val p = palette
 
-        // The ink.
+        // The ink, or in the print a sheet of paper, square, with a hairline along its top.
         fill.color = p.mass
-        val r = 28f * v
+        val r = if (p.print) 0f else 28f * v
         massPath.reset()
         massPath.addRoundRect(0f, massTop, w, h + r, floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f), Path.Direction.CW)
         canvas.drawPath(massPath, fill)
+        if (p.print) {
+            fill.color = p.label
+            fill.alpha = if (p.dark) 60 else 40
+            canvas.drawRect(0f, massTop, w, massTop + max(1f, density), fill)
+            fill.alpha = 255
+        }
 
         buildInk()
         drawStrip(canvas)
@@ -591,6 +615,13 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         drawGoo(canvas)
         drawOverGoo(canvas)
         drawTrail(canvas)
+        if (p.print) {
+            // The grain over everything, the way it would be if the page had been scanned.
+            grain.shader = PrintGrain.shader(p.dark)
+            canvas.drawRect(0f, massTop, w, h, grain)
+            // The sky drifts on while the keyboard moves, and holds still when it stops.
+            if (moving) sky?.drift(SystemClock.uptimeMillis()) { invalidate() }
+        }
 
         // The word's ink can be sent somewhere new while the strip is drawn.
         if (moving || pillMoving()) frame() else lastFrame = 0L
@@ -631,6 +662,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         val l = layout ?: return
         val p = palette
         val rk = runKey
+        overWindow(true)
+        try {
+            knockAll(canvas, l, p, rk)
+        } finally {
+            overWindow(false)
+        }
+    }
+
+    private fun knockAll(canvas: Canvas, l: Layout, p: KeyPalette, rk: PlacedKey?) {
         if (!stillPath.isEmpty) knock(canvas, l, stillPath, p.onBright, rk)
 
         if (rk == null || drawnElsewhere(rk)) return
@@ -716,13 +756,27 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     }
                     val w = min(k.w - 4f * u, max(64f * u, enterWidth + 26f * u)) * h
                     val hh = 36f * v * h
-                    stillPath.addRoundRect(k.cx - w / 2f, k.cy - hh / 2f, k.cx + w / 2f, k.cy + hh / 2f, hh / 2f, hh / 2f, Path.Direction.CW)
+                    // In the print, send is a window cut square.
+                    val er = if (palette.print) 3f * v * h else hh / 2f
+                    stillPath.addRoundRect(k.cx - w / 2f, k.cy - hh / 2f, k.cx + w / 2f, k.cy + hh / 2f, er, er, Path.Direction.CW)
+                } else if (palette.print) {
+                    // Shift held on: a star-shaped window, the poster's own, behind the arrow.
+                    stillPath.addPath(star(k.cx, k.cy, min(24f * u, k.h * 0.62f) * h, 0.62f, 0f, dropPath))
                 } else {
                     stillPath.addCircle(k.cx, k.cy, min(18f * u, k.h / 2f) * h, Path.Direction.CW)
                 }
             }
         }
-        if (runLead[2].value > 0.4f || runTrail[2].value > 0.4f) {
+        val restD = 14f * v
+        val small = max(max(runLead[2].value, runLead[3].value), max(runTrail[2].value, runTrail[3].value))
+        if (palette.print && small > 0.4f && small < restD * 2.4f &&
+            hypot(runLead[0].value - runTrail[0].value, runLead[1].value - runTrail[1].value) < restD
+        ) {
+            // Settling, the print's window draws in to a small star under the key; set off again, it
+            // swells back out of it.
+            val k = ((restD * 2.4f - small) / (restD * 1.4f)).coerceIn(0f, 1f)
+            runPath.addPath(star(runLead[0].value, runLead[1].value, small * (0.5f + 0.4f * k), 2f - 1.42f * k, 0f, dropPath))
+        } else if (runLead[2].value > 0.4f || runTrail[2].value > 0.4f) {
             runHull.build(
                 runLead[0].value, runLead[1].value, max(0.5f, runLead[2].value), max(0.5f, runLead[3].value),
                 runTrail[0].value, runTrail[1].value, max(0.5f, runTrail[2].value), max(0.5f, runTrail[3].value),
@@ -736,7 +790,11 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         inkPath.addPath(stillPath)
         inkPath.addPath(runPath)
         // A drop left behind is on its way out: it covers the mark under it and knocks nothing out.
-        for (d in runDrops) inkPath.addCircle(d.x, d.y, d.r.value, Path.Direction.CW)
+        // In the print it's a small star, like the ones scratched into the poster's sky.
+        for (d in runDrops) {
+            if (palette.print) inkPath.addPath(star(d.x, d.y, d.r.value * 1.45f, 0.62f, 0f, dropPath))
+            else inkPath.addCircle(d.x, d.y, d.r.value, Path.Direction.CW)
+        }
     }
 
     /**
@@ -833,6 +891,101 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         runLand = 0
     }
 
+    /** Takes up the print's paper, type and sky, or puts back the ink's, for the palette just set. */
+    private fun applyPrint() {
+        val p = palette
+        if (p.print) {
+            val t = printType ?: PrintType(context).also { printType = it }
+            regular = t.body
+            bold = t.strong
+            wide = t.wide
+            val cell = (2.7f * density).roundToInt().coerceAtLeast(3)
+            sky = PrintSky(cell, p.windowInks ?: KeyPalette.Paper.windowInks!!, p.windowGround).also {
+                if (width > 0 && height > 0) it.size(width, height)
+            }
+            runHull.round = PRINT_ROUND
+        } else {
+            regular = libronRegular
+            bold = libronBold
+            wide = libronRegular
+            sky = null
+            runHull.round = 0.94f
+        }
+        text.typeface = regular
+        enterMeasured = ""
+        pillWord = ""
+    }
+
+    /** The paint for bright ink at [alpha]: its colour, or in the print, the sky through a window. */
+    private fun bright(alpha: Int = 255): Paint {
+        val s = sky?.shader
+        if (palette.print && s != null) {
+            window.shader = s
+            window.alpha = alpha
+            return window
+        }
+        fill.color = palette.bright
+        fill.alpha = alpha
+        return fill
+    }
+
+    /** Letters laid over a window: paper-white, with a dark halo so they read over the brightest cloud. */
+    private fun overWindow(on: Boolean) {
+        if (on && palette.print) {
+            val r = 7f * density
+            text.setShadowLayer(r, 0f, 0f, 0xEE03032A.toInt())
+            icon.setShadowLayer(r, 0f, 0f, 0xEE03032A.toInt())
+        } else {
+            text.clearShadowLayer()
+            icon.clearShadowLayer()
+        }
+    }
+
+    /**
+     * A pasted slip of the print's paper over the keys, for [path]: the hard shadow of something
+     * pasted down, the sheet, its grain and a hairline edge.
+     */
+    private fun slip(canvas: Canvas, path: Path) {
+        val p = palette
+        canvas.save()
+        canvas.translate(1.6f * density, 2.6f * density)
+        fill.color = 0xFF00000F.toInt()
+        fill.alpha = if (p.dark) 150 else 80
+        canvas.drawPath(path, fill)
+        canvas.restore()
+        fill.color = p.preview
+        fill.alpha = 255
+        canvas.drawPath(path, fill)
+        grain.shader = PrintGrain.shader(p.dark)
+        canvas.drawPath(path, grain)
+        trail.color = p.label
+        trail.alpha = if (p.dark) 70 else 50
+        trail.strokeWidth = max(1f, density * 0.8f)
+        canvas.drawPath(path, trail)
+    }
+
+    /** The print's ink: windows cut to the sky where the ink would be, and slips of paper for the accents and the tongue. */
+    private fun drawPrint(canvas: Canvas) {
+        if (!inkPath.isEmpty) canvas.drawPath(inkPath, bright())
+        popup?.let { pop ->
+            val t = pop.open.value.coerceIn(0f, 1.2f)
+            val k = pop.keyRect
+            slipPath.reset()
+            slipPath.addRect(k, Path.Direction.CW)
+            val nw = 18f * u
+            slipPath.addRect(k.centerX() - nw / 2f, pop.bar.bottom - 6f * v, k.centerX() + nw / 2f, k.top + 6f * v, Path.Direction.CW)
+            popupRect(pop, t, rect)
+            slipPath.addRect(rect, Path.Direction.CW)
+            slip(canvas, slipPath)
+        }
+        tongueKey?.let { k ->
+            val left = min(tongueLeft.value, k.left)
+            slipPath.reset()
+            slipPath.addRect(left, k.top, k.right, k.bottom, Path.Direction.CW)
+            slip(canvas, slipPath)
+        }
+    }
+
     /** [k]'s label in [color]; [sub] for the quieter parts, and [sheetColor] for 123 and ABC. */
     private fun drawLabel(canvas: Canvas, k: PlacedKey, color: Int, alpha: Int, sub: Int = palette.sub, sheetColor: Int = color) {
         val key = k.key
@@ -843,13 +996,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             KeyType.Shift -> Icons.draw(canvas, if (shift == 2) Icons.CAPS_LOCK else Icons.SHIFT, k.cx, k.cy, 22f * v, icon, fill = shift > 0)
             KeyType.Delete -> if (tongueKey == null) Icons.draw(canvas, Icons.DELETE, k.cx, k.cy, 24f * v, icon)
             KeyType.Enter -> if (enterLabel.isEmpty()) Icons.draw(canvas, Icons.RETURN, k.cx, k.cy, 22f * v, icon)
+            else if (palette.print) drawText(canvas, enterLabel.uppercase(), k.cx, k.cy, 12f * v, if (enterBright) color else sub, alpha, k.w - 8f * u, wide, CAPS)
             else drawText(canvas, enterLabel, k.cx, k.cy, 17f * v, if (enterBright) color else sub, alpha, k.w - 8f * u)
             KeyType.Space -> if (spaceSliding) {
                 icon.color = color
                 Icons.draw(canvas, Icons.LEFT, k.cx - 18f * v, k.cy, 18f * v, icon)
                 Icons.draw(canvas, Icons.RIGHT, k.cx + 18f * v, k.cy, 18f * v, icon)
-            } else drawText(canvas, "space", k.cx, k.cy, 16f * v, sub, alpha, k.w)
-            KeyType.Sheet -> drawText(canvas, key.label, k.cx, k.cy, 16f * v, sheetColor, alpha, k.w)
+            } else if (palette.print) drawText(canvas, "SPACE", k.cx, k.cy, 11.5f * v, sub, alpha, k.w, wide, CAPS)
+            else drawText(canvas, "space", k.cx, k.cy, 16f * v, sub, alpha, k.w)
+            KeyType.Sheet -> if (palette.print) drawText(canvas, key.label.uppercase(), k.cx, k.cy, 12.5f * v, sheetColor, alpha, k.w, wide, CAPS)
+            else drawText(canvas, key.label, k.cx, k.cy, 16f * v, sheetColor, alpha, k.w)
             KeyType.Emoji -> Icons.draw(canvas, Icons.EMOJI, k.cx, k.cy, 22f * v, icon)
             KeyType.Text -> {
                 val label = if (key.isLetter && shift > 0) key.label.uppercase() else key.label
@@ -871,9 +1027,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
     }
 
-    private fun drawText(canvas: Canvas, s: String, cx: Float, cy: Float, size: Float, color: Int, alpha: Int, maxW: Float, face: Typeface = regular) {
+    private fun drawText(canvas: Canvas, s: String, cx: Float, cy: Float, size: Float, color: Int, alpha: Int, maxW: Float, face: Typeface = regular, tracking: Float = 0f) {
         text.typeface = face
         text.textSize = size
+        text.letterSpacing = tracking
         var width = text.measureText(s)
         var shown = s
         if (width > maxW && maxW > 0f) {
@@ -889,6 +1046,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         text.alpha = alpha
         val fm = text.fontMetrics
         canvas.drawText(shown, cx, cy - (fm.ascent + fm.descent) / 2f, text)
+        text.letterSpacing = 0f
     }
 
     private fun drawStrip(canvas: Canvas) {
@@ -908,15 +1066,16 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             fill.alpha = 255
             val h = hubLit.value
             if (h > 0.01f) {
-                fill.color = p.bright
-                canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), min(r, (r - 2f * v) * h), fill)
+                canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), min(r, (r - 2f * v) * h), bright())
             } else if (pr > 0.01f) {
                 fill.color = p.key
                 canvas.drawCircle(hubRect.centerX(), hubRect.centerY(), (r - 2f * v) * pr.coerceIn(0f, 1f), fill)
             }
             icon.color = if (h > 0.5f) p.onBright else p.label
             icon.alpha = 255
+            overWindow(h > 0.5f)
             Icons.draw(canvas, Icons.HUB, hubRect.centerX(), hubRect.centerY(), 18f * v, icon)
+            overWindow(false)
             canvas.restore()
         }
 
@@ -929,9 +1088,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 canvas.scale(s * (0.85f + 0.15f * a), s * (0.85f + 0.15f * a), r.centerX(), r.centerY())
                 // Bare icons; the chosen one sits on ink, a pressed one on a shadow of it.
                 if (active) {
-                    fill.color = p.bright
-                    fill.alpha = (255 * a).toInt()
-                    canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f, fill)
+                    canvas.drawCircle(r.centerX(), r.centerY(), r.height() / 2f, bright((255 * a).toInt()))
                 } else if (pr > 0.01f) {
                     fill.color = p.key
                     fill.alpha = (255 * a).toInt()
@@ -947,7 +1104,9 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     Tool.Settings -> Icons.SETTINGS
                     Tool.Hide -> if (activeTool != null) Icons.CLOSE else Icons.HIDE
                 }
+                overWindow(active)
                 Icons.draw(canvas, d, r.centerX(), r.centerY(), 22f * v * min(1f, r.height() / stripH), icon)
+                overWindow(false)
                 canvas.restore()
             }
             return
@@ -988,14 +1147,15 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val spread = codeSpread.value.coerceIn(0f, 1f)
                 val ch = pasteRect.height()
                 codeRect.set(pasteRect.left, pasteRect.top, pasteRect.left + ch + (pasteRect.width() - ch) * spread, pasteRect.bottom)
-                fill.color = p.bright
-                fill.alpha = (255 * a).toInt()
-                canvas.drawRoundRect(codeRect, ch / 2f, ch / 2f, fill)
+                val codeInk = bright((255 * a).toInt())
+                val cr = if (p.print) 3f * v else ch / 2f
+                canvas.drawRoundRect(codeRect, cr, cr, codeInk)
                 val g = (SystemClock.uptimeMillis() - codeGlintAt) / CODE_GLINT_MS.toFloat()
                 if (g in 0f..1f) {
                     val e = kotlin.math.sin(Math.PI.toFloat() * g)
-                    canvas.drawPath(star(pasteRect.left + ch / 2f, pasteRect.centerY(), ch / 2f * (1f + 1.1f * e), 2f - 1.58f * e, g * 0.8f), fill)
+                    canvas.drawPath(star(pasteRect.left + ch / 2f, pasteRect.centerY(), ch / 2f * (1f + 1.1f * e), 2f - 1.58f * e, g * 0.8f), codeInk)
                 }
+                overWindow(true)
                 val inside = ((spread - 0.55f) / 0.45f).coerceIn(0f, 1f)
                 icon.color = p.onBright
                 icon.alpha = (255 * a).toInt()
@@ -1017,6 +1177,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 text.alpha = (170 * a * inside).toInt()
                 val from = pasteLabel("from ${s.app}", pasteRect.right - (x0 + w + 10f * u) - 16f * u)
                 canvas.drawText(from, x0 + w + 10f * u, base, text)
+                overWindow(false)
                 text.textAlign = Paint.Align.CENTER
                 canvas.restore()
             }
@@ -1065,16 +1226,14 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         }
         buildPill(slotRects[0].centerY())
         val inked = !pillPath.isEmpty
-        if (inked) {
-            fill.color = p.bright
-            fill.alpha = 255
-            canvas.drawPath(pillPath, fill)
-        }
+        if (inked) canvas.drawPath(pillPath, bright())
         drawWords(canvas, s, n, a, p.label, p.sub)
         if (inked) {
             canvas.save()
             canvas.clipPath(pillPath)
+            overWindow(true)
             drawWords(canvas, s, n, a, p.onBright, p.onBright)
+            overWindow(false)
             canvas.restore()
         }
     }
@@ -1145,14 +1304,19 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
             val cx = (l + r) / 2f
             val w = (r - l) * on
             val hh = h * on
-            pillPath.addRoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, hh / 2f, hh / 2f, Path.Direction.CW)
+            val pr = if (palette.print) min(hh / 2f, 4f * v) else hh / 2f
+            pillPath.addRoundRect(cx - w / 2f, cy - hh / 2f, cx + w / 2f, cy + hh / 2f, pr, pr, Path.Direction.CW)
         }
         val tv = pillTail.value
-        if (tv > 0.02f) pillPath.addCircle(pillTx, cy, h * 0.36f * tv, Path.Direction.CW)
+        if (tv > 0.02f) {
+            if (palette.print) pillPath.addPath(star(pillTx, cy, h * 0.5f * tv, 0.62f, 0f, dropPath))
+            else pillPath.addCircle(pillTx, cy, h * 0.36f * tv, Path.Direction.CW)
+        }
     }
 
-    /** A drop pulled four ways, as a sparkle is: [p] 2 is round, smaller is spikier. */
-    private fun star(cx: Float, cy: Float, r: Float, p: Float, rot: Float): Path {
+    /** A drop pulled four ways, as a sparkle is: [p] 2 is round, smaller is spikier. Written into [starPath] unless given another. */
+    private fun star(cx: Float, cy: Float, r: Float, p: Float, rot: Float, into: Path = starPath): Path {
+        val starPath = into
         starPath.reset()
         val k = p.coerceAtLeast(0.2f)
         for (i in 0..72) {
@@ -1202,6 +1366,10 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
     private fun drawGoo(canvas: Canvas) {
         val hasInk = popup != null || tongueKey != null || !inkPath.isEmpty
         if (!hasInk) return
+        if (palette.print) {
+            drawPrint(canvas)
+            return
+        }
         val node = gooNode
         if (node != null && canvas.isHardwareAccelerated && Build.VERSION.SDK_INT >= 31) {
             node.setPosition(0, 0, width, height)
@@ -1262,12 +1430,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                 val cx = rect.left + itemW * (i + 0.5f)
                 val cy = rect.centerY()
                 if (i == pop.selected) {
-                    fill.color = p.bright
-                    fill.alpha = alpha
                     val half = min(itemW, rect.height()) / 2f - 3f * v
-                    canvas.drawRoundRect(cx - itemW / 2f + 3f * v, cy - half, cx + itemW / 2f - 3f * v, cy + half, half, half, fill)
+                    val sr = if (p.print) 2f * v else half
+                    canvas.drawRoundRect(cx - itemW / 2f + 3f * v, cy - half, cx + itemW / 2f - 3f * v, cy + half, sr, sr, bright(alpha))
                 }
                 val color = if (i == pop.selected) p.onBright else p.label
+                overWindow(i == pop.selected)
                 if (item == Layouts.EMOJI) {
                     icon.color = color
                     icon.alpha = alpha
@@ -1276,6 +1444,7 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
                     val shown = if (shift > 0 && item.length == 1 && item[0].isLetter()) item.uppercase() else item
                     drawText(canvas, shown, cx, cy, if (item.length > 1) 17f * v else 24f * v, color, alpha, itemW)
                 }
+                overWindow(false)
             }
         }
         tongueKey?.let { k ->
@@ -1750,6 +1919,12 @@ class KeyboardView(context: Context, private val listener: Listener) : View(cont
         private const val STRIP_PASTE = 11
         private const val STRIP_CODE = 12
         private const val CODE_GLINT_MS = 440L
+
+        /** How round the print's runner window is at its corners: a window cut in paper, softened a touch. */
+        private const val PRINT_ROUND = 0.3f
+
+        /** The tracking of the print's wide capitals, in ems. */
+        private const val CAPS = 0.09f
         /** How long the runner waits on a key before settling into a drop. */
         private const val REST_MS = 1400L
 

@@ -235,7 +235,8 @@ class SettingsActivity : ComponentActivity() {
                     var look by remember { mutableStateOf(prefs.look) }
                     FieldLabel("Colour")
                     Choices(
-                        listOf(Prefs.LOOK_INK to "Ink") + (if (Build.VERSION.SDK_INT >= 31) listOf(Prefs.LOOK_TINT to "Tint") else emptyList()),
+                        listOf(Prefs.LOOK_INK to "Ink") + (if (Build.VERSION.SDK_INT >= 31) listOf(Prefs.LOOK_TINT to "Tint") else emptyList()) +
+                            listOf(Prefs.LOOK_PRINT to "Print"),
                         look,
                     ) { look = it; prefs.look = it }
                     var height by remember { mutableStateOf(prefs.keyHeight) }

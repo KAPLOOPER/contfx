@@ -295,7 +295,8 @@ class ContinuumIME : InputMethodService(), KeyboardView.Listener, PanelActions,
             @Suppress("DEPRECATION")
             w.navigationBarColor = Color.TRANSPARENT
             if (Build.VERSION.SDK_INT >= 29) w.isNavigationBarContrastEnforced = false
-            WindowCompat.getInsetsController(w, w.decorView).isAppearanceLightNavigationBars = false
+            // Printed on paper by day, the navigation bar's marks go dark to read on it.
+            WindowCompat.getInsetsController(w, w.decorView).isAppearanceLightNavigationBars = palette.print && !palette.dark
         }
     }
 

@@ -43,8 +43,11 @@ with each ear's delay kept apart, shortened and put on a regular grid of directi
 ## Google Sans Flex
 
 [Google Sans Flex](https://fonts.google.com/specimen/Google+Sans+Flex), Copyright 2015 Google LLC,
-under the SIL Open Font License 1.1. See `fonts/GOOGLE-SANS-FLEX-OFL.txt`. The app's screens are
-set in it; the island, the volume panel and the keyboard keep Libron.
+under the SIL Open Font License 1.1. See `fonts/GOOGLE-SANS-FLEX-OFL.txt`. The app's screens, the
+island and the volume panel are set in it. The keyboard's Print look uses a subset of it
+(`keyboard/src/main/res/font/google_sans_flex_latin.ttf`: Latin only, roundness, grade, slant and
+optical size fixed at their defaults, width 80 to 135 and weight 350 to 750 kept variable); its
+other looks keep Libron.
 
 ## Shippori Mincho
 

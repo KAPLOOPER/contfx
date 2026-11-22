@@ -1,6 +1,7 @@
 package dev.continuum.keyboard.ui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import androidx.core.graphics.ColorUtils
 import dev.continuum.keyboard.Prefs
@@ -24,6 +25,15 @@ data class KeyPalette(
     val bright: Int,
     val onBright: Int,
     val trail: Int,
+    /**
+     * Printed rather than inked: the keys are paper, and the bright ink is a window cut through to
+     * a halftone sky, in these [windowInks] (darkest first) on [windowGround].
+     */
+    val print: Boolean = false,
+    /** The paper is dark: the negative print. */
+    val dark: Boolean = true,
+    val windowInks: IntArray? = null,
+    val windowGround: Int = 0,
 ) {
     companion object {
         val Ink = KeyPalette(
@@ -38,7 +48,45 @@ data class KeyPalette(
             trail = 0xFFF4F4F1.toInt(),
         )
 
+        /** Continuum Kit's poster, by day: grainy paper, ink, and windows to an ultramarine sky. */
+        val Paper = KeyPalette(
+            mass = 0xFFEDEDE9.toInt(),
+            key = 0xFFDEDED9.toInt(),
+            fn = 0xFFE3E3DE.toInt(),
+            preview = 0xFFF7F7F4.toInt(),
+            label = 0xFF0B0B10.toInt(),
+            sub = 0xFF55555B.toInt(),
+            bright = 0xFF1512D9.toInt(),
+            onBright = 0xFFF6F6F3.toInt(),
+            trail = 0xFF1512D9.toInt(),
+            print = true,
+            dark = false,
+            windowInks = intArrayOf(0xFF06053F.toInt(), 0xFF1512D9.toInt(), 0xFF6771E4.toInt(), 0xFFC9CEFA.toInt(), 0xFFF4F4F1.toInt()),
+            windowGround = 0xFF1512D9.toInt(),
+        )
+
+        /** The same print in negative, for the dark: the sky in the windows keeps its colour. */
+        val Film = KeyPalette(
+            mass = 0xFF101014.toInt(),
+            key = 0xFF1D1D24.toInt(),
+            fn = 0xFF18181E.toInt(),
+            preview = 0xFF1A1A20.toInt(),
+            label = 0xFFECECE8.toInt(),
+            sub = 0xFFA4A4A8.toInt(),
+            bright = 0xFF3B37F0.toInt(),
+            onBright = 0xFFF6F6F3.toInt(),
+            trail = 0xFFA3ACFF.toInt(),
+            print = true,
+            dark = true,
+            windowInks = intArrayOf(0xFF05053A.toInt(), 0xFF1512D9.toInt(), 0xFF6771E4.toInt(), 0xFFA3ACFF.toInt(), 0xFFF6F6F2.toInt()),
+            windowGround = 0xFF02021F.toInt(),
+        )
+
         fun from(context: Context, prefs: Prefs): KeyPalette {
+            if (prefs.look == Prefs.LOOK_PRINT) {
+                val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                return if (night) Film else Paper
+            }
             if (prefs.look != Prefs.LOOK_TINT || Build.VERSION.SDK_INT < 31) return Ink
             val r = context.resources
             fun c(id: Int) = r.getColor(id, context.theme)

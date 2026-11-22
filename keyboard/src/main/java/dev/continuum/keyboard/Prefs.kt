@@ -9,7 +9,10 @@ import kotlin.reflect.KProperty
 class Prefs(context: Context) {
     val sp: SharedPreferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    /** "ink" (pure black) or "tint" (from the wallpaper, Android 12 and later). */
+    /**
+     * "ink" (pure black), "tint" (from the wallpaper, Android 12 and later) or "print" (paper and
+     * a halftone sky, as Continuum Kit's poster; light or dark with the phone).
+     */
     var look by string("look", LOOK_INK)
     /** "compact", "normal" or "tall". */
     var keyHeight by string("key_height", HEIGHT_NORMAL)
@@ -73,6 +76,7 @@ class Prefs(context: Context) {
         const val NAME = "continuum_keyboard"
         const val LOOK_INK = "ink"
         const val LOOK_TINT = "tint"
+        const val LOOK_PRINT = "print"
         const val HEIGHT_COMPACT = "compact"
         const val HEIGHT_NORMAL = "normal"
         const val HEIGHT_TALL = "tall"

@@ -17,6 +17,9 @@ class RunnerHull {
     var count = 0
         private set
 
+    /** How round each end's corners are: nearly a pill at 0.94; the print's window is squarer. */
+    var round = ROUND
+
     private val px = FloatArray(POINTS)
     private val py = FloatArray(POINTS)
     private val order = IntArray(POINTS)
@@ -74,7 +77,7 @@ class RunnerHull {
 
     /** A pill's outline: four rounded corners, nearly as round as it is narrow. */
     private fun pill(start: Int, cx: Float, cy: Float, w: Float, h: Float): Int {
-        val r = min(w, h) / 2f * ROUND
+        val r = min(w, h) / 2f * round
         val hw = w / 2f - r
         val hh = h / 2f - r
         var n = start
